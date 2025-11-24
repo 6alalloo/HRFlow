@@ -1,0 +1,240 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+
+datasource db {
+  provider = "postgresql"
+}
+
+model applications {
+  id           Int        @id @default(autoincrement())
+  candidate_id Int
+  job_id       Int
+  applied_at   DateTime   @default(now()) @db.Timestamptz(6)
+  candidates   candidates @relation(fields: [candidate_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  jobs         jobs       @relation(fields: [job_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([candidate_id, job_id])
+  @@index([candidate_id], map: "idx_apps_candidate")
+  @@index([job_id], map: "idx_apps_job")
+}
+
+model audit_logs {
+  id            Int      @id @default(autoincrement())
+  actor_user_id Int?
+  action        String   @db.VarChar
+  entity_type   String?  @db.VarChar
+  entity_id     Int?
+  data_json     String?  @db.VarChar
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  users         users?   @relation(fields: [actor_user_id], references: [id], onUpdate: NoAction)
+
+  @@index([actor_user_id], map: "idx_audit_actor")
+  @@index([entity_type, entity_id], map: "idx_audit_entity")
+}
+
+model candidates {
+  id           Int            @id @default(autoincrement())
+  full_name    String         @db.VarChar
+  email        String         @db.VarChar
+  phone        String?        @db.VarChar
+  is_active    Boolean        @default(true)
+  created_at   DateTime       @default(now()) @db.Timestamptz(6)
+  applications applications[]
+  resumes      resumes[]
+
+  @@index([email], map: "idx_candidates_email")
+}
+
+model data_stores {
+  id           Int       @id @default(autoincrement())
+  workflow_id  Int
+  storage_path String    @db.VarChar
+  key_prefix   String?   @db.VarChar
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  workflows    workflows @relation(fields: [workflow_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([workflow_id], map: "idx_datastores_workflow")
+}
+
+model email_templates {
+  id             Int      @id @default(autoincrement())
+  name           String   @unique @db.VarChar
+  subject        String   @db.VarChar
+  body_html      String   @db.VarChar
+  variables_json String   @default("{}") @db.VarChar
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime @default(now()) @db.Timestamptz(6)
+}
+
+model employees {
+  id            Int       @id @default(autoincrement())
+  user_id       Int?
+  job_id        Int?
+  employee_no   String?   @unique @db.VarChar
+  hire_date     DateTime  @db.Date
+  probation_end DateTime? @db.Date
+  is_active     Boolean   @default(true)
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+  jobs          jobs?     @relation(fields: [job_id], references: [id], onUpdate: NoAction)
+  users         users?    @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+
+  @@index([job_id], map: "idx_employees_job")
+  @@index([user_id], map: "idx_employees_user")
+}
+
+model execution_steps {
+  id             Int             @id @default(autoincrement())
+  execution_id   Int
+  node_id        Int?
+  status         String          @db.VarChar
+  input_json     String          @default("{}") @db.VarChar
+  output_json    String          @default("{}") @db.VarChar
+  logs           String?         @db.VarChar
+  started_at     DateTime        @default(now()) @db.Timestamptz(6)
+  finished_at    DateTime?       @db.Timestamptz(6)
+  executions     executions      @relation(fields: [execution_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  workflow_nodes workflow_nodes? @relation(fields: [node_id], references: [id], onUpdate: NoAction)
+
+  @@index([execution_id], map: "idx_steps_exec")
+}
+
+model executions {
+  id              Int               @id @default(autoincrement())
+  workflow_id     Int?
+  trigger_type    String            @db.VarChar
+  status          String            @db.VarChar
+  run_context     String?           @db.VarChar
+  started_at      DateTime          @default(now()) @db.Timestamptz(6)
+  finished_at     DateTime?         @db.Timestamptz(6)
+  duration_ms     Int?
+  error_message   String?           @db.VarChar
+  execution_steps execution_steps[]
+  workflows       workflows?        @relation(fields: [workflow_id], references: [id], onUpdate: NoAction)
+
+  @@index([workflow_id], map: "idx_exec_workflow")
+}
+
+model jobs {
+  id            Int            @id @default(autoincrement())
+  code          String?        @unique @db.VarChar
+  title         String         @db.VarChar
+  dept          String?        @db.VarChar
+  grade         String?        @db.VarChar
+  description   String?        @db.VarChar
+  is_open       Boolean        @default(true)
+  owner_user_id Int?
+  created_at    DateTime       @default(now()) @db.Timestamptz(6)
+  applications  applications[]
+  employees     employees[]
+  users         users?         @relation(fields: [owner_user_id], references: [id], onUpdate: NoAction)
+
+  @@index([owner_user_id], map: "idx_jobs_owner")
+}
+
+model resumes {
+  id           Int        @id @default(autoincrement())
+  candidate_id Int
+  file_path    String     @db.VarChar
+  parsed_json  String?    @db.VarChar
+  uploaded_at  DateTime   @default(now()) @db.Timestamptz(6)
+  candidates   candidates @relation(fields: [candidate_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([candidate_id], map: "idx_resumes_candidate")
+}
+
+model roles {
+  id         Int      @id @default(autoincrement())
+  name       String   @unique @db.VarChar
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  users      users[]
+}
+
+model users {
+  id            Int          @id @default(autoincrement())
+  email         String       @unique @db.VarChar
+  password_hash String       @db.VarChar
+  full_name     String       @db.VarChar
+  is_active     Boolean      @default(true)
+  role_id       Int
+  created_at    DateTime     @default(now()) @db.Timestamptz(6)
+  audit_logs    audit_logs[]
+  employees     employees[]
+  jobs          jobs[]
+  roles         roles        @relation(fields: [role_id], references: [id], onUpdate: NoAction)
+  workflows     workflows[]
+
+  @@index([role_id], map: "idx_users_role_id")
+}
+
+model webhooks {
+  id          Int        @id @default(autoincrement())
+  workflow_id Int?
+  url         String     @db.VarChar
+  http_method String     @default("POST") @db.VarChar
+  secret      String?    @db.VarChar
+  event       String     @db.VarChar
+  is_active   Boolean    @default(true)
+  created_at  DateTime   @default(now()) @db.Timestamptz(6)
+  workflows   workflows? @relation(fields: [workflow_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([workflow_id], map: "idx_webhooks_workflow")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model workflow_edges {
+  id                                                                     Int            @id @default(autoincrement())
+  workflow_id                                                            Int
+  from_node_id                                                           Int
+  to_node_id                                                             Int
+  condition_json                                                         String         @default("{}") @db.VarChar
+  label                                                                  String?        @db.VarChar
+  priority                                                               Int?           @default(0)
+  workflow_nodes_workflow_edges_workflow_id_from_node_idToworkflow_nodes workflow_nodes @relation("workflow_edges_workflow_id_from_node_idToworkflow_nodes", fields: [workflow_id, from_node_id], references: [workflow_id, id], onDelete: Cascade, onUpdate: NoAction, map: "fk_edge_from")
+  workflow_nodes_workflow_edges_workflow_id_to_node_idToworkflow_nodes   workflow_nodes @relation("workflow_edges_workflow_id_to_node_idToworkflow_nodes", fields: [workflow_id, to_node_id], references: [workflow_id, id], onDelete: Cascade, onUpdate: NoAction, map: "fk_edge_to")
+  workflows                                                              workflows      @relation(fields: [workflow_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([from_node_id], map: "idx_edges_from")
+  @@index([to_node_id], map: "idx_edges_to")
+  @@index([workflow_id], map: "idx_edges_workflow")
+}
+
+model workflow_nodes {
+  id                                                                     Int               @id @default(autoincrement())
+  workflow_id                                                            Int
+  kind                                                                   String            @db.VarChar
+  name                                                                   String?           @db.VarChar
+  config_json                                                            String            @default("{}") @db.VarChar
+  pos_x                                                                  Int               @default(0)
+  pos_y                                                                  Int               @default(0)
+  execution_steps                                                        execution_steps[]
+  workflow_edges_workflow_edges_workflow_id_from_node_idToworkflow_nodes workflow_edges[]  @relation("workflow_edges_workflow_id_from_node_idToworkflow_nodes")
+  workflow_edges_workflow_edges_workflow_id_to_node_idToworkflow_nodes   workflow_edges[]  @relation("workflow_edges_workflow_id_to_node_idToworkflow_nodes")
+  workflows                                                              workflows         @relation(fields: [workflow_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([workflow_id, id])
+  @@index([workflow_id], map: "idx_nodes_workflow")
+}
+
+model workflows {
+  id              Int              @id @default(autoincrement())
+  owner_user_id   Int?
+  name            String           @db.VarChar
+  description     String?          @db.VarChar
+  is_active       Boolean          @default(true)
+  version         Int              @default(1)
+  default_trigger String?          @db.VarChar
+  archived_at     DateTime?        @db.Timestamptz(6)
+  created_at      DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime         @default(now()) @db.Timestamptz(6)
+  data_stores     data_stores[]
+  executions      executions[]
+  webhooks        webhooks[]
+  workflow_edges  workflow_edges[]
+  workflow_nodes  workflow_nodes[]
+  users           users?           @relation(fields: [owner_user_id], references: [id], onUpdate: NoAction)
+
+  @@index([archived_at], map: "idx_workflows_archived")
+  @@index([owner_user_id], map: "idx_workflows_owner")
+}

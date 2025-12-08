@@ -1,35 +1,35 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import React from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
 
-function App() {
-  const [count, setCount] = useState(0)
+import AppLayout from "./layout/appLayout";
+import WorkflowsListPage from "./pages/Workflows/workflowListPage";
+import WorkflowDetailPage from "./pages/WorkflowDetail/workflowDetailPage";
+import ExecutionDetailPage from "./pages/Executions/executionDetailPage";
 
+const App: React.FC = () => {
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
-}
+    <AppLayout>
+      <Routes>
+        {/* Redirect root -> /workflows */}
+        <Route path="/" element={<Navigate to="/workflows" replace />} />
 
-export default App
+        <Route path="/workflows" element={<WorkflowsListPage />} />
+        <Route path="/workflows/:id" element={<WorkflowDetailPage />} />
+        <Route path="/executions/:id" element={<ExecutionDetailPage />} />
+
+        {/* Fallback 404 */}
+        <Route
+          path="*"
+          element={
+            <div className="p-4">
+              <h1 className="h3">404</h1>
+              <p className="text-muted">Page not found.</p>
+            </div>
+          }
+        />
+      </Routes>
+    </AppLayout>
+  );
+};
+
+export default App;

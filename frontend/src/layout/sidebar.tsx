@@ -1,6 +1,6 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
-import { FiGitBranch, FiActivity } from "react-icons/fi";
+import { FiGitBranch, FiActivity, FiZap } from "react-icons/fi"; // FiZap for Builder
 
 const Sidebar: React.FC = () => {
   return (
@@ -27,6 +27,18 @@ const Sidebar: React.FC = () => {
         >
           <FiGitBranch />
           <span>Workflows</span>
+        </NavLink>
+
+        {/* NEW: Builder goes directly to canvas */}
+        <NavLink
+          to="/builder"
+          className={({ isActive }) =>
+            "nav-link d-flex align-items-center gap-2 rounded-3 " +
+            (isActive ? "bg-primary text-light" : "text-light")
+          }
+        >
+          <FiZap />
+          <span>Builder</span>
         </NavLink>
 
         {/* temporary hard-coded execution link just to verify the route */}

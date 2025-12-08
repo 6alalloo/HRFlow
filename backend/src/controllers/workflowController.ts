@@ -176,35 +176,7 @@ export async function getWorkflowGraph(req: Request, res: Response) {
  * POST /api/workflows/:id/nodes
  * Create a new node in the workflow.
  */
-export async function createWorkflowNode(req: Request, res: Response) {
-  const { id } = req.params;
-  const numericId = Number(id);
 
-  if (Number.isNaN(numericId)) {
-    return res.status(400).json({ message: "Invalid workflow ID" });
-  }
-
-  const { kind, name, config, posX, posY } = req.body;
-
-  if (!kind) {
-    return res.status(400).json({ message: "Field 'kind' is required" });
-  }
-
-  try {
-    const node = await workflowService.createWorkflowNode(numericId, {
-      kind,
-      name,
-      config,
-      posX,
-      posY,
-    });
-
-    return res.status(201).json({ data: node });
-  } catch (error) {
-    console.error("[WorkflowController] Error creating workflow node:", error);
-    return res.status(500).json({ message: "Internal server error" });
-  }
-}
 
 /**
  * PUT /api/workflows/:id/nodes/:nodeId
@@ -238,6 +210,51 @@ export async function updateWorkflowNode(req: Request, res: Response) {
   } catch (error) {
     console.error("[WorkflowController] Error updating workflow node:", error);
     return res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+export async function updateWorkflowNodePosition(req: Request, res: Response) {
+  const { id, nodeId } = req.params;
+
+  const workflowId = Number(id);
+  const nodeIdNum = Number(nodeId);
+
+  if (Number.isNaN(workflowId) || Number.isNaN(nodeIdNum)) {
+    return res.status(400).json({ message: "Invalid workflow or node ID" });
+  }
+
+  const { posX, posY } = req.body as {
+    posX?: number;
+    posY?: number;
+  };
+
+  if (typeof posX !== "number" || typeof posY !== "number") {
+    return res.status(400).json({
+      message: "posX and posY must be numbers",
+    });
+  }
+
+  try {
+    const updated = await workflowService.updateWorkflowNode(workflowId, nodeIdNum, {
+      posX,
+      posY,
+    });
+
+    if (!updated) {
+      return res.status(404).json({
+        message: "Node not found in this workflow",
+      });
+    }
+
+    return res.status(200).json({ data: updated });
+  } catch (error) {
+    console.error(
+      "[WorkflowController] Error updating node position:",
+      error
+    );
+    return res.status(500).json({
+      message: "Internal server error while updating node position",
+    });
   }
 }
 
@@ -387,4 +404,47 @@ export async function deleteWorkflowEdge(req: Request, res: Response) {
   }
 }
 
+/**
+ * POST /api/workflows/:id/nodes
+ * Create a new node for a workflow.
+ */
+export async function createWorkflowNode(req: Request, res: Response) {
+  const { id } = req.params;
+  const workflowId = Number(id);
 
+  if (Number.isNaN(workflowId)) {
+    return res.status(400).json({ message: "Invalid workflow ID" });
+  }
+
+  const { kind, name, config, posX, posY } = req.body as {
+    kind?: string;
+    name?: string;
+    config?: Record<string, any>;
+    posX?: number;
+    posY?: number;
+  };
+
+  if (!kind) {
+    return res.status(400).json({ message: "Node kind is required" });
+  }
+
+  try {
+    const node = await workflowService.createWorkflowNode(workflowId, {
+      kind: kind as any,
+      name: name ?? null,
+      config: config ?? {},
+      posX,
+      posY,
+    });
+
+    return res.status(201).json({ data: node });
+  } catch (error) {
+    console.error(
+      "[WorkflowController] Error creating workflow node:",
+      error
+    );
+    return res
+      .status(500)
+      .json({ message: "Internal server error while creating node" });
+  }
+}

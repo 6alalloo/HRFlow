@@ -1,10 +1,8 @@
-// src/api/workflows.ts
-
 const API_BASE_URL = "http://localhost:4000/api";
 
 /* ---------- Core API types ---------- */
 
-// Shape of workflow as returned by the backend (camelCase from Prisma)
+// Shape of workflow as returned by the backend
 export type WorkflowApi = {
   id: number;
   owner_user_id: number | null;
@@ -18,7 +16,13 @@ export type WorkflowApi = {
   updated_at: string;
 };
 
-// Shape of the execution payload your backend sends back
+export type CreateWorkflowNodePayload = {
+  kind: string;
+  name?: string;
+  posX?: number;
+  posY?: number;
+};
+
 export type ExecutionApi = {
   id: number;
   workflow_id: number | null;
@@ -49,13 +53,8 @@ export type ExecutionStepApi = {
   };
 };
 
-// type ExecutionWithStepsResponse =
-//   | { execution: ExecutionApi; steps: ExecutionStepApi[] }
-//   | { data: { execution: ExecutionApi; steps: ExecutionStepApi[] } };
+type ExecutionResponse = ExecutionApi | { data: ExecutionApi };
 
-  type ExecutionResponse = ExecutionApi | { data: ExecutionApi };
-
-  
 type ExecutionStepsResponse =
   | ExecutionStepApi[]
   | { data: ExecutionStepApi[] };
@@ -66,6 +65,152 @@ type WorkflowsListResponse =
   | WorkflowApi[]
   | { data: WorkflowApi[] }
   | { workflows: WorkflowApi[] };
+
+export type WorkflowGraphMeta = {
+  id: number;
+  name: string;
+  description: string | null;
+  is_active?: boolean;
+  isActive?: boolean;
+  version?: number;
+  default_trigger?: string | null;
+  defaultTrigger?: string | null;
+  archived_at?: string | null;
+  archivedAt?: string | null;
+  created_at?: string;
+  createdAt?: string;
+  updated_at?: string;
+  updatedAt?: string;
+};
+
+// Config/condition shape – we don't know exact fields yet, but no `any`
+export type WorkflowGraphConfig = Record<string, unknown>;
+
+// Node type used in the frontend (normalized)
+export type WorkflowGraphNode = {
+  id: number;
+  workflow_id: number;
+  kind: string;
+  name: string | null;
+  pos_x: number;
+  pos_y: number;
+  config?: WorkflowGraphConfig;
+};
+
+// Edge type used in the frontend (normalized)
+export type WorkflowGraphEdge = {
+  id: number;
+  workflow_id: number;
+  from_node_id: number;
+  to_node_id: number;
+  label: string | null;
+  priority: number | null;
+  condition?: WorkflowGraphConfig;
+};
+
+/* ---------- Raw shapes from backend ---------- */
+
+type RawWorkflowGraphMeta = {
+  id: number;
+  name: string;
+  description?: string | null;
+  is_active?: boolean;
+  isActive?: boolean;
+  version?: number;
+  default_trigger?: string | null;
+  defaultTrigger?: string | null;
+  archived_at?: string | null;
+  archivedAt?: string | null;
+  created_at?: string;
+  createdAt?: string;
+  updated_at?: string;
+  updatedAt?: string;
+};
+
+type RawWorkflowGraphNode = {
+  id: number;
+  workflow_id?: number;
+  workflowId?: number;
+  kind: string;
+  name?: string | null;
+  pos_x?: number;
+  posX?: number;
+  pos_y?: number;
+  posY?: number;
+  config?: WorkflowGraphConfig;
+  config_json?: string | null;
+};
+
+type RawWorkflowGraphEdge = {
+  id: number;
+  workflow_id?: number;
+  workflowId?: number;
+  from_node_id?: number;
+  fromNodeId?: number;
+  to_node_id?: number;
+  toNodeId?: number;
+  label?: string | null;
+  priority?: number | null;
+  condition?: WorkflowGraphConfig;
+  condition_json?: string | null;
+};
+
+type WorkflowGraphPayload = {
+  workflow?: RawWorkflowGraphMeta;
+  nodes: RawWorkflowGraphNode[];
+  edges: RawWorkflowGraphEdge[];
+};
+
+type WorkflowGraphResponse =
+  | WorkflowGraphPayload
+  | { data: WorkflowGraphPayload };
+
+type WorkflowNodePositionDto = {
+  id: number;
+  workflowId: number;
+  kind: string;
+  name: string | null;
+  config: Record<string, unknown>;
+  posX: number;
+  posY: number;
+};
+
+type UpdateNodePositionResponse =
+  | WorkflowNodePositionDto
+  | { data: WorkflowNodePositionDto };
+
+/* ---------- Edge DTOs for create/update ---------- */
+
+export type CreateWorkflowEdgePayload = {
+  fromNodeId: number;
+  toNodeId: number;
+  label?: string | null;
+  priority?: number | null;
+  condition?: WorkflowGraphConfig;
+};
+
+type WorkflowEdgeDto = {
+  id: number;
+  workflowId: number;
+  fromNodeId: number;
+  toNodeId: number;
+  label: string | null;
+  priority: number;
+  condition: WorkflowGraphConfig;
+};
+
+type WorkflowEdgeResponse = WorkflowEdgeDto | { data: WorkflowEdgeDto };
+
+/* ---------- helpers ---------- */
+
+function safeParseJson<T>(value: string | null | undefined, fallback: T): T {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
 
 // GET /api/workflows
 export async function fetchWorkflows(): Promise<WorkflowApi[]> {
@@ -127,7 +272,7 @@ export async function executeWorkflow(
     );
   }
 
-  const json = await res.json() as
+  const json = (await res.json()) as
     | { data: { execution: ExecutionApi; steps: ExecutionStepApi[] } }
     | { execution: ExecutionApi; steps: ExecutionStepApi[] };
 
@@ -146,9 +291,7 @@ export async function executeWorkflow(
 type WorkflowByIdResponse = WorkflowApi | { data: WorkflowApi };
 
 // GET /api/workflows/:id
-export async function fetchWorkflowById(
-  id: number
-): Promise<WorkflowApi> {
+export async function fetchWorkflowById(id: number): Promise<WorkflowApi> {
   const res = await fetch(`${API_BASE_URL}/workflows/${id}`);
 
   if (!res.ok) {
@@ -170,34 +313,10 @@ export async function fetchWorkflowById(
   return data;
 }
 
-/* ---------- Graph types ---------- */
-
-export type WorkflowGraphNode = {
-  id: number;
-  workflow_id: number;
-  kind: string;
-  name: string | null;
-  pos_x: number;
-  pos_y: number;
-};
-
-export type WorkflowGraphEdge = {
-  id: number;
-  workflow_id: number;
-  from_node_id: number;
-  to_node_id: number;
-  label: string | null;
-  priority: number | null;
-};
-
-type WorkflowGraphResponse =
-  | { nodes: WorkflowGraphNode[]; edges: WorkflowGraphEdge[] }
-  | { data: { nodes: WorkflowGraphNode[]; edges: WorkflowGraphEdge[] } };
-
-// GET /api/workflows/:id/graph
 export async function fetchWorkflowGraph(
   id: number
 ): Promise<{
+  workflow?: WorkflowGraphMeta;
   nodes: WorkflowGraphNode[];
   edges: WorkflowGraphEdge[];
 }> {
@@ -214,21 +333,217 @@ export async function fetchWorkflowGraph(
     );
   }
 
-  const data = (await res.json()) as WorkflowGraphResponse;
-  console.log("[fetchWorkflowGraph] raw response:", data);
+  const raw = (await res.json()) as WorkflowGraphResponse;
+  console.log("[fetchWorkflowGraph] raw response:", raw);
 
-  if ("data" in data) {
-    return data.data;
+  const payload: WorkflowGraphPayload = "data" in raw ? raw.data : raw;
+
+  // Normalize workflow meta if present
+  let workflow: WorkflowGraphMeta | undefined;
+  if (payload.workflow) {
+    const w = payload.workflow;
+    workflow = {
+      id: w.id,
+      name: w.name,
+      description: w.description ?? null,
+      is_active: w.is_active ?? w.isActive,
+      isActive: w.isActive ?? w.is_active,
+      version: w.version,
+      default_trigger: w.default_trigger ?? w.defaultTrigger ?? null,
+      defaultTrigger: w.defaultTrigger ?? w.default_trigger ?? null,
+      archived_at: w.archived_at ?? w.archivedAt ?? null,
+      archivedAt: w.archivedAt ?? w.archived_at ?? null,
+      created_at: w.created_at ?? w.createdAt,
+      createdAt: w.createdAt ?? w.created_at,
+      updated_at: w.updated_at ?? w.updatedAt,
+      updatedAt: w.updatedAt ?? w.updated_at,
+    };
   }
 
-  return data;
+  // Normalize nodes
+  const nodes: WorkflowGraphNode[] = (payload.nodes ?? []).map(
+    (n: RawWorkflowGraphNode): WorkflowGraphNode => ({
+      id: n.id,
+      workflow_id: n.workflow_id ?? n.workflowId ?? 0,
+      kind: n.kind,
+      name: n.name ?? null,
+      pos_x: n.pos_x ?? n.posX ?? 0,
+      pos_y: n.pos_y ?? n.posY ?? 0,
+      config:
+        n.config ??
+        (n.config_json
+          ? safeParseJson<WorkflowGraphConfig>(n.config_json, {})
+          : {}),
+    })
+  );
+
+  // Normalize edges
+  const edges: WorkflowGraphEdge[] = (payload.edges ?? []).map(
+    (e: RawWorkflowGraphEdge): WorkflowGraphEdge => ({
+      id: e.id,
+      workflow_id: e.workflow_id ?? e.workflowId ?? 0,
+      from_node_id: e.from_node_id ?? e.fromNodeId ?? 0,
+      to_node_id: e.to_node_id ?? e.toNodeId ?? 0,
+      label: e.label ?? null,
+      priority: e.priority ?? null,
+      condition:
+        e.condition ??
+        (e.condition_json
+          ? safeParseJson<WorkflowGraphConfig>(e.condition_json, {})
+          : {}),
+    })
+  );
+
+  return { workflow, nodes, edges };
 }
 
+// POST /api/workflows/:id/nodes
+export async function createWorkflowNode(
+  workflowId: number,
+  payload: CreateWorkflowNodePayload
+): Promise<WorkflowGraphNode> {
+  const res = await fetch(`${API_BASE_URL}/workflows/${workflowId}/nodes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 
+  if (!res.ok) {
+    console.error(
+      "[createWorkflowNode] HTTP error:",
+      res.status,
+      res.statusText
+    );
+    throw new Error(
+      `Failed to create node for workflow ${workflowId} (status ${res.status})`
+    );
+  }
 
-export async function fetchExecution(
-  id: number
-): Promise<ExecutionApi> {
+  const json = (await res.json()) as
+    | WorkflowGraphNode
+    | { data: WorkflowGraphNode };
+
+  if ("data" in json) return json.data;
+  return json;
+}
+
+export async function updateWorkflowNodePosition(
+  workflowId: number,
+  nodeId: number,
+  posX: number,
+  posY: number
+): Promise<WorkflowGraphNode> {
+  const res = await fetch(
+    `${API_BASE_URL}/workflows/${workflowId}/nodes/${nodeId}/position`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ posX, posY }),
+    }
+  );
+
+  if (!res.ok) {
+    console.error(
+      "[updateWorkflowNodePosition] HTTP error:",
+      res.status,
+      res.statusText
+    );
+    throw new Error(`Failed to update node position (status ${res.status})`);
+  }
+
+  const json = (await res.json()) as UpdateNodePositionResponse;
+  console.log("[updateWorkflowNodePosition] raw response:", json);
+
+  const raw: WorkflowNodePositionDto =
+    "data" in json ? json.data : (json as WorkflowNodePositionDto);
+
+  // Normalize into WorkflowGraphNode used by the builder
+  const node: WorkflowGraphNode = {
+    id: raw.id,
+    workflow_id: raw.workflowId,
+    kind: raw.kind,
+    name: raw.name,
+    pos_x: raw.posX,
+    pos_y: raw.posY,
+    config: raw.config,
+  };
+
+  return node;
+}
+
+/* ---------- Edge helpers ---------- */
+
+// POST /api/workflows/:id/edges
+export async function createWorkflowEdge(
+  workflowId: number,
+  payload: CreateWorkflowEdgePayload
+): Promise<WorkflowGraphEdge> {
+  const res = await fetch(`${API_BASE_URL}/workflows/${workflowId}/edges`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    console.error(
+      "[createWorkflowEdge] HTTP error:",
+      res.status,
+      res.statusText
+    );
+    throw new Error(
+      `Failed to create edge for workflow ${workflowId} (status ${res.status})`
+    );
+  }
+
+  const json = (await res.json()) as WorkflowEdgeResponse;
+  console.log("[createWorkflowEdge] raw response:", json);
+
+  const raw: WorkflowEdgeDto =
+    "data" in json ? json.data : (json as WorkflowEdgeDto);
+
+  const edge: WorkflowGraphEdge = {
+    id: raw.id,
+    workflow_id: raw.workflowId,
+    from_node_id: raw.fromNodeId,
+    to_node_id: raw.toNodeId,
+    label: raw.label ?? null,
+    priority: raw.priority ?? null,
+    condition: raw.condition ?? {},
+  };
+
+  return edge;
+}
+
+// DELETE /api/workflows/:id/edges/:edgeId
+export async function deleteWorkflowEdge(
+  workflowId: number,
+  edgeId: number
+): Promise<void> {
+  const res = await fetch(
+    `${API_BASE_URL}/workflows/${workflowId}/edges/${edgeId}`,
+    {
+      method: "DELETE",
+    }
+  );
+
+  // 204 is the happy path, 200 with body is also technically fine
+  if (!res.ok && res.status !== 204) {
+    console.error(
+      "[deleteWorkflowEdge] HTTP error:",
+      res.status,
+      res.statusText
+    );
+    throw new Error(
+      `Failed to delete edge ${edgeId} for workflow ${workflowId} (status ${res.status})`
+    );
+  }
+}
+
+/* ---------- Executions ---------- */
+
+export async function fetchExecution(id: number): Promise<ExecutionApi> {
   const res = await fetch(`${API_BASE_URL}/executions/${id}`);
 
   if (!res.ok) {

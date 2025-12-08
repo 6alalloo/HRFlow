@@ -264,32 +264,7 @@ export async function getWorkflowGraph(workflowId: number) {
 /**
  * Create a new node for a workflow.
  */
-export async function createWorkflowNode(
-  workflowId: number,
-  dto: WorkflowNodeDTO
-) {
-  // Optional future enhancement: validate things like "only one trigger per workflow"
-  const node = await prisma.workflow_nodes.create({
-    data: {
-      workflow_id: workflowId,
-      kind: dto.kind,
-      name: dto.name ?? null,
-      config_json: JSON.stringify(dto.config ?? {}),
-      pos_x: dto.posX ?? 0,
-      pos_y: dto.posY ?? 0,
-    },
-  });
 
-  return {
-    id: node.id,
-    workflowId: node.workflow_id,
-    kind: node.kind as WorkflowNodeKind,
-    name: node.name,
-    config: safeParseJson(node.config_json, {} as Record<string, any>),
-    posX: node.pos_x,
-    posY: node.pos_y,
-  };
-}
 
 /**
  * Update an existing node for a workflow.
@@ -518,4 +493,47 @@ export async function deleteWorkflowEdge(
   });
 
   return true;
+}
+
+export async function createWorkflowNode(
+  workflowId: number,
+  dto: WorkflowNodeDTO
+) {
+  // How many nodes already exist for this workflow?
+  const count = await prisma.workflow_nodes.count({
+    where: { workflow_id: workflowId },
+  });
+
+  let posX = dto.posX;
+  let posY = dto.posY;
+
+  // If no explicit position was provided, place node in a simple grid
+  if (posX === undefined || posY === undefined) {
+    const col = count % 3;               // 0,1,2
+    const row = Math.floor(count / 3);   // 0,1,2,...
+
+    posX = 80 + col * 220;               // 80, 300, 520,...
+    posY = 80 + row * 160;               // 80, 240, 400,...
+  }
+
+  const node = await prisma.workflow_nodes.create({
+    data: {
+      workflow_id: workflowId,
+      kind: dto.kind,
+      name: dto.name ?? null,
+      config_json: JSON.stringify(dto.config ?? {}),
+      pos_x: Math.round(posX),
+      pos_y: Math.round(posY),
+    },
+  });
+
+  return {
+    id: node.id,
+    workflowId: node.workflow_id,
+    kind: node.kind as WorkflowNodeKind,
+    name: node.name,
+    config: safeParseJson(node.config_json, {} as Record<string, any>),
+    posX: node.pos_x,
+    posY: node.pos_y,
+  };
 }

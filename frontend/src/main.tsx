@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 
 import "bootstrap/dist/css/bootstrap.min.css"; // Bootstrap global styles
+import 'reactflow/dist/style.css';
 import "./index.css";
 
 

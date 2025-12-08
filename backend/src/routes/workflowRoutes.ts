@@ -7,6 +7,9 @@ const router = Router();
 // List all workflows
 router.get("/", workflowController.getAllWorkflows);
 
+// Update node position
+router.patch("/:id/nodes/:nodeId/position", workflowController.updateWorkflowNodePosition);
+
 // Get one workflow by id
 router.get("/:id", workflowController.getWorkflowById);
 
@@ -45,5 +48,10 @@ router.put("/:id/edges/:edgeId", workflowController.updateWorkflowEdge);
 
 // Delete an edge
 router.delete("/:id/edges/:edgeId", workflowController.deleteWorkflowEdge);
+
+// Create a new node
+router.post("/:id/nodes", workflowController.createWorkflowNode);
+
+
 
 export default router;

@@ -184,76 +184,43 @@ export async function getWorkflowGraph(req: Request, res: Response) {
  */
 export async function updateWorkflowNode(req: Request, res: Response) {
   const { id, nodeId } = req.params;
-  const numericId = Number(id);
+
+  const workflowId = Number(id);
   const numericNodeId = Number(nodeId);
 
-  if (Number.isNaN(numericId) || Number.isNaN(numericNodeId)) {
+  if (Number.isNaN(workflowId) || Number.isNaN(numericNodeId)) {
     return res
       .status(400)
       .json({ message: "Invalid workflow ID or node ID" });
   }
 
-  const { kind, name, config, posX, posY } = req.body;
-
   try {
-    const node = await workflowService.updateWorkflowNode(
-      numericId,
+    const { kind, name, config, posX, posY } = req.body ?? {};
+
+    const updated = await workflowService.updateWorkflowNode(
+      workflowId,
       numericNodeId,
-      { kind, name, config, posX, posY }
+      {
+        kind,
+        name,
+        config,
+        posX,
+        posY,
+      }
     );
-
-    if (!node) {
-      return res.status(404).json({ message: "Node not found" });
-    }
-
-    return res.status(200).json({ data: node });
-  } catch (error) {
-    console.error("[WorkflowController] Error updating workflow node:", error);
-    return res.status(500).json({ message: "Internal server error" });
-  }
-}
-
-export async function updateWorkflowNodePosition(req: Request, res: Response) {
-  const { id, nodeId } = req.params;
-
-  const workflowId = Number(id);
-  const nodeIdNum = Number(nodeId);
-
-  if (Number.isNaN(workflowId) || Number.isNaN(nodeIdNum)) {
-    return res.status(400).json({ message: "Invalid workflow or node ID" });
-  }
-
-  const { posX, posY } = req.body as {
-    posX?: number;
-    posY?: number;
-  };
-
-  if (typeof posX !== "number" || typeof posY !== "number") {
-    return res.status(400).json({
-      message: "posX and posY must be numbers",
-    });
-  }
-
-  try {
-    const updated = await workflowService.updateWorkflowNode(workflowId, nodeIdNum, {
-      posX,
-      posY,
-    });
 
     if (!updated) {
       return res.status(404).json({
-        message: "Node not found in this workflow",
+        message: "Node not found for this workflow",
       });
     }
 
-    return res.status(200).json({ data: updated });
-  } catch (error) {
-    console.error(
-      "[WorkflowController] Error updating node position:",
-      error
-    );
+    // Return whatever the frontend expects as the node shape
+    return res.json(updated);
+  } catch (err) {
+    console.error("[updateWorkflowNode] error:", err);
     return res.status(500).json({
-      message: "Internal server error while updating node position",
+      message: "Failed to update node",
     });
   }
 }
@@ -448,3 +415,48 @@ export async function createWorkflowNode(req: Request, res: Response) {
       .json({ message: "Internal server error while creating node" });
   }
 }
+export async function updateWorkflowNodePosition(req: Request, res: Response) {
+  const { id, nodeId } = req.params;
+  const { posX, posY } = req.body as {
+    posX?: number;
+    posY?: number;
+  };
+
+  const numericId = Number(id);
+  const numericNodeId = Number(nodeId);
+
+  if (Number.isNaN(numericId) || Number.isNaN(numericNodeId)) {
+    return res
+      .status(400)
+      .json({ message: "Invalid workflow ID or node ID" });
+  }
+
+  if (typeof posX !== "number" || typeof posY !== "number") {
+    return res
+      .status(400)
+      .json({ message: "posX and posY must be numbers" });
+  }
+
+  try {
+    const updated = await workflowService.updateWorkflowNodePosition(
+      numericId,
+      numericNodeId,
+      posX,
+      posY
+    );
+
+    if (!updated) {
+      return res.status(404).json({ message: "Node not found" });
+    }
+
+    return res.status(200).json(updated);
+  } catch (error) {
+    console.error(
+      "[WorkflowController] Error updating workflow node position:",
+      error
+    );
+    return res.status(500).json({ message: "Internal server error" });
+  }
+
+}
+

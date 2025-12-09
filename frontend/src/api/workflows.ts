@@ -473,6 +473,80 @@ export async function updateWorkflowNodePosition(
   return node;
 }
 
+/* ---------- Node update (name/config/position) ---------- */
+
+type WorkflowNodeUpdateDto = {
+  id: number;
+  workflowId: number;
+  kind: string;
+  name: string | null;
+  config: WorkflowGraphConfig;
+  posX: number;
+  posY: number;
+};
+
+type UpdateWorkflowNodeResponse =
+  | WorkflowNodeUpdateDto
+  | { data: WorkflowNodeUpdateDto };
+
+export type UpdateWorkflowNodePayload = {
+  kind?: string;
+  name?: string | null;
+  config?: WorkflowGraphConfig;
+  posX?: number;
+  posY?: number;
+};
+
+/**
+ * PUT /api/workflows/:workflowId/nodes/:nodeId
+ * Update workflow node core fields (name, kind, config, position).
+ */
+export async function updateWorkflowNode(
+  workflowId: number,
+  nodeId: number,
+  payload: UpdateWorkflowNodePayload
+): Promise<WorkflowGraphNode> {
+  const res = await fetch(
+    `${API_BASE_URL}/workflows/${workflowId}/nodes/${nodeId}`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    }
+  );
+
+  if (!res.ok) {
+    console.error(
+      "[updateWorkflowNode] HTTP error:",
+      res.status,
+      res.statusText
+    );
+    throw new Error(
+      `Failed to update node ${nodeId} for workflow ${workflowId} (status ${res.status})`
+    );
+  }
+
+  const json = (await res.json()) as UpdateWorkflowNodeResponse;
+  console.log("[updateWorkflowNode] raw response:", json);
+
+  const raw: WorkflowNodeUpdateDto =
+    "data" in json ? json.data : (json as WorkflowNodeUpdateDto);
+
+  const node: WorkflowGraphNode = {
+    id: raw.id,
+    workflow_id: raw.workflowId,
+    kind: raw.kind,
+    name: raw.name,
+    pos_x: raw.posX,
+    pos_y: raw.posY,
+    config: raw.config,
+  };
+
+  return node;
+}
+
 /* ---------- Edge helpers ---------- */
 
 // POST /api/workflows/:id/edges
@@ -538,6 +612,35 @@ export async function deleteWorkflowEdge(
     throw new Error(
       `Failed to delete edge ${edgeId} for workflow ${workflowId} (status ${res.status})`
     );
+  }
+}
+
+export async function deleteWorkflowNode(
+  workflowId: number,
+  nodeId: number
+): Promise<boolean> {
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/workflows/${workflowId}/nodes/${nodeId}`,
+      {
+        method: "DELETE",
+      }
+    );
+
+    // Any 2xx (including 204) is a success
+    if (res.ok) {
+      return true;
+    }
+
+    console.error(
+      "[deleteWorkflowNode] HTTP error:",
+      res.status,
+      res.statusText
+    );
+    return false;
+  } catch (err) {
+    console.error("[deleteWorkflowNode] Network or fetch error:", err);
+    return false;
   }
 }
 

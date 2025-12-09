@@ -5,7 +5,7 @@ import AppLayout from "./layout/appLayout";
 import WorkflowsListPage from "./pages/Workflows/workflowListPage";
 import WorkflowDetailPage from "./pages/WorkflowDetail/workflowDetailPage";
 import ExecutionDetailPage from "./pages/Executions/executionDetailPage";
-import WorkflowBuilderPage from "./pages/Workflows/workflowBuilderPage"; // NEW
+import WorkflowBuilderPage from "./pages/Workflows/workflowBuilderPage"; 
 
 const App: React.FC = () => {
   return (

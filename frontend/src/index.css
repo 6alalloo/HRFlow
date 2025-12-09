@@ -28,3 +28,22 @@ body,
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
 }
+
+.react-flow__node {
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+
+
+.react-flow__node-hrflow .hrflow-node {
+  background-color: #0b1120 !important;  /* darker card */
+  border: 2px solid #38bdf8 !important;  /* bright cyan border */
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.8),
+              0 18px 40px rgba(15, 23, 42, 0.95) !important;
+}
+
+.react-flow__edge-path {
+  stroke: #38bdf8 !important;
+  stroke-width: 2px !important;
+}

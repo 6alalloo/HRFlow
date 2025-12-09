@@ -1,55 +1,122 @@
-import React, { useEffect, useState, useRef } from "react";
-import { useParams, useNavigate, useLocation } from "react-router-dom";
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+
 import {
   fetchWorkflows,
   fetchWorkflowGraph,
   executeWorkflow,
   createWorkflowNode,
   updateWorkflowNodePosition,
+  updateWorkflowNode,
   createWorkflowEdge,
+  deleteWorkflowNode,
+  type WorkflowApi,
+  type WorkflowGraphMeta,
+  type WorkflowGraphNode,
+  type WorkflowGraphEdge,
 } from "../../api/workflows";
-import type {
-  WorkflowApi,
-  WorkflowGraphMeta,
-  WorkflowGraphNode,
-  WorkflowGraphEdge,
-} from "../../api/workflows";
+
+import ReactFlow, {
+  Background,
+  Controls,
+  MiniMap,
+  ReactFlowProvider,
+  useReactFlow,
+  useNodesState,
+  useEdgesState,
+  addEdge,
+  type Connection,
+  type Node as RFNode,
+  type Edge as RFEdge,
+  type NodeDragHandler,
+} from "reactflow";
+
+import HRFlowNode, {
+  type HRFlowNodeData,
+} from "../../components/HRFlowNode";
 
 type BuilderState = {
   workflowId: number | null;
   workflowMeta?: WorkflowGraphMeta;
   nodes: WorkflowGraphNode[];
-  edges: WorkflowGraphEdge[];
-};
-
-type DragState = {
-  nodeId: number;
-  offsetX: number;
-  offsetY: number;
-};
-
-type PanState = {
-  isPanning: boolean;
-  startX: number;
-  startY: number;
-  scrollLeft: number;
-  scrollTop: number;
 };
 
 type ConfigTab = "general" | "config" | "advanced";
-type BuilderMode = "select" | "connect";
 
-const WorkflowBuilderPage: React.FC = () => {
+const nodeTypesMap = {
+  hrflow: HRFlowNode,
+};
+
+const nodePaletteTypes: string[] = [
+  "trigger",
+  "http",
+  "email",
+  "database",
+  "condition",
+  "variable",
+  "logger",
+  "datetime",
+  "cv_parse",
+];
+
+// Helpers to normalise edge shape (works with fromNodeId/toNodeId OR from_node_id/to_node_id)
+function getFromNodeId(edge: WorkflowGraphEdge): number {
+  if ("fromNodeId" in edge) return (edge as any).fromNodeId;
+  return (edge as { from_node_id: number }).from_node_id;
+}
+
+function getToNodeId(edge: WorkflowGraphEdge): number {
+  if ("toNodeId" in edge) return (edge as any).toNodeId;
+  return (edge as { to_node_id: number }).to_node_id;
+}
+
+function toReactFlowNode(node: WorkflowGraphNode): RFNode<HRFlowNodeData> {
+  return {
+    id: String(node.id),
+    type: "hrflow",
+    position: { x: node.pos_x, y: node.pos_y },
+    data: {
+      backendId: node.id,
+      name: node.name,
+      kind: node.kind,
+      config: node.config ?? {},
+    },
+  };
+}
+
+function toReactFlowEdge(edge: WorkflowGraphEdge): RFEdge {
+  return {
+    id: String(edge.id),
+    source: String(getFromNodeId(edge)),
+    target: String(getToNodeId(edge)),
+    label: edge.label ?? undefined,
+    type: "smoothstep",
+  };
+}
+
+const WorkflowBuilderContent: React.FC = () => {
   const params = useParams<{ id?: string }>();
   const navigate = useNavigate();
   const location = useLocation();
+
+  const { fitView, project } = useReactFlow();
+  const flowWrapperRef = useRef<HTMLDivElement | null>(null);
+  const hasInitialFit = useRef(false);
 
   const [state, setState] = useState<BuilderState>({
     workflowId: null,
     workflowMeta: undefined,
     nodes: [],
-    edges: [],
   });
+
+  const [rfNodes, setRfNodes, onNodesChange] =
+    useNodesState<HRFlowNodeData>([]);
+  const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<RFEdge>([]);
 
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -57,21 +124,11 @@ const WorkflowBuilderPage: React.FC = () => {
 
   const [selectedNodeId, setSelectedNodeId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<ConfigTab>("general");
-
-  const [dragState, setDragState] = useState<DragState | null>(null);
-  const [panState, setPanState] = useState<PanState | null>(null);
-
-  const [builderMode, setBuilderMode] = useState<BuilderMode>("select");
-  const [connectFromNodeId, setConnectFromNodeId] = useState<number | null>(
-    null
-  );
-
-  // Scrollable canvas container
-  const canvasRef = useRef<HTMLDivElement | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   const isGlobalBuilder = !params.id;
 
-  // ---------------- LOAD WORKFLOW + GRAPH ----------------
+  // --------------- LOAD WORKFLOW + GRAPH ----------------
 
   useEffect(() => {
     let cancelled = false;
@@ -81,14 +138,16 @@ const WorkflowBuilderPage: React.FC = () => {
       setError(null);
       setSelectedNodeId(null);
       setActiveTab("general");
-      setBuilderMode("select");
-      setConnectFromNodeId(null);
+      setDeleteConfirmOpen(false);
+      hasInitialFit.current = false;
 
       try {
         let workflowMeta: WorkflowGraphMeta | undefined;
+        let workflowId: number | null = null;
+        let nodes: WorkflowGraphNode[] = [];
+        let edges: WorkflowGraphEdge[] = [];
 
         if (params.id) {
-          // /workflows/:id/builder
           const numericId = Number(params.id);
           if (Number.isNaN(numericId)) {
             throw new Error("Invalid workflow ID in URL");
@@ -98,17 +157,14 @@ const WorkflowBuilderPage: React.FC = () => {
           if (cancelled) return;
 
           workflowMeta = graph.workflow;
-          setState({
-            workflowId: numericId,
-            workflowMeta,
-            nodes: graph.nodes,
-            edges: graph.edges,
-          });
+          workflowId = numericId;
+          nodes = graph.nodes;
+          edges = graph.edges;
 
           localStorage.setItem("hrflow:lastWorkflowId", String(numericId));
         } else {
-          // /builder (global entry)
           const lastIdStr = localStorage.getItem("hrflow:lastWorkflowId");
+
           if (lastIdStr) {
             const lastId = Number(lastIdStr);
             if (!Number.isNaN(lastId)) {
@@ -116,66 +172,83 @@ const WorkflowBuilderPage: React.FC = () => {
                 const graph = await fetchWorkflowGraph(lastId);
                 if (!cancelled) {
                   workflowMeta = graph.workflow;
-                  setState({
-                    workflowId: lastId,
-                    workflowMeta,
-                    nodes: graph.nodes,
-                    edges: graph.edges,
-                  });
+                  workflowId = lastId;
+                  nodes = graph.nodes;
+                  edges = graph.edges;
+                  localStorage.setItem(
+                    "hrflow:lastWorkflowId",
+                    String(lastId)
+                  );
                 }
-                return;
-              } catch (e) {
+              } catch (err) {
                 console.warn(
                   "[WorkflowBuilderPage] Failed to load last workflow from storage, falling back to first workflow.",
-                  e
+                  err
                 );
               }
             }
           }
 
-          const workflows: WorkflowApi[] = await fetchWorkflows();
-          if (cancelled) return;
+          // Fallback: first workflow from list
+          if (!workflowId) {
+            const workflows: WorkflowApi[] = await fetchWorkflows();
+            if (cancelled) return;
 
-          if (!workflows || workflows.length === 0) {
-            setError(
-              "No workflows found. Create a workflow from the Workflows page first."
-            );
-            setState({
-              workflowId: null,
-              workflowMeta: undefined,
-              nodes: [],
-              edges: [],
-            });
-            return;
+            if (!workflows || workflows.length === 0) {
+              setError(
+                "No workflows found. Create a workflow from the Workflows page first."
+              );
+              setState({
+                workflowId: null,
+                workflowMeta: undefined,
+                nodes: [],
+              });
+              setRfNodes([]);
+              setRfEdges([]);
+              return;
+            }
+
+            const first = workflows[0];
+            const graph = await fetchWorkflowGraph(first.id);
+            if (cancelled) return;
+
+            workflowMeta =
+              graph.workflow ??
+              ({
+                id: first.id,
+                name: first.name,
+                description: first.description ?? null,
+              } as WorkflowGraphMeta);
+
+            workflowId = first.id;
+            nodes = graph.nodes;
+            edges = graph.edges;
+
+            localStorage.setItem("hrflow:lastWorkflowId", String(first.id));
           }
-
-          const first = workflows[0];
-          const graph = await fetchWorkflowGraph(first.id);
-          if (cancelled) return;
-
-          workflowMeta =
-            graph.workflow ??
-            ({
-              id: first.id,
-              name: first.name,
-              description: first.description ?? null,
-            } as WorkflowGraphMeta);
-
-          setState({
-            workflowId: first.id,
-            workflowMeta,
-            nodes: graph.nodes,
-            edges: graph.edges,
-          });
-
-          localStorage.setItem("hrflow:lastWorkflowId", String(first.id));
         }
+
+        if (cancelled) return;
+
+        setState({
+          workflowId,
+          workflowMeta,
+          nodes,
+        });
+
+        // Normalise into React Flow nodes/edges
+        setRfNodes(nodes.map(toReactFlowNode));
+        setRfEdges(edges.map(toReactFlowEdge));
       } catch (e: unknown) {
         console.error("[WorkflowBuilderPage] Error loading builder:", e);
         if (!cancelled) {
           const message =
-            e instanceof Error ? e.message : "Failed to load workflow builder.";
+            e instanceof Error
+              ? e.message
+              : "Failed to load workflow builder.";
           setError(message);
+          setRfNodes([]);
+          setRfEdges([]);
         }
       } finally {
         if (!cancelled) {
@@ -184,30 +257,26 @@ const WorkflowBuilderPage: React.FC = () => {
       }
     }
 
-    load();
+    void load();
 
     return () => {
       cancelled = true;
     };
-  }, [params.id, location.pathname]);
+  }, [params.id, location.pathname, setRfNodes, setRfEdges]);
+
+  // Initial fitView once nodes are loaded
+  useEffect(() => {
+    if (!loading && !hasInitialFit.current && rfNodes.length > 0) {
+      fitView({ padding: 0.4, duration: 200 });
+      hasInitialFit.current = true;
+    }
+  }, [loading, rfNodes, fitView]);
 
   const workflowName =
     state.workflowMeta?.name ??
     (state.workflowId ? `Workflow #${state.workflowId}` : "No workflow");
 
-  const nodeTypes: string[] = [
-    "trigger",
-    "http",
-    "email",
-    "database",
-    "condition",
-    "variable",
-    "logger",
-    "datetime",
-    "cv_parse",
-  ];
-
-  // ---------------- TOOLBAR HANDLERS ----------------
+  // --------------- TOOLBAR HANDLERS ----------------
 
   const handleBackClick = () => {
     if (state.workflowId) {
@@ -242,144 +311,130 @@ const WorkflowBuilderPage: React.FC = () => {
   };
 
   const handleResetViewClick = () => {
-    const canvasEl = canvasRef.current;
-    if (!canvasEl) return;
-    canvasEl.scrollLeft = 0;
-    canvasEl.scrollTop = 0;
+    fitView({ padding: 0.3, duration: 200 });
   };
 
   const handleCenterViewClick = () => {
-    const canvasEl = canvasRef.current;
-    if (!canvasEl || state.nodes.length === 0) return;
-
-    const xs = state.nodes.map((n) => n.pos_x);
-    const ys = state.nodes.map((n) => n.pos_y);
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs);
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys);
-
-    const centerX = (minX + maxX) / 2;
-    const centerY = (minY + maxY) / 2;
-
-    const targetScrollLeft = Math.max(0, centerX - canvasEl.clientWidth / 2);
-    const targetScrollTop = Math.max(0, centerY - canvasEl.clientHeight / 2);
-
-    canvasEl.scrollLeft = targetScrollLeft;
-    canvasEl.scrollTop = targetScrollTop;
+    fitView({ padding: 0.6, duration: 200 });
   };
 
-  const toggleConnectMode = () => {
-    setBuilderMode((prev) => (prev === "select" ? "connect" : "select"));
-    setConnectFromNodeId(null);
-  };
+  // --------------- NODE CREATION (click + drag) ---------------
 
-  // ---------------- NODE CREATION ----------------
+  const handleAddNodeClick = useCallback(
+    async (kind: string) => {
+      if (!state.workflowId) {
+        alert(
+          "No workflow selected. Open a workflow from the Workflows page first."
+        );
+        return;
+      }
 
-  const handleAddNodeClick = async (kind: string) => {
-    if (!state.workflowId) {
-      alert(
-        "No workflow selected. Open a workflow from the Workflows page first."
-      );
-      return;
-    }
+      try {
+        let posX = 200;
+        let posY = 120;
 
-    try {
-      const canvasEl = canvasRef.current;
-      // Create near current viewport top-left so it’s always visible
-      const posX = canvasEl ? canvasEl.scrollLeft + 120 : undefined;
-      const posY = canvasEl ? canvasEl.scrollTop + 80 : undefined;
+        if (flowWrapperRef.current) {
+          const bounds = flowWrapperRef.current.getBoundingClientRect();
+          const centerPoint = project({
+            x: bounds.left + bounds.width / 2,
+            y: bounds.top + bounds.height / 2,
+          });
+          posX = centerPoint.x;
+          posY = centerPoint.y;
+        }
 
-      const newNode = await createWorkflowNode(state.workflowId, {
-        kind,
-        posX,
-        posY,
-      });
+        const newNode = await createWorkflowNode(state.workflowId, {
+          kind,
+          posX,
+          posY,
+        });
 
-      setState((prev) => ({
-        ...prev,
-        nodes: [...prev.nodes, newNode],
-      }));
+        setState((prev) => ({
+          ...prev,
+          nodes: [...prev.nodes, newNode],
+        }));
 
-      setSelectedNodeId(newNode.id);
-      setActiveTab("general");
-    } catch (e: unknown) {
-      console.error("[WorkflowBuilderPage] Failed to create node:", e);
-      alert("Failed to create node. Check console for details.");
-    }
-  };
+        setRfNodes((prev) => [...prev, toReactFlowNode(newNode)]);
 
-  // Drag from palette → canvas
+        setSelectedNodeId(newNode.id);
+        setActiveTab("general");
+        setDeleteConfirmOpen(false);
+      } catch (e) {
+        console.error("[WorkflowBuilderPage] Failed to create node:", e);
+        alert("Failed to create node. Check console for details.");
+      }
+    },
+    [project, state.workflowId, setRfNodes]
+  );
+
   const handlePaletteDragStart = (
     e: React.DragEvent<HTMLButtonElement>,
     kind: string
   ) => {
-    e.dataTransfer.setData("application/x-hrflow-node-kind", kind);
-    e.dataTransfer.setData("text/plain", kind); // fallback
-    e.dataTransfer.effectAllowed = "copy";
+    e.dataTransfer.setData("application/reactflow", kind);
+    e.dataTransfer.setData("text/plain", kind);
+    e.dataTransfer.effectAllowed = "move";
   };
 
-  const handleCanvasDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    // Needed so drop fires
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
+  const handleCanvasDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
   };
 
-  const handleCanvasDrop = async (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
+  const handleCanvasDrop = useCallback(
+    async (event: React.DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
 
-    if (!state.workflowId) {
-      alert(
-        "No workflow selected. Open a workflow from the Workflows page first."
-      );
-      return;
-    }
+      if (!state.workflowId) {
+        alert(
+          "No workflow selected. Open a workflow from the Workflows page first."
+        );
+        return;
+      }
 
-    const canvasEl = canvasRef.current;
-    if (!canvasEl) return;
+      const kind =
+        event.dataTransfer.getData("application/reactflow") ||
+        event.dataTransfer.getData("text/plain");
 
-    const kind =
-      e.dataTransfer.getData("application/x-hrflow-node-kind") ||
-      e.dataTransfer.getData("text/plain");
+      if (!kind) return;
+      if (!flowWrapperRef.current) return;
 
-    if (!kind) {
-      return;
-    }
+      const bounds = flowWrapperRef.current.getBoundingClientRect();
 
-    const rect = canvasEl.getBoundingClientRect();
-
-    // Adjust for scroll so we get coordinates in canvas space
-    const posX = Math.round(
-      e.clientX - rect.left + canvasEl.scrollLeft
-    );
-    const posY = Math.round(
-      e.clientY - rect.top + canvasEl.scrollTop
-    );
-
-    try {
-      const newNode = await createWorkflowNode(state.workflowId, {
-        kind,
-        posX,
-        posY,
+      const position = project({
+        x: event.clientX - bounds.left,
+        y: event.clientY - bounds.top,
       });
 
-      setState((prev) => ({
-        ...prev,
-        nodes: [...prev.nodes, newNode],
-      }));
+      try {
+        const newNode = await createWorkflowNode(state.workflowId, {
+          kind,
+          posX: position.x,
+          posY: position.y,
+        });
 
-      setSelectedNodeId(newNode.id);
-      setActiveTab("general");
-    } catch (err) {
-      console.error(
-        "[WorkflowBuilderPage] Failed to create node via drop:",
-        err
-      );
-      alert("Failed to create node. Check console for details.");
-    }
-  };
+        setState((prev) => ({
+          ...prev,
+          nodes: [...prev.nodes, newNode],
+        }));
 
-  // ---------------- NODE SELECTION / EDGE CREATION ----------------
+        setRfNodes((prev) => [...prev, toReactFlowNode(newNode)]);
+
+        setSelectedNodeId(newNode.id);
+        setActiveTab("general");
+        setDeleteConfirmOpen(false);
+      } catch (e) {
+        console.error(
+          "[WorkflowBuilderPage] Failed to create node via drop:",
+          e
+        );
+        alert("Failed to create node. Check console for details.");
+      }
+    },
+    [project, state.workflowId, setRfNodes]
+  );
+
+  // --------------- SELECTION + CONFIG PANEL ---------------
 
   const selectedNode: WorkflowGraphNode | null =
     selectedNodeId !== null
@@ -391,206 +446,224 @@ const WorkflowBuilderPage: React.FC = () => {
       ? JSON.stringify(selectedNode.config, null, 2)
       : "{ }";
 
-  const updateSelectedNode = (
-    updates: Partial<Pick<WorkflowGraphNode, "name">>
-  ) => {
-    if (selectedNodeId === null) return;
+  const updateSelectedNode = useCallback(
+    (updates: Partial<Pick<WorkflowGraphNode, "name">>) => {
+      if (selectedNodeId === null) return;
 
-    setState((prev) => ({
-      ...prev,
-      nodes: prev.nodes.map((node) =>
-        node.id === selectedNodeId ? { ...node, ...updates } : node
-      ),
-    }));
-  };
-
-  const handleNodeClick = async (nodeId: number) => {
-    // Edge connect mode
-    if (builderMode === "connect") {
-      if (!connectFromNodeId) {
-        // First node selected
-        setConnectFromNodeId(nodeId);
-        setSelectedNodeId(nodeId);
-        setActiveTab("general");
-        return;
-      }
-
-      if (connectFromNodeId === nodeId) {
-        // Clicking the same node again cancels
-        setConnectFromNodeId(null);
-        return;
-      }
-
-      // Second node selected → create edge
-      if (!state.workflowId) return;
-
-      try {
-        const newEdge = await createWorkflowEdge(state.workflowId, {
-          fromNodeId: connectFromNodeId,
-          toNodeId: nodeId,
-        });
-
-        setState((prev) => ({
-          ...prev,
-          edges: [...prev.edges, newEdge],
-        }));
-      } catch (err) {
-        console.error("[WorkflowBuilderPage] Failed to create edge:", err);
-        alert("Failed to create edge. Check console for details.");
-      } finally {
-        // Exit connect mode after connecting
-        setConnectFromNodeId(null);
-        setBuilderMode("select");
-      }
-
-      return;
-    }
-
-    // Normal select mode
-    setSelectedNodeId((current) => (current === nodeId ? null : nodeId));
-    setActiveTab("general");
-  };
-
-  // ---------------- DRAG NODES ----------------
-
-  const handleNodeMouseDown = (
-    node: WorkflowGraphNode,
-    e: React.MouseEvent<HTMLButtonElement>
-  ) => {
-    // In connect mode, clicking nodes is for edges, not dragging
-    if (builderMode === "connect") {
-      return;
-    }
-
-    e.preventDefault();
-    e.stopPropagation();
-
-    const canvasEl = canvasRef.current;
-    if (!canvasEl) return;
-
-    const rect = canvasEl.getBoundingClientRect();
-
-    // Mouse position in canvas "world" coordinates
-    const worldX = e.clientX - rect.left + canvasEl.scrollLeft;
-    const worldY = e.clientY - rect.top + canvasEl.scrollTop;
-
-    setDragState({
-      nodeId: node.id,
-      offsetX: worldX - node.pos_x, // where inside the node you grabbed
-      offsetY: worldY - node.pos_y,
-    });
-
-    setSelectedNodeId(node.id);
-    setActiveTab("general");
-  };
-
-  // ---------------- PAN CANVAS (DRAG BACKGROUND) ----------------
-
-  const handleCanvasBackgroundMouseDown = (
-    e: React.MouseEvent<HTMLDivElement>
-  ) => {
-    // Don’t start a pan if we’re already dragging a node
-    if (dragState) return;
-
-    const canvasEl = canvasRef.current;
-    if (!canvasEl) return;
-
-    setPanState({
-      isPanning: true,
-      startX: e.clientX,
-      startY: e.clientY,
-      scrollLeft: canvasEl.scrollLeft,
-      scrollTop: canvasEl.scrollTop,
-    });
-  };
-
-  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const canvasEl = canvasRef.current;
-    if (!canvasEl) return;
-
-    // First: dragging a node
-    if (dragState) {
-      const rect = canvasEl.getBoundingClientRect();
-
-      const worldX = e.clientX - rect.left + canvasEl.scrollLeft;
-      const worldY = e.clientY - rect.top + canvasEl.scrollTop;
-
-      const newX = worldX - dragState.offsetX;
-      const newY = worldY - dragState.offsetY;
-
-      const clampedX = Math.max(0, Math.round(newX));
-      const clampedY = Math.max(0, Math.round(newY));
-
+      // 1) Update builder's internal node list
       setState((prev) => ({
         ...prev,
         nodes: prev.nodes.map((node) =>
-          node.id === dragState.nodeId
-            ? { ...node, pos_x: clampedX, pos_y: clampedY }
-            : node
+          node.id === selectedNodeId ? { ...node, ...updates } : node
         ),
       }));
-      return; // don't also pan
-    }
 
-    // Second: panning
-    if (panState?.isPanning) {
-      const dx = e.clientX - panState.startX;
-      const dy = e.clientY - panState.startY;
+      // 2) Update React Flow node data so the label on the canvas updates
+      setRfNodes((prev) =>
+        prev.map((node) =>
+          Number(node.id) === selectedNodeId
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  ...(updates.name !== undefined
+                    ? { name: updates.name ?? null }
+                    : {}),
+                },
+              }
+            : node
+        )
+      );
 
-      canvasEl.scrollLeft = panState.scrollLeft - dx;
-      canvasEl.scrollTop = panState.scrollTop - dy;
-    }
-  };
+      // 3) Persist to backend (name only for now)
+      if (state.workflowId && updates.name !== undefined) {
+        const workflowId = state.workflowId;
+        const name = updates.name ?? null;
 
-  const finishDragOrPan = async () => {
-    const canvasEl = canvasRef.current;
+        (async () => {
+          try {
+            await updateWorkflowNode(workflowId, selectedNodeId, { name });
+          } catch (e) {
+            console.error(
+              "[WorkflowBuilderPage] Failed to persist node name:",
+              e
+            );
+          }
+        })();
+      }
+    },
+    [selectedNodeId, state.workflowId, setRfNodes]
+  );
 
-    if (!canvasEl) {
-      setDragState(null);
-      setPanState(null);
+  const updateSelectedNodeConfig = useCallback(
+    (partialConfig: Record<string, unknown>) => {
+      if (selectedNodeId === null || !state.workflowId) return;
+
+      const existingNode = state.nodes.find((n) => n.id === selectedNodeId);
+      const currentConfig = (existingNode?.config ?? {}) as Record<
+        string,
+        unknown
+      >;
+      const newConfig = { ...currentConfig, ...partialConfig };
+
+      // 1) Update our in-memory graph state
+      setState((prev) => ({
+        ...prev,
+        nodes: prev.nodes.map((node) =>
+          node.id === selectedNodeId ? { ...node, config: newConfig } : node
+        ),
+      }));
+
+      // 2) Update React Flow node data so the canvas has the latest config
+      setRfNodes((prev) =>
+        prev.map((rfNode) =>
+          Number(rfNode.id) === selectedNodeId
+            ? {
+                ...rfNode,
+                data: {
+                  ...(rfNode.data as HRFlowNodeData),
+                  config: newConfig,
+                },
+              }
+            : rfNode
+        )
+      );
+
+      // 3) Persist to backend (fire and forget)
+      void updateWorkflowNode(state.workflowId, selectedNodeId, {
+        config: newConfig,
+      });
+    },
+    [selectedNodeId, state.workflowId, state.nodes, setRfNodes]
+  );
+
+  const handleDeleteSelectedNode = useCallback(async () => {
+    if (selectedNodeId === null || !state.workflowId) {
       return;
     }
 
-    if (dragState && state.workflowId) {
-      const node = state.nodes.find((n) => n.id === dragState.nodeId);
-      setDragState(null);
-      setPanState(null);
-      if (!node) return;
+    const nodeId = selectedNodeId;
+    const workflowId = state.workflowId;
+
+    // Optimistic UI: remove from React Flow + local state immediately
+    setRfNodes((prev) =>
+      prev.filter((n) => (n.data as HRFlowNodeData).backendId !== nodeId)
+    );
+
+    setRfEdges((prev) =>
+      prev.filter(
+        (e) => e.source !== String(nodeId) && e.target !== String(nodeId)
+      )
+    );
+
+    setState((prev) => ({
+      ...prev,
+      nodes: prev.nodes.filter((n) => n.id !== nodeId),
+    }));
+
+    setSelectedNodeId(null);
+    setDeleteConfirmOpen(false);
+
+    try {
+      await deleteWorkflowNode(workflowId, nodeId);
+    } catch (error) {
+      console.error("[WorkflowBuilderPage] Failed to delete node:", error);
+      alert("Failed to delete node on the server. Check console for details.");
+      // Optional: you could refetch the graph here to fully resync.
+    }
+  }, [selectedNodeId, state.workflowId, setRfNodes, setRfEdges]);
+
+  // --------------- NODE POSITION SYNC ---------------
+
+  const handleNodeDragStop = useCallback<NodeDragHandler>(
+    (_event, node) => {
+      const data = node.data as HRFlowNodeData;
+      const backendId = data.backendId;
+      const { x, y } = node.position;
+
+      setState((prev) => ({
+        ...prev,
+        nodes: prev.nodes.map((n) =>
+          n.id === backendId ? { ...n, pos_x: x, pos_y: y } : n
+        ),
+      }));
+
+      if (state.workflowId) {
+        void updateWorkflowNodePosition(state.workflowId, backendId, x, y);
+      }
+    },
+    [state.workflowId]
+  );
+
+  // --------------- CONNECT HANDLER ---------------
+
+  const handleConnect = useCallback(
+    async (connection: Connection) => {
+      if (!state.workflowId) return;
+      if (!connection.source || !connection.target) return;
+
+      const fromId = Number(connection.source);
+      const toId = Number(connection.target);
+
+      // Optimistic edge so you SEE it immediately
+      const tempEdgeId = `temp-${Date.now()}`;
+      const tempEdge: RFEdge = {
+        id: tempEdgeId,
+        source: connection.source,
+        target: connection.target,
+        type: "smoothstep",
+      };
+
+      setRfEdges((current) => addEdge(tempEdge, current));
 
       try {
-        await updateWorkflowNodePosition(
-          state.workflowId,
-          node.id,
-          node.pos_x,
-          node.pos_y
+        const created = await createWorkflowEdge(state.workflowId, {
+          fromNodeId: fromId,
+          toNodeId: toId,
+        });
+
+        setRfEdges((current) =>
+          current.map((edge) =>
+            edge.id === tempEdgeId
+              ? {
+                  id: String(created.id),
+                  source: String(getFromNodeId(created)),
+                  target: String(getToNodeId(created)),
+                  type: "smoothstep",
+                }
+              : edge
+          )
         );
-      } catch (e) {
-        console.error(
-          "[WorkflowBuilderPage] Failed to persist node position:",
-          e
+      } catch (error) {
+        console.error("[WorkflowBuilderPage] Failed to create edge:", error);
+        setRfEdges((current) =>
+          current.filter((edge) => edge.id !== tempEdgeId)
         );
+        alert("Failed to create edge. Check console for details.");
       }
-      return;
-    }
+    },
+    [state.workflowId, setRfEdges]
+  );
 
-    // Only panning
-    setDragState(null);
-    setPanState(null);
-  };
+  const handleSelectionChange = useCallback(
+    (params: { nodes: RFNode[]; edges: RFEdge[] }) => {
+      const nodes = params.nodes ?? [];
+      if (nodes.length === 0) {
+        setSelectedNodeId(null);
+        setDeleteConfirmOpen(false);
+        return;
+      }
 
-  const handleCanvasMouseUp = () => {
-    if (dragState || panState?.isPanning) {
-      void finishDragOrPan();
-    }
-  };
+      const first = nodes[0];
+      const idNum = Number(first.id);
+      setSelectedNodeId(idNum);
+      setActiveTab("general");
+      setDeleteConfirmOpen(false);
+    },
+    []
+  );
 
-  const handleCanvasMouseLeave = () => {
-    if (dragState || panState?.isPanning) {
-      void finishDragOrPan();
-    }
-  };
-
-  // ---------------- RENDER ----------------
+  // --------------- RENDER ---------------
 
   if (loading) {
     return (
@@ -615,12 +688,6 @@ const WorkflowBuilderPage: React.FC = () => {
     );
   }
 
-  const canvasCursor =
-    dragState || panState?.isPanning ? "grabbing" : "default";
-
-  const NODE_WIDTH = 200; // visual estimate used for edge anchors
-  const NODE_HEIGHT = 80;
-
   return (
     <div className="py-3">
       {/* Header: title + toolbar */}
@@ -639,19 +706,6 @@ const WorkflowBuilderPage: React.FC = () => {
           <span className="badge bg-secondary">
             {isGlobalBuilder ? "Global builder" : "Workflow builder"}
           </span>
-          <button
-            className={
-              "btn btn-outline-secondary btn-sm" +
-              (builderMode === "connect" ? " active" : "")
-            }
-            onClick={toggleConnectMode}
-          >
-            {builderMode === "connect"
-              ? connectFromNodeId
-                ? "Pick target node…"
-                : "Connect mode (pick source)"
-              : "Connect nodes"}
-          </button>
           <button
             className="btn btn-outline-secondary btn-sm"
             onClick={handleBackClick}
@@ -708,7 +762,7 @@ const WorkflowBuilderPage: React.FC = () => {
                 Click or drag a type to add nodes.
               </p>
               <div className="d-flex flex-column gap-1">
-                {nodeTypes.map((type) => (
+                {nodePaletteTypes.map((type) => (
                   <button
                     key={type}
                     type="button"
@@ -716,7 +770,7 @@ const WorkflowBuilderPage: React.FC = () => {
                     onDragStart={(e) => handlePaletteDragStart(e, type)}
                     className="btn btn-sm btn-outline-light text-start"
                     style={{ borderRadius: "999px" }}
-                    onClick={() => handleAddNodeClick(type)}
+                    onClick={() => void handleAddNodeClick(type)}
                   >
                     {type}
                   </button>
@@ -726,7 +780,7 @@ const WorkflowBuilderPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Center: Canvas */}
+        {/* Center: React Flow Canvas */}
         <div className="col-7 d-flex flex-column">
           <div
             className="card flex-grow-1"
@@ -740,146 +794,56 @@ const WorkflowBuilderPage: React.FC = () => {
               <div className="d-flex justify-content-between align-items-center mb-2 px-2">
                 <span className="small text-muted">Canvas</span>
                 <span className="small text-muted">
-                  Nodes: {state.nodes.length} · Edges: {state.edges.length}
+                  Nodes: {rfNodes.length} · Edges: {rfEdges.length}
                 </span>
               </div>
 
               <div
-                ref={canvasRef}
-                className="flex-grow-1 position-relative"
+                ref={flowWrapperRef}
+                className="flex-grow-1"
                 style={{
                   borderRadius: "0.75rem",
                   border: "1px dashed rgba(255,255,255,0.12)",
-                  backgroundImage:
-                    "linear-gradient(to right, rgba(148,163,184,0.15) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,0.15) 1px, transparent 1px)",
-                  backgroundSize: "24px 24px",
-                  overflow: "auto",
-                  cursor: canvasCursor,
+                  overflow: "hidden",
                 }}
-                onMouseDown={handleCanvasBackgroundMouseDown}
-                onMouseMove={handleCanvasMouseMove}
-                onMouseUp={handleCanvasMouseUp}
-                onMouseLeave={handleCanvasMouseLeave}
-                onDragOver={handleCanvasDragOver}
                 onDrop={handleCanvasDrop}
+                onDragOver={handleCanvasDragOver}
               >
-                {/* Edges as SVG lines */}
-                <svg
-                  className="position-absolute"
-                  style={{
-                    inset: 0,
-                    pointerEvents: "none",
+                <ReactFlow
+                  nodes={rfNodes}
+                  edges={rfEdges}
+                  nodeTypes={nodeTypesMap}
+                  fitView
+                  onNodesChange={onNodesChange}
+                  onEdgesChange={onEdgesChange}
+                  onNodeDragStop={handleNodeDragStop}
+                  onConnect={handleConnect}
+                  onSelectionChange={handleSelectionChange}
+                  proOptions={{ hideAttribution: false }}
+                  defaultEdgeOptions={{
+                    type: "smoothstep",
+                    style: { stroke: "#38bdf8", strokeWidth: 2 },
+                  }}
+                  connectionLineStyle={{
+                    stroke: "#38bdf8",
+                    strokeWidth: 2,
                   }}
                 >
-                  {state.edges.map((edge) => {
-                    const from = state.nodes.find(
-                      (n) => n.id === edge.from_node_id
-                    );
-                    const to = state.nodes.find(
-                      (n) => n.id === edge.to_node_id
-                    );
-                    if (!from || !to) return null;
-
-                    const fromX = from.pos_x + NODE_WIDTH / 2;
-                    const fromY = from.pos_y + NODE_HEIGHT / 2;
-                    const toX = to.pos_x + NODE_WIDTH / 2;
-                    const toY = to.pos_y + NODE_HEIGHT / 2;
-
-                    const isFromPending =
-                      builderMode === "connect" &&
-                      connectFromNodeId === from.id;
-
-                    return (
-                      <line
-                        key={edge.id}
-                        x1={fromX}
-                        y1={fromY}
-                        x2={toX}
-                        y2={toY}
-                        stroke={
-                          isFromPending
-                            ? "#3b82f6"
-                            : "rgba(148,163,184,0.7)"
-                        }
-                        strokeWidth={2}
-                      />
-                    );
-                  })}
-                </svg>
-
-                {/* Nodes */}
-                {state.nodes.map((node) => {
-                  const isSelected = node.id === selectedNodeId;
-                  const isConnectSource =
-                    builderMode === "connect" &&
-                    connectFromNodeId === node.id;
-
-                  return (
-                    <button
-                      key={node.id}
-                      type="button"
-                      className="position-absolute text-start p-0 border-0 bg-transparent"
-                      style={{
-                        left: `${node.pos_x}px`,
-                        top: `${node.pos_y}px`,
-                        minWidth: "180px",
-                        cursor:
-                          builderMode === "connect" ? "pointer" : "grab",
-                      }}
-                      onMouseDown={(e) => handleNodeMouseDown(node, e)}
-                      onClick={() => void handleNodeClick(node.id)}
-                    >
-                      <div
-                        className="p-2"
-                        style={{
-                          borderRadius: "0.85rem",
-                          backgroundColor: "rgba(15,23,42,0.95)",
-                          border: isConnectSource
-                            ? "2px dashed #3b82f6"
-                            : isSelected
-                            ? "2px solid #3b82f6"
-                            : "1px solid rgba(148,163,184,0.5)",
-                          boxShadow: isSelected
-                            ? "0 0 0 1px rgba(59,130,246,0.7), 0 18px 35px rgba(15,23,42,0.9)"
-                            : "0 10px 25px rgba(15,23,42,0.9), 0 0 0 1px rgba(15,23,42,1)",
-                          transition:
-                            "border-color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease",
-                          transform: isSelected ? "translateY(-1px)" : "none",
-                        }}
-                      >
-                        <div className="d-flex justify-content-between align-items-center mb-1">
-                          <span className="small text-uppercase text-muted">
-                            {node.kind}
-                          </span>
-                          <span
-                            className="badge bg-primary"
-                            style={{ fontSize: "0.65rem" }}
-                          >
-                            #{node.id}
-                          </span>
-                        </div>
-                        <div className="fw-semibold small text-light">
-                          {node.name || "Untitled node"}
-                        </div>
-                        {node.config &&
-                          Object.keys(node.config).length > 0 && (
-                            <div className="mt-1 text-muted small">
-                              <code style={{ fontSize: "0.7rem" }}>
-                                {JSON.stringify(node.config)}
-                              </code>
-                            </div>
-                          )}
-                      </div>
-                    </button>
-                  );
-                })}
-
-                {state.nodes.length === 0 && (
-                  <div className="h-100 d-flex align-items-center justify-content-center text-muted small">
-                    No nodes yet. Click or drag types from the palette on the
-                    left.
-                  </div>
-                )}
+                  <Background
+                    gap={24}
+                    size={1}
+                    color="rgba(148,163,184,0.2)"
+                  />
+                  <MiniMap
+                    pannable
+                    zoomable
+                    style={{
+                      backgroundColor: "#020617",
+                      borderRadius: "0.75rem",
+                    }}
+                  />
+                  <Controls />
+                </ReactFlow>
               </div>
             </div>
           </div>
@@ -996,12 +960,352 @@ const WorkflowBuilderPage: React.FC = () => {
                             : "No"}
                         </div>
                       </div>
+
+                      <div className="mt-3 pt-2 border-top border-secondary">
+                        {!deleteConfirmOpen && (
+                          <>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-danger w-100"
+                              onClick={() => setDeleteConfirmOpen(true)}
+                            >
+                              Delete node
+                            </button>
+                            <div className="form-text">
+                              This will also remove any edges connected to this
+                              node.
+                            </div>
+                          </>
+                        )}
+
+                        {deleteConfirmOpen && (
+                          <div className="alert alert-danger py-2 px-3 mt-2 mb-0 small">
+                            <div className="fw-semibold mb-1">
+                              Delete this node and all edges connected to it?
+                            </div>
+                            <div className="d-flex gap-2">
+                              <button
+                                type="button"
+                                className="btn btn-danger btn-sm flex-grow-1"
+                                onClick={() => {
+                                  void handleDeleteSelectedNode();
+                                }}
+                              >
+                                Yes, delete
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-outline-light btn-sm"
+                                onClick={() => setDeleteConfirmOpen(false)}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
 
-                  {activeTab === "config" && (
+                  {activeTab === "config" && selectedNode && (
                     <div className="small">
-                      <div className="text-muted mb-2">
+                      {/* Friendly forms per node type */}
+                      {(() => {
+                        const cfg = (selectedNode.config ?? {}) as Record<
+                          string,
+                          any
+                        >;
+
+                        if (selectedNode.kind === "http") {
+                          return (
+                            <>
+                              <div className="text-muted mb-2">
+                                HTTP node configuration
+                              </div>
+
+                              <div className="mb-2">
+                                <label className="form-label text-muted mb-1">
+                                  Method
+                                </label>
+                                <select
+                                  className="form-select form-select-sm"
+                                  value={cfg.method ?? "GET"}
+                                  onChange={(e) =>
+                                    updateSelectedNodeConfig({
+                                      method: e.target.value,
+                                    })
+                                  }
+                                >
+                                  <option value="GET">GET</option>
+                                  <option value="POST">POST</option>
+                                  <option value="PUT">PUT</option>
+                                  <option value="PATCH">PATCH</option>
+                                  <option value="DELETE">DELETE</option>
+                                </select>
+                              </div>
+
+                              <div className="mb-2">
+                                <label className="form-label text-muted mb-1">
+                                  URL
+                                </label>
+                                <input
+                                  type="text"
+                                  className="form-control form-control-sm"
+                                  value={cfg.url ?? ""}
+                                  onChange={(e) =>
+                                    updateSelectedNodeConfig({
+                                      url: e.target.value,
+                                    })
+                                  }
+                                  placeholder="https://api.example.com/resource"
+                                />
+                              </div>
+
+                              <div className="mb-2">
+                                <label className="form-label text-muted mb-1">
+                                  Headers (JSON or key:value lines)
+                                </label>
+                                <textarea
+                                  className="form-control form-control-sm"
+                                  rows={3}
+                                  value={cfg.headers ?? ""}
+                                  onChange={(e) =>
+                                    updateSelectedNodeConfig({
+                                      headers: e.target.value,
+                                    })
+                                  }
+                                  placeholder={`Authorization: Bearer {{token}}`}
+                                />
+                                <div className="form-text">
+                                  For now this is stored as plain text. Later we
+                                  can add a proper key/value editor.
+                                </div>
+                              </div>
+
+                              <div className="mb-3">
+                                <label className="form-label text-muted mb-1">
+                                  Body template
+                                </label>
+                                <textarea
+                                  className="form-control form-control-sm"
+                                  rows={4}
+                                  value={cfg.bodyTemplate ?? ""}
+                                  onChange={(e) =>
+                                    updateSelectedNodeConfig({
+                                      bodyTemplate: e.target.value,
+                                    })
+                                  }
+                                  placeholder={`{"name": "{{user.name}}", "email": "{{user.email}}"}`}
+                                />
+                              </div>
+                            </>
+                          );
+                        }
+
+                        if (selectedNode.kind === "email") {
+                          return (
+                            <>
+                              <div className="text-muted mb-2">
+                                Email node configuration
+                              </div>
+
+                              <div className="mb-2">
+                                <label className="form-label text-muted mb-1">
+                                  To
+                                </label>
+                                <input
+                                  type="text"
+                                  className="form-control form-control-sm"
+                                  value={cfg.to ?? ""}
+                                  onChange={(e) =>
+                                    updateSelectedNodeConfig({
+                                      to: e.target.value,
+                                    })
+                                  }
+                                  placeholder="user@example.com, {{recipientEmail}}"
+                                />
+                              </div>
+
+                              <div className="mb-2">
+                                <label className="form-label text-muted mb-1">
+                                  CC
+                                </label>
+                                <input
+                                  type="text"
+                                  className="form-control form-control-sm"
+                                  value={cfg.cc ?? ""}
+                                  onChange={(e) =>
+                                    updateSelectedNodeConfig({
+                                      cc: e.target.value,
+                                    })
+                                  }
+                                  placeholder="Optional, comma-separated"
+                                />
+                              </div>
+
+                              <div className="mb-2">
+                                <label className="form-label text-muted mb-1">
+                                  BCC
+                                </label>
+                                <input
+                                  type="text"
+                                  className="form-control form-control-sm"
+                                  value={cfg.bcc ?? ""}
+                                  onChange={(e) =>
+                                    updateSelectedNodeConfig({
+                                      bcc: e.target.value,
+                                    })
+                                  }
+                                  placeholder="Optional, comma-separated"
+                                />
+                              </div>
+
+                              <div className="mb-2">
+                                <label className="form-label text-muted mb-1">
+                                  Subject
+                                </label>
+                                <input
+                                  type="text"
+                                  className="form-control form-control-sm"
+                                  value={cfg.subject ?? ""}
+                                  onChange={(e) =>
+                                    updateSelectedNodeConfig({
+                                      subject: e.target.value,
+                                    })
+                                  }
+                                  placeholder="Welcome {{user.name}}"
+                                />
+                              </div>
+
+                              <div className="mb-3">
+                                <label className="form-label text-muted mb-1">
+                                  Body template
+                                </label>
+                                <textarea
+                                  className="form-control form-control-sm"
+                                  rows={4}
+                                  value={cfg.bodyTemplate ?? ""}
+                                  onChange={(e) =>
+                                    updateSelectedNodeConfig({
+                                      bodyTemplate: e.target.value,
+                                    })
+                                  }
+                                  placeholder={`Hi {{user.name}},\n\nYour account is now active.\n\nThanks,\nHRFlow`}
+                                />
+                              </div>
+                            </>
+                          );
+                        }
+
+                        if (selectedNode.kind === "database") {
+                          return (
+                            <>
+                              <div className="text-muted mb-2">
+                                Database node configuration
+                              </div>
+
+                              <div className="mb-2">
+                                <label className="form-label text-muted mb-1">
+                                  Table
+                                </label>
+                                <input
+                                  type="text"
+                                  className="form-control form-control-sm"
+                                  value={cfg.table ?? ""}
+                                  onChange={(e) =>
+                                    updateSelectedNodeConfig({
+                                      table: e.target.value,
+                                    })
+                                  }
+                                  placeholder="e.g. hr_candidates"
+                                />
+                              </div>
+
+                              <div className="mb-2">
+                                <label className="form-label text-muted mb-1">
+                                  Operation
+                                </label>
+                                <select
+                                  className="form-select form-select-sm"
+                                  value={cfg.operation ?? "insert"}
+                                  onChange={(e) =>
+                                    updateSelectedNodeConfig({
+                                      operation: e.target.value,
+                                    })
+                                  }
+                                >
+                                  <option value="insert">Insert</option>
+                                  <option value="update">Update</option>
+                                  <option value="upsert">Upsert</option>
+                                </select>
+                              </div>
+
+                              <div className="mb-3">
+                                <label className="form-label text-muted mb-1">
+                                  Field mappings (JSON or key:value lines)
+                                </label>
+                                <textarea
+                                  className="form-control form-control-sm"
+                                  rows={4}
+                                  value={cfg.fieldMappings ?? ""}
+                                  onChange={(e) =>
+                                    updateSelectedNodeConfig({
+                                      fieldMappings: e.target.value,
+                                    })
+                                  }
+                                  placeholder={`name: {{candidate.name}}\nemail: {{candidate.email}}`}
+                                />
+                              </div>
+                            </>
+                          );
+                        }
+
+                        if (selectedNode.kind === "condition") {
+                          return (
+                            <>
+                              <div className="text-muted mb-2">
+                                Condition node configuration
+                              </div>
+
+                              <div className="mb-3">
+                                <label className="form-label text-muted mb-1">
+                                  Condition expression
+                                </label>
+                                <textarea
+                                  className="form-control form-control-sm"
+                                  rows={4}
+                                  value={cfg.expression ?? ""}
+                                  onChange={(e) =>
+                                    updateSelectedNodeConfig({
+                                      expression: e.target.value,
+                                    })
+                                  }
+                                  placeholder={`{{candidate.score}} > 80 && {{candidate.yearsExperience}} >= 3`}
+                                />
+                                <div className="form-text">
+                                  For now this is just a string. Later we can
+                                  build a visual condition builder that outputs
+                                  this expression.
+                                </div>
+                              </div>
+                            </>
+                          );
+                        }
+
+                        // Default view for other node types
+                        return (
+                          <div className="mb-3 text-muted">
+                            No structured config editor for node type{" "}
+                            <span className="fw-semibold">
+                              {selectedNode.kind}
+                            </span>{" "}
+                            yet. You can still inspect the raw JSON below.
+                          </div>
+                        );
+                      })()}
+
+                      {/* Technical JSON view */}
+                      <div className="text-muted mb-2 mt-3">
                         Configuration (technical view)
                       </div>
                       <div
@@ -1010,7 +1314,7 @@ const WorkflowBuilderPage: React.FC = () => {
                           backgroundColor: "#020617",
                           border: "1px solid rgba(148,163,184,0.4)",
                           padding: "0.5rem",
-                          maxHeight: "260px",
+                          maxHeight: "220px",
                           overflow: "auto",
                         }}
                       >
@@ -1027,14 +1331,6 @@ const WorkflowBuilderPage: React.FC = () => {
                       </div>
                     </div>
                   )}
-
-                  {activeTab === "advanced" && (
-                    <div className="small text-muted">
-                      This tab will later hold advanced options, such as how
-                      this node interacts with external systems (e.g. email
-                      gateways, HTTP requests, AI agents, etc.).
-                    </div>
-                  )}
                 </>
               )}
             </div>
@@ -1042,6 +1338,14 @@ const WorkflowBuilderPage: React.FC = () => {
         </div>
       </div>
     </div>
+  );
+};
+
+const WorkflowBuilderPage: React.FC = () => {
+  return (
+    <ReactFlowProvider>
+      <WorkflowBuilderContent />
+    </ReactFlowProvider>
   );
 };
 

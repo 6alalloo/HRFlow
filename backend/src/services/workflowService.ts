@@ -274,16 +274,17 @@ export async function updateWorkflowNode(
   nodeId: number,
   dto: Partial<WorkflowNodeDTO>
 ) {
-  // 1) Ensure the node belongs to this workflow
+  // 1) Make sure the node actually belongs to this workflow
   const existing = await prisma.workflow_nodes.findFirst({
     where: { id: nodeId, workflow_id: workflowId },
   });
 
   if (!existing) {
-    return null; // controller will return 404
+    // Controller will turn this into a 404
+    return null;
   }
 
-  // 2) Build the update data, falling back to existing values
+  // 2) Build update data, falling back to existing values
   const updated = await prisma.workflow_nodes.update({
     where: { id: nodeId },
     data: {
@@ -298,12 +299,13 @@ export async function updateWorkflowNode(
     },
   });
 
+  // 3) Normalised shape for the API layer / frontend
   return {
     id: updated.id,
     workflowId: updated.workflow_id,
     kind: updated.kind as WorkflowNodeKind,
     name: updated.name,
-    config: safeParseJson(updated.config_json, {} as Record<string, any>),
+    config: safeParseJson<Record<string, unknown>>(updated.config_json, {}),
     posX: updated.pos_x,
     posY: updated.pos_y,
   };
@@ -332,7 +334,42 @@ export async function deleteWorkflowNode(
 
   return true;
 }
+export async function updateWorkflowNodePosition(
+  workflowId: number,
+  nodeId: number,
+  posX: number,
+  posY: number
+) {
+  // Make sure this node actually belongs to the workflow
+  const existing = await prisma.workflow_nodes.findFirst({
+    where: { id: nodeId, workflow_id: workflowId },
+  });
 
+  if (!existing) {
+    return null;
+  }
+
+  const updated = await prisma.workflow_nodes.update({
+    where: { id: nodeId },
+    data: {
+      pos_x: posX,
+      pos_y: posY,
+    },
+  });
+
+  return {
+    id: updated.id,
+    workflowId: updated.workflow_id,
+    kind: updated.kind as WorkflowNodeKind,
+    name: updated.name,
+    config: safeParseJson(
+      updated.config_json,
+      {} as Record<string, unknown>
+    ),
+    posX: updated.pos_x,
+    posY: updated.pos_y,
+  };
+}
 /**
  * List edges for a workflow with parsed JSON condition.
  * 
@@ -537,3 +574,4 @@ export async function createWorkflowNode(
     posY: node.pos_y,
   };
 }
+

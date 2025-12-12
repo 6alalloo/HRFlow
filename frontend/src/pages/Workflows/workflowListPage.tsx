@@ -416,7 +416,7 @@ const WorkflowsListPage: React.FC = () => {
       }
     };
 
-    load();
+    void load();
   }, []);
 
   // Derived list after search + status filter

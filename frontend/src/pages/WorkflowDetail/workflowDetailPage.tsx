@@ -98,7 +98,7 @@ const WorkflowDetailPage: React.FC = () => {
       }
     };
 
-    load();
+    void load();
   }, [workflowId]);
 
   // Load workflow graph (nodes + edges)
@@ -120,7 +120,7 @@ const WorkflowDetailPage: React.FC = () => {
       }
     };
 
-    loadGraph();
+    void loadGraph();
   }, [workflowId]);
 
   const isArchived = workflow?.archivedAt != null;
@@ -234,7 +234,8 @@ const WorkflowDetailPage: React.FC = () => {
                 Back to workflows
               </button>
               <p className="text-muted small mb-0">
-               
+                From here you can inspect the workflow structure and then open
+                the visual builder to edit it.
               </p>
             </div>
           </div>
@@ -332,7 +333,7 @@ const WorkflowDetailPage: React.FC = () => {
                 </table>
               </div>
               <p className="text-muted small mt-2 mb-0">
-
+                This is the raw graph behind the visual builder.
               </p>
             </div>
           </div>
@@ -351,7 +352,7 @@ const WorkflowDetailPage: React.FC = () => {
             for this workflow.
           </p>
           <p className="small text-muted mb-0">
-
+            For now you can run workflows from the list and inspect runs on the{" "}
             <code>/executions/:id</code> screen.
           </p>
         </div>

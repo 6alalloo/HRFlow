@@ -6,6 +6,7 @@ import WorkflowsListPage from "./pages/Workflows/workflowListPage";
 import WorkflowDetailPage from "./pages/WorkflowDetail/workflowDetailPage";
 import ExecutionDetailPage from "./pages/Executions/executionDetailPage";
 import WorkflowBuilderPage from "./pages/Workflows/workflowBuilderPage"; 
+import ExecutionsListPage from "./pages/Executions/executionListPage";
 
 const App: React.FC = () => {
   return (
@@ -24,7 +25,7 @@ const App: React.FC = () => {
 
         {/* Executions */}
         <Route path="/executions/:id" element={<ExecutionDetailPage />} />
-
+        <Route path="/executions" element={<ExecutionsListPage />} />
         {/* Fallback 404 */}
         <Route
           path="*"

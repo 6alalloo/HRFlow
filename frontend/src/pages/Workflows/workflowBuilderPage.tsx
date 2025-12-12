@@ -15,6 +15,7 @@ import {
   updateWorkflowNode,
   createWorkflowEdge,
   deleteWorkflowNode,
+  deleteWorkflowEdge,
   type WorkflowApi,
   type WorkflowGraphMeta,
   type WorkflowGraphNode,
@@ -30,9 +31,12 @@ import ReactFlow, {
   useNodesState,
   useEdgesState,
   addEdge,
+  BaseEdge,
+  getSmoothStepPath,
   type Connection,
   type Node as RFNode,
   type Edge as RFEdge,
+  type EdgeProps,
   type NodeDragHandler,
 } from "reactflow";
 
@@ -50,6 +54,91 @@ type ConfigTab = "general" | "config" | "advanced";
 
 const nodeTypesMap = {
   hrflow: HRFlowNode,
+};
+
+/**
+ * Custom edge with a small delete (X) button rendered near the middle.
+ */
+const DeletableEdge: React.FC<EdgeProps> = (props) => {
+  const {
+    id,
+    sourceX,
+    sourceY,
+    targetX,
+    targetY,
+    sourcePosition,
+    targetPosition,
+    style,
+    markerEnd,
+    data,
+  } = props;
+
+  const [edgePath, labelX, labelY] = getSmoothStepPath({
+    sourceX,
+    sourceY,
+    targetX,
+    targetY,
+    sourcePosition,
+    targetPosition,
+  });
+
+  const onDelete = (data as any)?.onDelete as
+    | ((edgeId: string) => void)
+    | undefined;
+
+  const handleDeleteClick = (event: React.MouseEvent) => {
+    event.stopPropagation();
+    if (onDelete) {
+      onDelete(id);
+    }
+  };
+
+  return (
+    <>
+      <BaseEdge path={edgePath} style={style} markerEnd={markerEnd} />
+      <foreignObject
+        width={24}
+        height={24}
+        x={labelX - 10}
+        y={labelY - 10}
+        requiredExtensions="http://www.w3.org/1999/xhtml"
+        style={{ overflow: "visible" }}
+      >
+        <div
+          onClick={handleDeleteClick}
+          className="edge-delete-btn"
+          style={{
+            width: "22px",
+            height: "22px",
+            cursor: "pointer",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            transition: "opacity 0.15s ease-out, transform 0.15s ease-out",
+          }}
+        >
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            stroke="#ff4d4d"
+            strokeWidth="2.3"
+            fill="none"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="12" cy="12" r="9" />
+            <line x1="9" y1="9" x2="15" y2="15" />
+            <line x1="15" y1="9" x2="9" y2="15" />
+          </svg>
+        </div>
+      </foreignObject>
+    </>
+  );
+};
+
+const edgeTypes = {
+  deletable: DeletableEdge,
 };
 
 const nodePaletteTypes: string[] = [
@@ -89,16 +178,6 @@ function toReactFlowNode(node: WorkflowGraphNode): RFNode<HRFlowNodeData> {
   };
 }
 
-function toReactFlowEdge(edge: WorkflowGraphEdge): RFEdge {
-  return {
-    id: String(edge.id),
-    source: String(getFromNodeId(edge)),
-    target: String(getToNodeId(edge)),
-    label: edge.label ?? undefined,
-    type: "smoothstep",
-  };
-}
-
 const WorkflowBuilderContent: React.FC = () => {
   const params = useParams<{ id?: string }>();
   const navigate = useNavigate();
@@ -124,9 +203,62 @@ const WorkflowBuilderContent: React.FC = () => {
 
   const [selectedNodeId, setSelectedNodeId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<ConfigTab>("general");
+
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
+  // autosave tracking
+  const [pendingSaves, setPendingSaves] = useState(0);
+  const beginSave = useCallback(
+    () => setPendingSaves((n) => n + 1),
+    []
+  );
+  const endSave = useCallback(
+    () => setPendingSaves((n) => Math.max(0, n - 1)),
+    []
+  );
+  const isSaving = pendingSaves > 0;
+
   const isGlobalBuilder = !params.id;
+
+  // --------------- EDGE DELETE CLICK HANDLER ---------------
+
+  const handleEdgeDeleteClick = useCallback(
+    async (edgeIdStr: string) => {
+      const edgeId = Number(edgeIdStr);
+      if (!state.workflowId || Number.isNaN(edgeId)) {
+        // Still remove from UI if ID is weird
+        setRfEdges((current) => current.filter((e) => e.id !== edgeIdStr));
+        return;
+      }
+
+      // Optimistic removal
+      setRfEdges((current) => current.filter((e) => e.id !== edgeIdStr));
+
+      try {
+        beginSave();
+        await deleteWorkflowEdge(state.workflowId, edgeId);
+      } catch (e) {
+        console.error("[WorkflowBuilderPage] Failed to delete edge on server:", e);
+        alert("Failed to delete edge on the server. Check console logs.");
+      } finally {
+        endSave();
+      }
+    },
+    [state.workflowId, setRfEdges, beginSave, endSave]
+  );
+
+  // Helper to map backend edges to RF edges, wiring the delete callback
+  const mapToReactFlowEdge = useCallback(
+    (edge: WorkflowGraphEdge): RFEdge => ({
+      id: String(edge.id),
+      source: String(getFromNodeId(edge)),
+      target: String(getToNodeId(edge)),
+      label: edge.label ?? undefined,
+      type: "deletable",
+      data: { onDelete: handleEdgeDeleteClick },
+    }),
+    [handleEdgeDeleteClick]
+  );
 
   // --------------- LOAD WORKFLOW + GRAPH ----------------
 
@@ -236,9 +368,9 @@ const WorkflowBuilderContent: React.FC = () => {
           nodes,
         });
 
-        // Normalise into React Flow nodes/edges
         setRfNodes(nodes.map(toReactFlowNode));
-        setRfEdges(edges.map(toReactFlowEdge));
+        setRfEdges(edges.map(mapToReactFlowEdge));
+        setPendingSaves(0);
       } catch (e: unknown) {
         console.error("[WorkflowBuilderPage] Error loading builder:", e);
         if (!cancelled) {
@@ -262,7 +394,7 @@ const WorkflowBuilderContent: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [params.id, location.pathname, setRfNodes, setRfEdges]);
+  }, [params.id, location.pathname, setRfNodes, setRfEdges, mapToReactFlowEdge]);
 
   // Initial fitView once nodes are loaded
   useEffect(() => {
@@ -304,10 +436,7 @@ const WorkflowBuilderContent: React.FC = () => {
   };
 
   const handleSaveClick = () => {
-    console.log("[WorkflowBuilderPage] Save clicked (not implemented yet).");
-    alert(
-      "Save is not implemented yet. This will push node and edge changes to the backend."
-    );
+    alert("This workflow uses autosave. Changes are saved as you edit.");
   };
 
   const handleResetViewClick = () => {
@@ -343,6 +472,7 @@ const WorkflowBuilderContent: React.FC = () => {
           posY = centerPoint.y;
         }
 
+        beginSave();
         const newNode = await createWorkflowNode(state.workflowId, {
           kind,
           posX,
@@ -358,13 +488,14 @@ const WorkflowBuilderContent: React.FC = () => {
 
         setSelectedNodeId(newNode.id);
         setActiveTab("general");
-        setDeleteConfirmOpen(false);
       } catch (e) {
         console.error("[WorkflowBuilderPage] Failed to create node:", e);
         alert("Failed to create node. Check console for details.");
+      } finally {
+        endSave();
       }
     },
-    [project, state.workflowId, setRfNodes]
+    [project, state.workflowId, setRfNodes, beginSave, endSave]
   );
 
   const handlePaletteDragStart = (
@@ -407,6 +538,7 @@ const WorkflowBuilderContent: React.FC = () => {
       });
 
       try {
+        beginSave();
         const newNode = await createWorkflowNode(state.workflowId, {
           kind,
           posX: position.x,
@@ -422,16 +554,17 @@ const WorkflowBuilderContent: React.FC = () => {
 
         setSelectedNodeId(newNode.id);
         setActiveTab("general");
-        setDeleteConfirmOpen(false);
       } catch (e) {
         console.error(
           "[WorkflowBuilderPage] Failed to create node via drop:",
           e
         );
         alert("Failed to create node. Check console for details.");
+      } finally {
+        endSave();
       }
     },
-    [project, state.workflowId, setRfNodes]
+    [project, state.workflowId, setRfNodes, beginSave, endSave]
   );
 
   // --------------- SELECTION + CONFIG PANEL ---------------
@@ -482,18 +615,71 @@ const WorkflowBuilderContent: React.FC = () => {
 
         (async () => {
           try {
+            beginSave();
             await updateWorkflowNode(workflowId, selectedNodeId, { name });
           } catch (e) {
             console.error(
               "[WorkflowBuilderPage] Failed to persist node name:",
               e
             );
+          } finally {
+            endSave();
           }
         })();
       }
     },
-    [selectedNodeId, state.workflowId, setRfNodes]
+    [selectedNodeId, state.workflowId, setRfNodes, beginSave, endSave]
   );
+
+  const handleDeleteSelectedNode = useCallback(async () => {
+    if (selectedNodeId === null || !state.workflowId) {
+      return;
+    }
+
+    const nodeId = selectedNodeId;
+    const workflowId = state.workflowId;
+
+    // Optimistic UI: remove from React Flow + local state immediately
+    setRfNodes((prev) =>
+      prev.filter((n) => (n.data as HRFlowNodeData).backendId !== nodeId)
+    );
+
+    setRfEdges((prev) =>
+      prev.filter(
+        (e) => e.source !== String(nodeId) && e.target !== String(nodeId)
+      )
+    );
+
+    setState((prev) => ({
+      ...prev,
+      nodes: prev.nodes.filter((n) => n.id !== nodeId),
+    }));
+
+    setSelectedNodeId(null);
+    setDeleteConfirmOpen(false);
+
+    try {
+      beginSave();
+      await deleteWorkflowNode(workflowId, nodeId);
+    } catch (error) {
+      console.error("[WorkflowBuilderPage] Failed to delete node:", error);
+      alert("Failed to delete node on the server. Check console for details.");
+    } finally {
+      endSave();
+    }
+  }, [
+    selectedNodeId,
+    state.workflowId,
+    setRfNodes,
+    setRfEdges,
+    setState,
+    beginSave,
+    endSave,
+  ]);
+
+  const handleDeleteNodeCancel = useCallback(() => {
+    setDeleteConfirmOpen(false);
+  }, []);
 
   const updateSelectedNodeConfig = useCallback(
     (partialConfig: Record<string, unknown>) => {
@@ -529,49 +715,25 @@ const WorkflowBuilderContent: React.FC = () => {
         )
       );
 
-      // 3) Persist to backend (fire and forget)
-      void updateWorkflowNode(state.workflowId, selectedNodeId, {
-        config: newConfig,
-      });
+      // 3) Persist to backend
+      (async () => {
+        try {
+          beginSave();
+          await updateWorkflowNode(state.workflowId!, selectedNodeId, {
+            config: newConfig,
+          });
+        } catch (e) {
+          console.error(
+            "[WorkflowBuilderPage] Failed to persist node config:",
+            e
+          );
+        } finally {
+          endSave();
+        }
+      })();
     },
-    [selectedNodeId, state.workflowId, state.nodes, setRfNodes]
+    [selectedNodeId, state.workflowId, state.nodes, setRfNodes, beginSave, endSave]
   );
-
-  const handleDeleteSelectedNode = useCallback(async () => {
-    if (selectedNodeId === null || !state.workflowId) {
-      return;
-    }
-
-    const nodeId = selectedNodeId;
-    const workflowId = state.workflowId;
-
-    // Optimistic UI: remove from React Flow + local state immediately
-    setRfNodes((prev) =>
-      prev.filter((n) => (n.data as HRFlowNodeData).backendId !== nodeId)
-    );
-
-    setRfEdges((prev) =>
-      prev.filter(
-        (e) => e.source !== String(nodeId) && e.target !== String(nodeId)
-      )
-    );
-
-    setState((prev) => ({
-      ...prev,
-      nodes: prev.nodes.filter((n) => n.id !== nodeId),
-    }));
-
-    setSelectedNodeId(null);
-    setDeleteConfirmOpen(false);
-
-    try {
-      await deleteWorkflowNode(workflowId, nodeId);
-    } catch (error) {
-      console.error("[WorkflowBuilderPage] Failed to delete node:", error);
-      alert("Failed to delete node on the server. Check console for details.");
-      // Optional: you could refetch the graph here to fully resync.
-    }
-  }, [selectedNodeId, state.workflowId, setRfNodes, setRfEdges]);
 
   // --------------- NODE POSITION SYNC ---------------
 
@@ -589,10 +751,22 @@ const WorkflowBuilderContent: React.FC = () => {
       }));
 
       if (state.workflowId) {
-        void updateWorkflowNodePosition(state.workflowId, backendId, x, y);
+        (async () => {
+          try {
+            beginSave();
+            await updateWorkflowNodePosition(state.workflowId!, backendId, x, y);
+          } catch (e) {
+            console.error(
+              "[WorkflowBuilderPage] Failed to persist node position:",
+              e
+            );
+          } finally {
+            endSave();
+          }
+        })();
       }
     },
-    [state.workflowId]
+    [state.workflowId, beginSave, endSave]
   );
 
   // --------------- CONNECT HANDLER ---------------
@@ -611,12 +785,14 @@ const WorkflowBuilderContent: React.FC = () => {
         id: tempEdgeId,
         source: connection.source,
         target: connection.target,
-        type: "smoothstep",
+        type: "deletable",
+        data: { onDelete: handleEdgeDeleteClick },
       };
 
       setRfEdges((current) => addEdge(tempEdge, current));
 
       try {
+        beginSave();
         const created = await createWorkflowEdge(state.workflowId, {
           fromNodeId: fromId,
           toNodeId: toId,
@@ -629,7 +805,8 @@ const WorkflowBuilderContent: React.FC = () => {
                   id: String(created.id),
                   source: String(getFromNodeId(created)),
                   target: String(getToNodeId(created)),
-                  type: "smoothstep",
+                  type: "deletable",
+                  data: { onDelete: handleEdgeDeleteClick },
                 }
               : edge
           )
@@ -640,10 +817,14 @@ const WorkflowBuilderContent: React.FC = () => {
           current.filter((edge) => edge.id !== tempEdgeId)
         );
         alert("Failed to create edge. Check console for details.");
+      } finally {
+        endSave();
       }
     },
-    [state.workflowId, setRfEdges]
+    [state.workflowId, setRfEdges, beginSave, endSave, handleEdgeDeleteClick]
   );
+
+  // --------------- SELECTION CHANGE ---------------
 
   const handleSelectionChange = useCallback(
     (params: { nodes: RFNode[]; edges: RFEdge[] }) => {
@@ -705,6 +886,14 @@ const WorkflowBuilderContent: React.FC = () => {
         <div className="d-flex align-items-center gap-2">
           <span className="badge bg-secondary">
             {isGlobalBuilder ? "Global builder" : "Workflow builder"}
+          </span>
+          <span
+            className={
+              "badge small " +
+              (isSaving ? "bg-warning text-dark" : "bg-success")
+            }
+          >
+            {isSaving ? "Saving…" : "All changes saved"}
           </span>
           <button
             className="btn btn-outline-secondary btn-sm"
@@ -813,6 +1002,7 @@ const WorkflowBuilderContent: React.FC = () => {
                   nodes={rfNodes}
                   edges={rfEdges}
                   nodeTypes={nodeTypesMap}
+                  edgeTypes={edgeTypes}
                   fitView
                   onNodesChange={onNodesChange}
                   onEdgesChange={onEdgesChange}
@@ -821,7 +1011,7 @@ const WorkflowBuilderContent: React.FC = () => {
                   onSelectionChange={handleSelectionChange}
                   proOptions={{ hideAttribution: false }}
                   defaultEdgeOptions={{
-                    type: "smoothstep",
+                    type: "deletable",
                     style: { stroke: "#38bdf8", strokeWidth: 2 },
                   }}
                   connectionLineStyle={{
@@ -927,8 +1117,8 @@ const WorkflowBuilderContent: React.FC = () => {
                           }
                         />
                         <div className="form-text">
-                          This is how the node will appear on the canvas and in
-                          logs.
+                          This is how the node will appear on the canvas and
+                          in logs.
                         </div>
                       </div>
 
@@ -972,8 +1162,8 @@ const WorkflowBuilderContent: React.FC = () => {
                               Delete node
                             </button>
                             <div className="form-text">
-                              This will also remove any edges connected to this
-                              node.
+                              This will also remove any edges connected to
+                              this node.
                             </div>
                           </>
                         )}
@@ -987,16 +1177,14 @@ const WorkflowBuilderContent: React.FC = () => {
                               <button
                                 type="button"
                                 className="btn btn-danger btn-sm flex-grow-1"
-                                onClick={() => {
-                                  void handleDeleteSelectedNode();
-                                }}
+                                onClick={() => void handleDeleteSelectedNode()}
                               >
                                 Yes, delete
                               </button>
                               <button
                                 type="button"
                                 className="btn btn-outline-light btn-sm"
-                                onClick={() => setDeleteConfirmOpen(false)}
+                                onClick={handleDeleteNodeCancel}
                               >
                                 Cancel
                               </button>
@@ -1077,8 +1265,8 @@ const WorkflowBuilderContent: React.FC = () => {
                                   placeholder={`Authorization: Bearer {{token}}`}
                                 />
                                 <div className="form-text">
-                                  For now this is stored as plain text. Later we
-                                  can add a proper key/value editor.
+                                  For now this is stored as plain text. Later
+                                  we can add a proper key/value editor.
                                 </div>
                               </div>
 
@@ -1329,6 +1517,14 @@ const WorkflowBuilderContent: React.FC = () => {
                           <code>{prettyConfig}</code>
                         </pre>
                       </div>
+                    </div>
+                  )}
+
+                  {activeTab === "advanced" && (
+                    <div className="small text-muted">
+                      This tab will later hold advanced options, such as how
+                      this node interacts with external systems (e.g. email
+                      gateways, HTTP requests, AI agents, etc.).
                     </div>
                   )}
                 </>

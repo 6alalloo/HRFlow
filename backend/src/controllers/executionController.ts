@@ -1,4 +1,4 @@
-
+// src/controllers/executionController.ts
 import { Request, Response } from "express";
 import * as executionService from "../services/executionService";
 
@@ -179,7 +179,7 @@ export async function executeWorkflow(req: Request, res: Response) {
       input,
     });
 
-    // result is { execution, steps }
+    // result is { execution, steps, n8nResult }
     return res.status(201).json({
       data: result,
     });

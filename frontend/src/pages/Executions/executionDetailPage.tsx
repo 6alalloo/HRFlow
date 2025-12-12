@@ -4,15 +4,22 @@ import {
   fetchExecutionWithSteps,
   type ExecutionDetailResponse,
   type ExecutionStep,
+  type ExecutionStatus,
+  type ExecutionStepStatus,
 } from "../../api/executions";
 
-const statusBadgeClass: Record<string, string> = {
+const executionStatusBadgeClass: Record<ExecutionStatus, string> = {
   running: "bg-info",
   completed: "bg-success",
   failed: "bg-danger",
   queued: "bg-secondary",
   engine_error: "bg-warning text-dark",
+};
+
+const stepStatusBadgeClass: Record<ExecutionStepStatus, string> = {
+  completed: "bg-success",
   skipped: "bg-secondary",
+  failed: "bg-danger",
 };
 
 function formatDate(value: string | null | undefined): string {
@@ -34,6 +41,24 @@ function formatDuration(ms: number | null | undefined): string {
 
 function formatStatusLabel(status: string): string {
   return status.replace(/_/g, " ").toUpperCase();
+}
+
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return "Unknown error";
+  }
+}
+
+function safeStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return "// Could not stringify engine payload";
+  }
 }
 
 const ExecutionDetailPage: React.FC = () => {
@@ -58,27 +83,29 @@ const ExecutionDetailPage: React.FC = () => {
       setLoading(true);
       const result = await fetchExecutionWithSteps(executionId);
       setData(result);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[ExecutionDetailPage] Failed to load execution:", err);
-      setError(err?.message ?? "Failed to load execution");
+      setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
   }, [executionId]);
 
-  const handleRefresh = async () => {
+  const handleRefresh = useCallback(async () => {
     if (!executionId || Number.isNaN(executionId)) return;
+
     try {
       setRefreshing(true);
+      setError(null);
       const result = await fetchExecutionWithSteps(executionId);
       setData(result);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[ExecutionDetailPage] Refresh failed:", err);
-      setError(err?.message ?? "Failed to refresh execution");
+      setError(getErrorMessage(err));
     } finally {
       setRefreshing(false);
     }
-  };
+  }, [executionId]);
 
   useEffect(() => {
     void load();
@@ -117,7 +144,9 @@ const ExecutionDetailPage: React.FC = () => {
     execution.workflows?.name ?? `Workflow #${execution.workflow_id}`;
 
   const badgeClass =
-    statusBadgeClass[execution.status] ?? "bg-secondary";
+    executionStatusBadgeClass[execution.status] ?? "bg-secondary";
+
+  const hasEnginePayload = n8nResult !== undefined && n8nResult !== null;
 
   return (
     <div className="py-3">
@@ -127,9 +156,7 @@ const ExecutionDetailPage: React.FC = () => {
           <h1 className="h4 mb-1">Execution #{execution.id}</h1>
           <div className="text-muted small">
             Workflow:&nbsp;
-            <Link to={`/workflows/${execution.workflow_id}`}>
-              {wfName}
-            </Link>
+            <Link to={`/workflows/${execution.workflow_id}`}>{wfName}</Link>
           </div>
         </div>
 
@@ -137,17 +164,17 @@ const ExecutionDetailPage: React.FC = () => {
           <span className={`badge ${badgeClass} text-uppercase`}>
             {formatStatusLabel(execution.status)}
           </span>
+
           {execution.error_message && (
             <span className="badge bg-danger-subtle text-danger border border-danger border-opacity-50">
               Error
             </span>
           )}
-          <Link
-            to="/executions"
-            className="btn btn-outline-secondary btn-sm"
-          >
+
+          <Link to="/executions" className="btn btn-outline-secondary btn-sm">
             Back to executions
           </Link>
+
           <button
             type="button"
             className="btn btn-outline-primary btn-sm"
@@ -173,19 +200,13 @@ const ExecutionDetailPage: React.FC = () => {
               <h2 className="h6 mb-3">Execution summary</h2>
               <dl className="row small mb-0">
                 <dt className="col-4 text-muted">Trigger</dt>
-                <dd className="col-8">
-                  {execution.trigger_type ?? "manual"}
-                </dd>
+                <dd className="col-8">{execution.trigger_type ?? "manual"}</dd>
 
                 <dt className="col-4 text-muted">Started at</dt>
-                <dd className="col-8">
-                  {formatDate(execution.started_at)}
-                </dd>
+                <dd className="col-8">{formatDate(execution.started_at)}</dd>
 
                 <dt className="col-4 text-muted">Finished at</dt>
-                <dd className="col-8">
-                  {formatDate(execution.finished_at)}
-                </dd>
+                <dd className="col-8">{formatDate(execution.finished_at)}</dd>
 
                 <dt className="col-4 text-muted">Duration</dt>
                 <dd className="col-8">
@@ -195,9 +216,7 @@ const ExecutionDetailPage: React.FC = () => {
                 <dt className="col-4 text-muted">Error message</dt>
                 <dd className="col-8">
                   {execution.error_message ? (
-                    <span className="text-danger">
-                      {execution.error_message}
-                    </span>
+                    <span className="text-danger">{execution.error_message}</span>
                   ) : (
                     <span className="text-muted">None</span>
                   )}
@@ -230,8 +249,8 @@ const ExecutionDetailPage: React.FC = () => {
 
               <p className="text-muted small mb-2">
                 {execution.status === "engine_error"
-                  ? "This execution failed to get a response from n8n. You can inspect the error message in the summary and see that no engine payload was recorded."
-                  : "This execution was sent to n8n. Below is the raw engine payload stored in run_context.engine.n8n."}
+                  ? "This execution could not reach n8n or n8n returned an error. Check the error message in the summary. Engine payload may be empty."
+                  : "This execution was sent to n8n. The raw engine payload is stored in run_context.engine.n8n."}
               </p>
 
               {showEngine && (
@@ -255,8 +274,8 @@ const ExecutionDetailPage: React.FC = () => {
                     }}
                   >
                     <code>
-                      {n8nResult
-                        ? JSON.stringify(n8nResult, null, 2)
+                      {hasEnginePayload
+                        ? safeStringify(n8nResult)
                         : "// No engine payload recorded"}
                     </code>
                   </pre>
@@ -281,8 +300,8 @@ const ExecutionDetailPage: React.FC = () => {
 
             {steps.length === 0 && (
               <p className="text-muted small mb-0">
-                No steps were recorded for this execution. This usually
-                means the engine failed before running any nodes.
+                No steps were recorded for this execution. This usually means
+                the engine failed before running any nodes.
               </p>
             )}
 
@@ -301,38 +320,33 @@ const ExecutionDetailPage: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {steps.map((step: ExecutionStep, idx: number) => (
-                      <tr key={step.id}>
-                        <td>{idx + 1}</td>
-                        <td>
-                          {step.workflow_nodes?.name ??
-                            `Node #${step.node_id}`}
-                        </td>
-                        <td className="text-muted small">
-                          {step.workflow_nodes?.kind ?? "-"}
-                        </td>
-                        <td>
-                          <span
-                            className={
-                              "badge " +
-                              (statusBadgeClass[step.status] ??
-                                "bg-secondary")
-                            }
-                          >
-                            {formatStatusLabel(step.status)}
-                          </span>
-                        </td>
-                        <td className="small">
-                          {formatDate(step.started_at)}
-                        </td>
-                        <td className="small">
-                          {formatDate(step.finished_at)}
-                        </td>
-                        <td className="small">
-                          <code>{step.logs ?? "-"}</code>
-                        </td>
-                      </tr>
-                    ))}
+                    {steps.map((step: ExecutionStep, idx: number) => {
+                      const stepBadge =
+                        stepStatusBadgeClass[step.status] ?? "bg-secondary";
+
+                      return (
+                        <tr key={step.id}>
+                          <td>{idx + 1}</td>
+                          <td>
+                            {step.workflow_nodes?.name ??
+                              `Node #${step.node_id}`}
+                          </td>
+                          <td className="text-muted small">
+                            {step.workflow_nodes?.kind ?? "-"}
+                          </td>
+                          <td>
+                            <span className={"badge " + stepBadge}>
+                              {formatStatusLabel(step.status)}
+                            </span>
+                          </td>
+                          <td className="small">{formatDate(step.started_at)}</td>
+                          <td className="small">{formatDate(step.finished_at)}</td>
+                          <td className="small">
+                            <code>{step.logs ?? "-"}</code>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

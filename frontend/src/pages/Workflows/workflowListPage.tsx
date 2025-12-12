@@ -6,7 +6,6 @@ import type { WorkflowApi } from "../../api/workflows";
 
 /** ---------- Types ---------- **/
 
-// UI shape of a workflow row (mapped from WorkflowApi)
 type Workflow = {
   id: number;
   name: string;
@@ -18,7 +17,6 @@ type Workflow = {
   archivedAt: string | null;
 };
 
-// What we show in the "Last Execution" card
 type LastExecution = {
   executionId: number;
   workflowId: number;
@@ -30,7 +28,6 @@ type LastExecution = {
 
 /** ---------- Helpers ---------- **/
 
-// Map API workflow shape into our UI shape
 function mapWorkflow(api: WorkflowApi): Workflow {
   return {
     id: api.id,
@@ -61,7 +58,6 @@ const WorkflowSearchBar: React.FC<SearchBarProps> = ({
 }) => {
   return (
     <div className="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
-      {/* Search input */}
       <div style={{ minWidth: 260 }}>
         <input
           type="text"
@@ -72,7 +68,6 @@ const WorkflowSearchBar: React.FC<SearchBarProps> = ({
         />
       </div>
 
-      {/* Status filter buttons */}
       <div className="btn-group btn-group-sm">
         <button
           type="button"
@@ -205,8 +200,8 @@ const WorkflowTable: React.FC<WorkflowTableProps> = ({
 type RunModalProps = {
   workflow: Workflow | null;
   isOpen: boolean;
-  note: string;
-  onNoteChange: (value: string) => void;
+  inputText: string;
+  onInputTextChange: (value: string) => void;
   onClose: () => void;
   onConfirmRun: () => void;
   isRunning: boolean;
@@ -216,8 +211,8 @@ type RunModalProps = {
 const ExecuteWorkflowModal: React.FC<RunModalProps> = ({
   workflow,
   isOpen,
-  note,
-  onNoteChange,
+  inputText,
+  onInputTextChange,
   onClose,
   onConfirmRun,
   isRunning,
@@ -227,7 +222,6 @@ const ExecuteWorkflowModal: React.FC<RunModalProps> = ({
 
   return (
     <>
-      {/* Backdrop */}
       <div
         className="position-fixed top-0 start-0 w-100 h-100"
         style={{
@@ -237,7 +231,6 @@ const ExecuteWorkflowModal: React.FC<RunModalProps> = ({
         onClick={onClose}
       />
 
-      {/* Modal dialog */}
       <div
         className="position-fixed top-50 start-50 translate-middle"
         style={{ zIndex: 1050, minWidth: "420px", maxWidth: "95vw" }}
@@ -269,14 +262,22 @@ const ExecuteWorkflowModal: React.FC<RunModalProps> = ({
             )}
 
             <div className="mb-3">
-              <label className="form-label">Run note (optional)</label>
+              <label className="form-label">Run input (JSON)</label>
               <textarea
                 className="form-control bg-dark text-light border-secondary"
-                rows={3}
-                placeholder="Example: test run for HR demo"
-                value={note}
-                onChange={(e) => onNoteChange(e.target.value)}
+                rows={7}
+                placeholder={`{
+  "name": "Sara Ali",
+  "email": "sara@company.com",
+  "role": "Analyst",
+  "department": "HR"
+}`}
+                value={inputText}
+                onChange={(e) => onInputTextChange(e.target.value)}
               />
+              <div className="form-text">
+                This JSON is sent to the backend and forwarded to n8n as the execution input.
+              </div>
             </div>
           </div>
           <div className="modal-footer">
@@ -350,8 +351,7 @@ const LastExecutionCard: React.FC<LastExecutionCardProps> = ({ execution }) => {
           </span>
         </p>
         <p className="mb-1">
-          <span className="text-muted">Steps:</span>{" "}
-          {execution.stepsCount}
+          <span className="text-muted">Steps:</span> {execution.stepsCount}
         </p>
         <p className="mb-3">
           <span className="text-muted">Finished at:</span>{" "}
@@ -376,31 +376,26 @@ const LastExecutionCard: React.FC<LastExecutionCardProps> = ({ execution }) => {
 const WorkflowsListPage: React.FC = () => {
   const navigate = useNavigate();
 
-  // Real workflows from backend
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Search + filter state
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<
-    "all" | "active" | "archived"
-  >("all");
-
-  // Run modal state
-  const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(
-    null
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "archived">(
+    "all"
   );
+
+  const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null);
   const [isRunModalOpen, setIsRunModalOpen] = useState(false);
-  const [runNote, setRunNote] = useState("");
+
+  // JSON string typed by user
+  const [runInputText, setRunInputText] = useState("");
+
   const [isRunning, setIsRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
 
-  // Last execution state (based on real execute endpoint)
-  const [lastExecution, setLastExecution] =
-    useState<LastExecution | null>(null);
+  const [lastExecution, setLastExecution] = useState<LastExecution | null>(null);
 
-  // Load workflows on first mount
   useEffect(() => {
     const load = async () => {
       try {
@@ -419,20 +414,13 @@ const WorkflowsListPage: React.FC = () => {
     void load();
   }, []);
 
-  // Derived list after search + status filter
   const filteredWorkflows = useMemo(() => {
     return workflows.filter((wf) => {
       const isArchived = Boolean(wf.archivedAt);
 
-      // Status filter
-      if (statusFilter === "active" && (isArchived || !wf.isActive)) {
-        return false;
-      }
-      if (statusFilter === "archived" && !isArchived) {
-        return false;
-      }
+      if (statusFilter === "active" && (isArchived || !wf.isActive)) return false;
+      if (statusFilter === "archived" && !isArchived) return false;
 
-      // Search filter (name + description)
       const query = search.trim().toLowerCase();
       if (!query) return true;
 
@@ -443,14 +431,13 @@ const WorkflowsListPage: React.FC = () => {
     });
   }, [workflows, search, statusFilter]);
 
-  // Handlers
   const handleViewWorkflow = (wf: Workflow) => {
     navigate(`/workflows/${wf.id}`);
   };
 
   const handleOpenRunModal = (wf: Workflow) => {
     setSelectedWorkflow(wf);
-    setRunNote("");
+    setRunInputText("");
     setRunError(null);
     setIsRunModalOpen(true);
   };
@@ -458,13 +445,34 @@ const WorkflowsListPage: React.FC = () => {
   const handleConfirmRun = async () => {
     if (!selectedWorkflow) return;
 
+    // Parse JSON input (or allow empty input)
+    let inputObj: Record<string, unknown> | null = null;
+
+    const trimmed = runInputText.trim();
+    if (trimmed.length > 0) {
+      try {
+        const parsed = JSON.parse(trimmed) as unknown;
+
+        if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+          setRunError("Run input must be a JSON object (example: { \"name\": \"Sara\" }).");
+          return;
+        }
+
+        inputObj = parsed as Record<string, unknown>;
+      } catch {
+        setRunError("Invalid JSON. Fix the Run input field and try again.");
+        return;
+      }
+    }
+
     try {
       setIsRunning(true);
       setRunError(null);
 
       const { execution, steps } = await executeWorkflow(
         selectedWorkflow.id,
-        runNote || undefined
+        inputObj,
+        "manual"
       );
 
       const last: LastExecution = {
@@ -507,7 +515,6 @@ const WorkflowsListPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Search + filters */}
       <WorkflowSearchBar
         search={search}
         onSearchChange={setSearch}
@@ -516,14 +523,11 @@ const WorkflowsListPage: React.FC = () => {
       />
 
       <div className="row g-4">
-        {/* Left: table */}
         <div className="col-lg-8">
           <div className="card bg-dark border-secondary mb-0">
             <div className="card-body">
               {isLoading && (
-                <div className="text-muted small mb-2">
-                  Loading workflows…
-                </div>
+                <div className="text-muted small mb-2">Loading workflows…</div>
               )}
               {loadError && (
                 <div className="alert alert-danger py-2">
@@ -540,18 +544,16 @@ const WorkflowsListPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Right: last execution card */}
         <div className="col-lg-4">
           <LastExecutionCard execution={lastExecution} />
         </div>
       </div>
 
-      {/* Run modal */}
       <ExecuteWorkflowModal
         workflow={selectedWorkflow}
         isOpen={isRunModalOpen}
-        note={runNote}
-        onNoteChange={setRunNote}
+        inputText={runInputText}
+        onInputTextChange={setRunInputText}
         onClose={handleCloseModal}
         onConfirmRun={handleConfirmRun}
         isRunning={isRunning}

@@ -1,9 +1,4 @@
-import React, {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import {
@@ -40,9 +35,7 @@ import ReactFlow, {
   type NodeDragHandler,
 } from "reactflow";
 
-import HRFlowNode, {
-  type HRFlowNodeData,
-} from "../../components/HRFlowNode";
+import HRFlowNode, { type HRFlowNodeData } from "../../components/HRFlowNode";
 
 type BuilderState = {
   workflowId: number | null;
@@ -82,15 +75,13 @@ const DeletableEdge: React.FC<EdgeProps> = (props) => {
     targetPosition,
   });
 
-  const onDelete = (data as any)?.onDelete as
-    | ((edgeId: string) => void)
-    | undefined;
+type DeletableEdgeData = { onDelete?: (edgeId: string) => void };
+
+const onDelete = (data as DeletableEdgeData | undefined)?.onDelete;
 
   const handleDeleteClick = (event: React.MouseEvent) => {
     event.stopPropagation();
-    if (onDelete) {
-      onDelete(id);
-    }
+    if (onDelete) onDelete(id);
   };
 
   return (
@@ -155,13 +146,14 @@ const nodePaletteTypes: string[] = [
 
 // Helpers to normalise edge shape (works with fromNodeId/toNodeId OR from_node_id/to_node_id)
 function getFromNodeId(edge: WorkflowGraphEdge): number {
-  if ("fromNodeId" in edge) return (edge as any).fromNodeId;
-  return (edge as { from_node_id: number }).from_node_id;
+  const e = edge as Partial<{ fromNodeId: number; from_node_id: number }>;
+  return e.fromNodeId ?? e.from_node_id ?? 0;
+
 }
 
 function getToNodeId(edge: WorkflowGraphEdge): number {
-  if ("toNodeId" in edge) return (edge as any).toNodeId;
-  return (edge as { to_node_id: number }).to_node_id;
+  const e = edge as Partial<{ toNodeId: number; to_node_id: number }>;
+  return e.toNodeId ?? e.to_node_id ?? 0;
 }
 
 function toReactFlowNode(node: WorkflowGraphNode): RFNode<HRFlowNodeData> {
@@ -208,10 +200,7 @@ const WorkflowBuilderContent: React.FC = () => {
 
   // autosave tracking
   const [pendingSaves, setPendingSaves] = useState(0);
-  const beginSave = useCallback(
-    () => setPendingSaves((n) => n + 1),
-    []
-  );
+  const beginSave = useCallback(() => setPendingSaves((n) => n + 1), []);
   const endSave = useCallback(
     () => setPendingSaves((n) => Math.max(0, n - 1)),
     []
@@ -238,7 +227,10 @@ const WorkflowBuilderContent: React.FC = () => {
         beginSave();
         await deleteWorkflowEdge(state.workflowId, edgeId);
       } catch (e) {
-        console.error("[WorkflowBuilderPage] Failed to delete edge on server:", e);
+        console.error(
+          "[WorkflowBuilderPage] Failed to delete edge on server:",
+          e
+        );
         alert("Failed to delete edge on the server. Check console logs.");
       } finally {
         endSave();
@@ -307,10 +299,7 @@ const WorkflowBuilderContent: React.FC = () => {
                   workflowId = lastId;
                   nodes = graph.nodes;
                   edges = graph.edges;
-                  localStorage.setItem(
-                    "hrflow:lastWorkflowId",
-                    String(lastId)
-                  );
+                  localStorage.setItem("hrflow:lastWorkflowId", String(lastId));
                 }
               } catch (err) {
                 console.warn(
@@ -375,17 +364,13 @@ const WorkflowBuilderContent: React.FC = () => {
         console.error("[WorkflowBuilderPage] Error loading builder:", e);
         if (!cancelled) {
           const message =
-            e instanceof Error
-              ? e.message
-              : "Failed to load workflow builder.";
+            e instanceof Error ? e.message : "Failed to load workflow builder.";
           setError(message);
           setRfNodes([]);
           setRfEdges([]);
         }
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       }
     }
 
@@ -411,28 +396,8 @@ const WorkflowBuilderContent: React.FC = () => {
   // --------------- TOOLBAR HANDLERS ----------------
 
   const handleBackClick = () => {
-    if (state.workflowId) {
-      navigate(`/workflows/${state.workflowId}`);
-    } else {
-      navigate("/workflows");
-    }
-  };
-
-  const handleRunClick = async () => {
-    if (!state.workflowId || isRunning) return;
-
-    try {
-      setIsRunning(true);
-      const result = await executeWorkflow(state.workflowId);
-      if (result.execution?.id) {
-        navigate(`/executions/${result.execution.id}`);
-      }
-    } catch (e: unknown) {
-      console.error("[WorkflowBuilderPage] Failed to run workflow:", e);
-      alert("Failed to run workflow. Check console for details.");
-    } finally {
-      setIsRunning(false);
-    }
+    if (state.workflowId) navigate(`/workflows/${state.workflowId}`);
+    else navigate("/workflows");
   };
 
   const handleSaveClick = () => {
@@ -445,6 +410,55 @@ const WorkflowBuilderContent: React.FC = () => {
 
   const handleCenterViewClick = () => {
     fitView({ padding: 0.6, duration: 200 });
+  };
+
+  // Build input for execution from the trigger node config (friendly form fields)
+  const getRunInputFromTriggerNode = useCallback((): Record<string, unknown> | null => {
+    const trigger = state.nodes.find((n) => n.kind === "trigger");
+    if (!trigger) return null;
+
+    const cfg = (trigger.config ?? {}) as Record<string, unknown>;
+
+    const name = typeof cfg.name === "string" ? cfg.name.trim() : "";
+    const email = typeof cfg.email === "string" ? cfg.email.trim() : "";
+    const role = typeof cfg.role === "string" ? cfg.role.trim() : "";
+    const department = typeof cfg.department === "string" ? cfg.department.trim() : "";
+    const startDate = typeof cfg.startDate === "string" ? cfg.startDate.trim() : "";
+    const managerEmail = typeof cfg.managerEmail === "string" ? cfg.managerEmail.trim() : "";
+
+    if (!name && !email && !role && !department && !startDate && !managerEmail) {
+      return null;
+    }
+
+    const input: Record<string, unknown> = {};
+    if (name) input.name = name;
+    if (email) input.email = email;
+    if (role) input.role = role;
+    if (department) input.department = department;
+    if (startDate) input.startDate = startDate;
+    if (managerEmail) input.managerEmail = managerEmail;
+
+    return input;
+  }, [state.nodes]);
+
+  const handleRunClick = async () => {
+    if (!state.workflowId || isRunning) return;
+
+    try {
+      setIsRunning(true);
+
+      const input = getRunInputFromTriggerNode();
+
+      const result = await executeWorkflow(state.workflowId, input, "manual");
+      if (result.execution?.id) {
+        navigate(`/executions/${result.execution.id}`);
+      }
+    } catch (e: unknown) {
+      console.error("[WorkflowBuilderPage] Failed to run workflow:", e);
+      alert("Failed to run workflow. Check console for details.");
+    } finally {
+      setIsRunning(false);
+    }
   };
 
   // --------------- NODE CREATION (click + drag) ---------------
@@ -534,7 +548,9 @@ const WorkflowBuilderContent: React.FC = () => {
 
       const position = project({
         x: event.clientX - bounds.left,
-        y: event.clientY - bounds.top,
+        y: event.clientX - bounds.left
+          ? event.clientY - bounds.top
+          : event.clientY - bounds.top,
       });
 
       try {
@@ -632,9 +648,7 @@ const WorkflowBuilderContent: React.FC = () => {
   );
 
   const handleDeleteSelectedNode = useCallback(async () => {
-    if (selectedNodeId === null || !state.workflowId) {
-      return;
-    }
+    if (selectedNodeId === null || !state.workflowId) return;
 
     const nodeId = selectedNodeId;
     const workflowId = state.workflowId;
@@ -661,8 +675,8 @@ const WorkflowBuilderContent: React.FC = () => {
     try {
       beginSave();
       await deleteWorkflowNode(workflowId, nodeId);
-    } catch (error) {
-      console.error("[WorkflowBuilderPage] Failed to delete node:", error);
+    } catch (err) {
+      console.error("[WorkflowBuilderPage] Failed to delete node:", err);
       alert("Failed to delete node on the server. Check console for details.");
     } finally {
       endSave();
@@ -811,11 +825,9 @@ const WorkflowBuilderContent: React.FC = () => {
               : edge
           )
         );
-      } catch (error) {
-        console.error("[WorkflowBuilderPage] Failed to create edge:", error);
-        setRfEdges((current) =>
-          current.filter((edge) => edge.id !== tempEdgeId)
-        );
+      } catch (err) {
+        console.error("[WorkflowBuilderPage] Failed to create edge:", err);
+        setRfEdges((current) => current.filter((e) => e.id !== tempEdgeId));
         alert("Failed to create edge. Check console for details.");
       } finally {
         endSave();
@@ -889,8 +901,7 @@ const WorkflowBuilderContent: React.FC = () => {
           </span>
           <span
             className={
-              "badge small " +
-              (isSaving ? "bg-warning text-dark" : "bg-success")
+              "badge small " + (isSaving ? "bg-warning text-dark" : "bg-success")
             }
           >
             {isSaving ? "Saving…" : "All changes saved"}
@@ -930,12 +941,7 @@ const WorkflowBuilderContent: React.FC = () => {
       </div>
 
       {/* 3-panel layout */}
-      <div
-        className="row g-3"
-        style={{
-          minHeight: "calc(100vh - 140px)",
-        }}
-      >
+      <div className="row g-3" style={{ minHeight: "calc(100vh - 140px)" }}>
         {/* Left: Palette */}
         <div className="col-2 d-flex flex-column">
           <div
@@ -1019,11 +1025,7 @@ const WorkflowBuilderContent: React.FC = () => {
                     strokeWidth: 2,
                   }}
                 >
-                  <Background
-                    gap={24}
-                    size={1}
-                    color="rgba(148,163,184,0.2)"
-                  />
+                  <Background gap={24} size={1} color="rgba(148,163,184,0.2)" />
                   <MiniMap
                     pannable
                     zoomable
@@ -1117,8 +1119,8 @@ const WorkflowBuilderContent: React.FC = () => {
                           }
                         />
                         <div className="form-text">
-                          This is how the node will appear on the canvas and
-                          in logs.
+                          This is how the node will appear on the canvas and in
+                          logs.
                         </div>
                       </div>
 
@@ -1162,8 +1164,8 @@ const WorkflowBuilderContent: React.FC = () => {
                               Delete node
                             </button>
                             <div className="form-text">
-                              This will also remove any edges connected to
-                              this node.
+                              This will also remove any edges connected to this
+                              node.
                             </div>
                           </>
                         )}
@@ -1195,14 +1197,132 @@ const WorkflowBuilderContent: React.FC = () => {
                     </div>
                   )}
 
-                  {activeTab === "config" && selectedNode && (
-                    <div className="small">
-                      {/* Friendly forms per node type */}
-                      {(() => {
-                        const cfg = (selectedNode.config ?? {}) as Record<
-                          string,
-                          any
-                        >;
+                    {activeTab === "config" && selectedNode && (
+                      <div className="small">
+                        {/* Friendly forms per node type */}
+                        {(() => {
+                          const cfg = (selectedNode.config ?? {}) as Record<
+                            string,
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            any
+                          >;
+
+                        if (selectedNode.kind === "trigger") {
+                          return (
+                            <>
+                              <div className="text-muted mb-2">
+                                Trigger node configuration
+                              </div>
+
+                              <div className="mb-2">
+                                <label className="form-label text-muted mb-1">
+                                  Employee name
+                                </label>
+                                <input
+                                  type="text"
+                                  className="form-control form-control-sm"
+                                  value={cfg.name ?? ""}
+                                  onChange={(e) =>
+                                    updateSelectedNodeConfig({
+                                      name: e.target.value,
+                                    })
+                                  }
+                                  placeholder="e.g. Sara Ali"
+                                />
+                              </div>
+
+                              <div className="mb-2">
+                                <label className="form-label text-muted mb-1">
+                                  Employee email
+                                </label>
+                                <input
+                                  type="email"
+                                  className="form-control form-control-sm"
+                                  value={cfg.email ?? ""}
+                                  onChange={(e) =>
+                                    updateSelectedNodeConfig({
+                                      email: e.target.value,
+                                    })
+                                  }
+                                  placeholder="e.g. sara@company.com"
+                                />
+                              </div>
+
+                              <div className="mb-2">
+                                <label className="form-label text-muted mb-1">
+                                  Role
+                                </label>
+                                <input
+                                  type="text"
+                                  className="form-control form-control-sm"
+                                  value={cfg.role ?? ""}
+                                  onChange={(e) =>
+                                    updateSelectedNodeConfig({
+                                      role: e.target.value,
+                                    })
+                                  }
+                                  placeholder="e.g. Analyst"
+                                />
+                              </div>
+
+                              <div className="mb-2">
+                                <label className="form-label text-muted mb-1">
+                                  Department
+                                </label>
+                                <input
+                                  type="text"
+                                  className="form-control form-control-sm"
+                                  value={cfg.department ?? ""}
+                                  onChange={(e) =>
+                                    updateSelectedNodeConfig({
+                                      department: e.target.value,
+                                    })
+                                  }
+                                  placeholder="e.g. HR"
+                                />
+                              </div>
+
+                              <div className="mb-2">
+                                <label className="form-label text-muted mb-1">
+                                  Start date (optional)
+                                </label>
+                                <input
+                                  type="text"
+                                  className="form-control form-control-sm"
+                                  value={cfg.startDate ?? ""}
+                                  onChange={(e) =>
+                                    updateSelectedNodeConfig({
+                                      startDate: e.target.value,
+                                    })
+                                  }
+                                  placeholder="e.g. 2025-12-15"
+                                />
+                              </div>
+
+                              <div className="mb-3">
+                                <label className="form-label text-muted mb-1">
+                                  Manager email (optional)
+                                </label>
+                                <input
+                                  type="email"
+                                  className="form-control form-control-sm"
+                                  value={cfg.managerEmail ?? ""}
+                                  onChange={(e) =>
+                                    updateSelectedNodeConfig({
+                                      managerEmail: e.target.value,
+                                    })
+                                  }
+                                  placeholder="e.g. manager@company.com"
+                                />
+                              </div>
+
+                              <div className="form-text">
+                                These fields are sent as the execution input
+                                when you click Run.
+                              </div>
+                            </>
+                          );
+                        }
 
                         if (selectedNode.kind === "http") {
                           return (
@@ -1265,8 +1385,8 @@ const WorkflowBuilderContent: React.FC = () => {
                                   placeholder={`Authorization: Bearer {{token}}`}
                                 />
                                 <div className="form-text">
-                                  For now this is stored as plain text. Later
-                                  we can add a proper key/value editor.
+                                  For now this is stored as plain text. Later we
+                                  can add a proper key/value editor.
                                 </div>
                               </div>
 
@@ -1484,9 +1604,7 @@ const WorkflowBuilderContent: React.FC = () => {
                         return (
                           <div className="mb-3 text-muted">
                             No structured config editor for node type{" "}
-                            <span className="fw-semibold">
-                              {selectedNode.kind}
-                            </span>{" "}
+                            <span className="fw-semibold">{selectedNode.kind}</span>{" "}
                             yet. You can still inspect the raw JSON below.
                           </div>
                         );

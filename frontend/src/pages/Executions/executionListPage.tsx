@@ -26,10 +26,17 @@ function formatDuration(ms: number | null | undefined): string {
   return `${minutes} min ${rem}s`;
 }
 
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  return "Failed to load executions";
+}
+
 const statusBadgeClass: Record<ExecutionStatus, string> = {
   running: "badge bg-info",
   completed: "badge bg-success",
   failed: "badge bg-danger",
+  engine_error: "badge bg-warning text-dark",
   queued: "badge bg-secondary",
 };
 
@@ -43,19 +50,18 @@ const ExecutionsListPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [search, setSearch] = useState("");
 
-  // Load executions from backend
   useEffect(() => {
     const load = async () => {
       try {
         setLoading(true);
         setError(null);
 
-        // For now we fetch everything and filter client-side.
+        // Fetch everything (server-side filters optional later)
         const data = await fetchExecutions();
         setExecutions(data);
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("[ExecutionsListPage] Failed to load executions:", err);
-        setError(err?.message ?? "Failed to load executions");
+        setError(getErrorMessage(err));
       } finally {
         setLoading(false);
       }
@@ -66,12 +72,8 @@ const ExecutionsListPage: React.FC = () => {
 
   const filteredExecutions = useMemo(() => {
     return executions.filter((ex) => {
-      // Status filter
-      if (statusFilter !== "all" && ex.status !== statusFilter) {
-        return false;
-      }
+      if (statusFilter !== "all" && ex.status !== statusFilter) return false;
 
-      // Search filter (by workflow name or ID)
       const q = search.trim().toLowerCase();
       if (!q) return true;
 
@@ -79,11 +81,7 @@ const ExecutionsListPage: React.FC = () => {
       const idStr = String(ex.id);
       const wfIdStr = String(ex.workflow_id ?? "");
 
-      return (
-        wfName.includes(q) ||
-        idStr.includes(q) ||
-        wfIdStr.includes(q)
-      );
+      return wfName.includes(q) || idStr.includes(q) || wfIdStr.includes(q);
     });
   }, [executions, statusFilter, search]);
 
@@ -93,7 +91,6 @@ const ExecutionsListPage: React.FC = () => {
 
   return (
     <div className="p-4">
-      {/* Header */}
       <div className="d-flex justify-content-between align-items-center mb-3">
         <div>
           <h1 className="h3 mb-1">Executions</h1>
@@ -103,7 +100,6 @@ const ExecutionsListPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Filters */}
       <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
         <div style={{ minWidth: 260 }}>
           <input
@@ -154,6 +150,18 @@ const ExecutionsListPage: React.FC = () => {
             type="button"
             className={
               "btn " +
+              (statusFilter === "engine_error"
+                ? "btn-primary"
+                : "btn-outline-secondary")
+            }
+            onClick={() => setStatusFilter("engine_error")}
+          >
+            Engine error
+          </button>
+          <button
+            type="button"
+            className={
+              "btn " +
               (statusFilter === "failed"
                 ? "btn-primary"
                 : "btn-outline-secondary")
@@ -162,26 +170,11 @@ const ExecutionsListPage: React.FC = () => {
           >
             Failed
           </button>
-          <button
-            type="button"
-            className={
-              "btn " +
-              (statusFilter === "queued"
-                ? "btn-primary"
-                : "btn-outline-secondary")
-            }
-            onClick={() => setStatusFilter("queued")}
-          >
-            Queued
-          </button>
         </div>
       </div>
 
-      {/* Errors / loading */}
       {loading && (
-        <div className="text-muted small mb-2">
-          Loading executions…
-        </div>
+        <div className="text-muted small mb-2">Loading executions…</div>
       )}
       {error && (
         <div className="alert alert-danger py-2">
@@ -189,7 +182,6 @@ const ExecutionsListPage: React.FC = () => {
         </div>
       )}
 
-      {/* Table */}
       <div className="card bg-dark border-secondary">
         <div className="card-body p-0">
           <div className="table-responsive">
@@ -218,9 +210,7 @@ const ExecutionsListPage: React.FC = () => {
                 {filteredExecutions.map((ex) => {
                   const wfName =
                     ex.workflows?.name ??
-                    (ex.workflow_id
-                      ? `Workflow #${ex.workflow_id}`
-                      : "—");
+                    (ex.workflow_id ? `Workflow #${ex.workflow_id}` : "—");
 
                   const badgeClass =
                     statusBadgeClass[ex.status] ?? "badge bg-secondary";
@@ -238,23 +228,13 @@ const ExecutionsListPage: React.FC = () => {
                       <td>
                         <span className={badgeClass}>{ex.status}</span>
                       </td>
-                      <td className="small">
-                        {ex.trigger_type ?? "manual"}
-                      </td>
-                      <td className="small">
-                        {formatDate(ex.started_at)}
-                      </td>
-                      <td className="small">
-                        {formatDate(ex.finished_at)}
-                      </td>
-                      <td className="small">
-                        {formatDuration(ex.duration_ms)}
-                      </td>
+                      <td className="small">{ex.trigger_type ?? "manual"}</td>
+                      <td className="small">{formatDate(ex.started_at)}</td>
+                      <td className="small">{formatDate(ex.finished_at)}</td>
+                      <td className="small">{formatDuration(ex.duration_ms)}</td>
                       <td className="small">
                         {ex.error_message ? (
-                          <span className="text-danger">
-                            {ex.error_message}
-                          </span>
+                          <span className="text-danger">{ex.error_message}</span>
                         ) : (
                           <span className="text-muted">None</span>
                         )}

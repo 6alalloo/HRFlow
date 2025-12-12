@@ -1,13 +1,22 @@
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000";
 
+/**
+ * Execution row statuses (from DB)
+ * Keep "queued" only if you actually set it in backend.
+ */
 export type ExecutionStatus =
   | "running"
   | "completed"
   | "failed"
-  | "queued"
   | "engine_error"
-  | "skipped";
+  | "queued";
+
+/**
+ * Step statuses (synthetic right now)
+ * Your executionService currently writes "completed" or "skipped".
+ */
+export type ExecutionStepStatus = "completed" | "skipped" | "failed";
 
 export type ExecutionSummary = {
   id: number;
@@ -44,7 +53,7 @@ export type ExecutionStep = {
   id: number;
   execution_id: number;
   node_id: number;
-  status: ExecutionStatus;
+  status: ExecutionStepStatus;
   input_json: string | null;
   output_json: string | null;
   logs: string | null;
@@ -60,7 +69,7 @@ export type ExecutionStep = {
 export type ExecutionDetailResponse = {
   execution: ExecutionRecord;
   steps: ExecutionStep[];
-  n8nResult?: any;
+  n8nResult?: unknown;
 };
 
 function buildUrl(path: string) {
@@ -68,20 +77,24 @@ function buildUrl(path: string) {
 }
 
 export async function fetchExecutions(params?: {
-  status?: string;
+  status?: ExecutionStatus;
   workflowId?: number;
 }): Promise<ExecutionSummary[]> {
   const query = new URLSearchParams();
   if (params?.status) query.set("status", params.status);
-  if (params?.workflowId) query.set("workflowId", String(params.workflowId));
+  if (typeof params?.workflowId === "number") {
+    query.set("workflowId", String(params.workflowId));
+  }
 
   const res = await fetch(
     buildUrl(`/api/executions${query.toString() ? `?${query}` : ""}`)
   );
+
   if (!res.ok) {
     throw new Error("Failed to fetch executions");
   }
-  const json = await res.json();
+
+  const json = (await res.json()) as { data?: ExecutionSummary[] };
   return json.data ?? [];
 }
 
@@ -90,18 +103,16 @@ export async function fetchExecution(id: number): Promise<ExecutionRecord> {
   if (!res.ok) {
     throw new Error(`Failed to fetch execution ${id}`);
   }
-  const json = await res.json();
+  const json = (await res.json()) as { data: ExecutionRecord };
   return json.data;
 }
 
-export async function fetchExecutionSteps(
-  id: number
-): Promise<ExecutionStep[]> {
+export async function fetchExecutionSteps(id: number): Promise<ExecutionStep[]> {
   const res = await fetch(buildUrl(`/api/executions/${id}/steps`));
   if (!res.ok) {
     throw new Error(`Failed to fetch steps for execution ${id}`);
   }
-  const json = await res.json();
+  const json = (await res.json()) as { data?: ExecutionStep[] };
   return json.data ?? [];
 }
 
@@ -118,13 +129,16 @@ export async function fetchExecutionWithSteps(
   ]);
 
   // n8n result is stored inside run_context.engine.n8n
-  let n8nResult: any = undefined;
+  let n8nResult: unknown = undefined;
+
   if (execution.run_context) {
     try {
-      const ctx = JSON.parse(execution.run_context);
+      const ctx = JSON.parse(execution.run_context) as {
+        engine?: { n8n?: unknown };
+      };
       n8nResult = ctx?.engine?.n8n;
     } catch {
-      // ignore parse errors – we just skip pretty engine info
+      // ignore parse errors
     }
   }
 

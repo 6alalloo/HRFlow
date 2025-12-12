@@ -248,7 +248,8 @@ export async function fetchWorkflows(): Promise<WorkflowApi[]> {
 // POST /api/workflows/:id/execute
 export async function executeWorkflow(
   workflowId: number,
-  note?: string
+  input?: Record<string, unknown> | null,
+  triggerType?: string
 ): Promise<{
   execution: ExecutionApi;
   steps: ExecutionStepApi[];
@@ -258,15 +259,14 @@ export async function executeWorkflow(
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ note }),
+    body: JSON.stringify({
+      triggerType: triggerType ?? "manual",
+      input: input ?? null,
+    }),
   });
 
   if (!res.ok) {
-    console.error(
-      "[executeWorkflow] HTTP error:",
-      res.status,
-      res.statusText
-    );
+    console.error("[executeWorkflow] HTTP error:", res.status, res.statusText);
     throw new Error(
       `Failed to execute workflow ${workflowId} (status ${res.status})`
     );
@@ -276,12 +276,7 @@ export async function executeWorkflow(
     | { data: { execution: ExecutionApi; steps: ExecutionStepApi[] } }
     | { execution: ExecutionApi; steps: ExecutionStepApi[] };
 
-  console.log("[executeWorkflow] raw response:", json);
-
-  if ("data" in json) {
-    return json.data;
-  }
-
+  if ("data" in json) return json.data;
   return json;
 }
 

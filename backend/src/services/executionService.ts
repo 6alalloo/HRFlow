@@ -10,20 +10,56 @@ type ExecutionFilters = {
 type ExecuteWorkflowInput = {
   workflowId: number;
   triggerType?: string;
-  input?: any;
+  input?: unknown;
+};
+
+type ExecutionFinalStatus = "completed" | "engine_error" | "failed";
+type StepStatus = "completed" | "skipped";
+
+type ErrorWithCode = Error & { code?: string };
+
+type RunContextPayload = {
+  input: unknown | null;
+  engine: {
+    n8n: unknown | null;
+  };
 };
 
 // Small helper to safely parse JSON from DB columns
-function safeParseJson<T = any>(
+function safeParseJson<T = unknown>(
   value: string | null | undefined,
   fallback: T
 ): T {
   if (!value) return fallback;
   try {
-    return JSON.parse(value);
+    return JSON.parse(value) as T;
   } catch {
     return fallback;
   }
+}
+
+function makeCodedError(message: string, code: string): ErrorWithCode {
+  const err: ErrorWithCode = new Error(message);
+  err.code = code;
+  return err;
+}
+
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return "Unknown error";
+  }
+}
+
+function getErrorCode(err: unknown): string | undefined {
+  if (err && typeof err === "object" && "code" in err) {
+    const maybe = (err as { code?: unknown }).code;
+    return typeof maybe === "string" ? maybe : undefined;
+  }
+  return undefined;
 }
 
 /**
@@ -34,7 +70,7 @@ function safeParseJson<T = any>(
 export async function getAllExecutions(filters: ExecutionFilters = {}) {
   const { status, workflowId } = filters;
 
-  const where: any = {};
+  const where: Record<string, unknown> = {};
 
   if (status && status.trim().length > 0) {
     where.status = status.trim();
@@ -149,15 +185,11 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
   });
 
   if (!workflow) {
-    const error: any = new Error("Workflow not found");
-    error.code = "WORKFLOW_NOT_FOUND";
-    throw error;
+    throw makeCodedError("Workflow not found", "WORKFLOW_NOT_FOUND");
   }
 
   if (!workflow.is_active) {
-    const error: any = new Error("Workflow is not active");
-    error.code = "WORKFLOW_INACTIVE";
-    throw error;
+    throw makeCodedError("Workflow is not active", "WORKFLOW_INACTIVE");
   }
 
   // 2. Fetch nodes AND edges for this workflow
@@ -173,18 +205,16 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
   ]);
 
   if (nodes.length === 0) {
-    const error: any = new Error("Workflow has no nodes");
-    error.code = "WORKFLOW_HAS_NO_NODES";
-    throw error;
+    throw makeCodedError("Workflow has no nodes", "WORKFLOW_HAS_NO_NODES");
   }
 
   const startTime = new Date();
 
   // We'll keep both input and engine info in run_context so we can debug later.
-  const runContextPayload: any = {
+  const runContextPayload: RunContextPayload = {
     input: input ?? null,
     engine: {
-      n8n: null as any,
+      n8n: null,
     },
   };
 
@@ -205,8 +235,8 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
     },
   });
 
-  let n8nResult: any = null;
-  let finalStatus: "completed" | "engine_error" | "failed" = "completed";
+  let n8nResult: unknown | null = null;
+  let finalStatus: ExecutionFinalStatus = "completed";
   let errorMessage: string | null = null;
 
   // 4. Call n8n
@@ -225,22 +255,28 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
         from: edge.from_node_id,
         to: edge.to_node_id,
       })),
-      input: input ?? null,
+      input:
+  input && typeof input === "object"
+    ? (input as Record<string, unknown>)
+    : ({} as Record<string, unknown>),
+
     });
 
     // For now, if n8n returns a 2xx response, we treat it as completed.
     finalStatus = "completed";
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[ExecutionService] Failed to call n8n:", err);
 
-    if (err?.code === "N8N_UNREACHABLE" || err?.code === "N8N_HTTP_ERROR") {
+    const code = getErrorCode(err);
+
+    if (code === "N8N_UNREACHABLE" || code === "N8N_HTTP_ERROR") {
       finalStatus = "engine_error";
     } else {
       finalStatus = "failed";
     }
 
     errorMessage =
-      err?.message ??
+      getErrorMessage(err) ||
       "Failed to execute workflow via automation engine (n8n)";
   }
 
@@ -262,7 +298,7 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
   });
 
   // 5. Create synthetic steps for now (even if engine failed → mark as "skipped")
-  const stepsStatus = finalStatus === "completed" ? "completed" : "skipped";
+  const stepsStatus: StepStatus = finalStatus === "completed" ? "completed" : "skipped";
 
   const stepsData = nodes.map((node, index) => ({
     execution_id: updatedExecution.id,
@@ -272,9 +308,7 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
     output_json: "{}", // later we can put per-node output from the engine
     logs:
       finalStatus === "completed"
-        ? `Executed node ${node.name ?? node.kind} (order ${
-            index + 1
-          }) via n8n`
+        ? `Executed node ${node.name ?? node.kind} (order ${index + 1}) via n8n`
         : `Skipped node ${node.name ?? node.kind} (order ${
             index + 1
           }) due to engine status "${finalStatus}"`,

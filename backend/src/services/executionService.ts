@@ -1,6 +1,11 @@
-// src/services/executionService.ts
+// backend/src/services/executionService.ts
 import prisma from "../lib/prisma";
-import { callN8nExecute } from "./n8nService";
+import {
+  callN8nExecute,
+  upsertN8nWorkflow,
+  activateN8nWorkflow,
+} from "./n8nService";
+import { compileToN8n } from "./n8nCompiler";
 
 type ExecutionFilters = {
   status?: string;
@@ -22,14 +27,14 @@ type RunContextPayload = {
   input: unknown | null;
   engine: {
     n8n: unknown | null;
+    n8nWorkflowId?: string | null;
+    n8nCreated?: boolean | null;
+    webhookPath?: string | null;
+    webhookUrl?: string | null;
   };
 };
 
-// Small helper to safely parse JSON from DB columns
-function safeParseJson<T = unknown>(
-  value: string | null | undefined,
-  fallback: T
-): T {
+function safeParseJson<T = unknown>(value: string | null | undefined, fallback: T): T {
   if (!value) return fallback;
   try {
     return JSON.parse(value) as T;
@@ -62,25 +67,68 @@ function getErrorCode(err: unknown): string | undefined {
   return undefined;
 }
 
-/**
- * Get all executions with optional filters:
- * - status: filter by execution status
- * - workflowId: filter by workflow_id
- */
+function normalizeObject(input: unknown): Record<string, unknown> | null {
+  if (input == null) return null;
+  if (typeof input !== "object") return null;
+  if (Array.isArray(input)) return null;
+  return input as Record<string, unknown>;
+}
+
+function looksLikeEmployee(obj: Record<string, unknown>): boolean {
+  // loose heuristic for demo payload
+  return (
+    typeof obj.email === "string" ||
+    typeof obj.name === "string" ||
+    typeof obj.department === "string" ||
+    typeof obj.role === "string"
+  );
+}
+
+function buildDemoExecuteBody(input: unknown, triggerConfigFallback: Record<string, unknown> | null) {
+  const obj = normalizeObject(input);
+
+  // Best case: { employee: {...} }
+  if (obj && typeof obj.employee === "object" && obj.employee && !Array.isArray(obj.employee)) {
+    return { employee: obj.employee as Record<string, unknown> };
+  }
+
+  // Next: input itself looks like employee -> wrap it
+  if (obj && looksLikeEmployee(obj)) {
+    return { employee: obj };
+  }
+
+  // Fallback: trigger node config might contain demo employee data
+  if (triggerConfigFallback) {
+    // If trigger config already has employee, use it; else treat whole config as employee-ish
+    const tc = triggerConfigFallback;
+    if (typeof tc.employee === "object" && tc.employee && !Array.isArray(tc.employee)) {
+      return { employee: tc.employee as Record<string, unknown> };
+    }
+    if (looksLikeEmployee(tc)) {
+      return { employee: tc };
+    }
+  }
+
+  // Final fallback: empty employee (keeps compiled flow from crashing)
+  return { employee: {} };
+}
+
+function getWebhookBaseUrl(): string {
+  const fromEnv = process.env.N8N_WEBHOOK_BASE_URL;
+  if (fromEnv && fromEnv.trim().length > 0) return fromEnv.trim();
+
+  // Sensible default for local demo if not set explicitly
+  return "http://localhost:5678";
+}
+
 export async function getAllExecutions(filters: ExecutionFilters = {}) {
   const { status, workflowId } = filters;
 
   const where: Record<string, unknown> = {};
+  if (status && status.trim().length > 0) where.status = status.trim();
+  if (typeof workflowId === "number") where.workflow_id = workflowId;
 
-  if (status && status.trim().length > 0) {
-    where.status = status.trim();
-  }
-
-  if (typeof workflowId === "number") {
-    where.workflow_id = workflowId;
-  }
-
-  const executions = await prisma.executions.findMany({
+  return prisma.executions.findMany({
     where,
     select: {
       id: true,
@@ -91,26 +139,14 @@ export async function getAllExecutions(filters: ExecutionFilters = {}) {
       finished_at: true,
       duration_ms: true,
       error_message: true,
-      workflows: {
-        select: {
-          id: true,
-          name: true,
-        },
-      },
+      workflows: { select: { id: true, name: true } },
     },
-    orderBy: {
-      started_at: "desc",
-    },
+    orderBy: { started_at: "desc" },
   });
-
-  return executions;
 }
 
-/**
- * Get a single execution by ID, including its workflow.
- */
 export async function getExecutionById(id: number) {
-  const execution = await prisma.executions.findUnique({
+  return prisma.executions.findUnique({
     where: { id },
     select: {
       id: true,
@@ -122,26 +158,14 @@ export async function getExecutionById(id: number) {
       finished_at: true,
       duration_ms: true,
       error_message: true,
-      workflows: {
-        select: {
-          id: true,
-          name: true,
-        },
-      },
+      workflows: { select: { id: true, name: true } },
     },
   });
-
-  return execution;
 }
 
-/**
- * Get all steps for a given execution ID.
- */
 export async function getExecutionStepsByExecutionId(executionId: number) {
-  const steps = await prisma.execution_steps.findMany({
-    where: {
-      execution_id: executionId,
-    },
+  return prisma.execution_steps.findMany({
+    where: { execution_id: executionId },
     select: {
       id: true,
       execution_id: true,
@@ -152,48 +176,22 @@ export async function getExecutionStepsByExecutionId(executionId: number) {
       logs: true,
       started_at: true,
       finished_at: true,
-      workflow_nodes: {
-        select: {
-          id: true,
-          name: true,
-          kind: true,
-        },
-      },
+      workflow_nodes: { select: { id: true, name: true, kind: true } },
     },
-    orderBy: {
-      started_at: "asc",
-    },
+    orderBy: { started_at: "asc" },
   });
-
-  return steps;
 }
 
-/**
- * Execute a workflow:
- * 1) Validate workflow + nodes
- * 2) Create an execution row (status = running)
- * 3) Send graph to n8n via callN8nExecute
- * 4) Update execution status + create execution_steps
- * 5) Always return execution + steps, even if engine failed
- */
 export async function executeWorkflow(params: ExecuteWorkflowInput) {
   const { workflowId, triggerType, input } = params;
 
-  // 1. Fetch workflow
   const workflow = await prisma.workflows.findUnique({
     where: { id: workflowId },
   });
+  if (!workflow) throw makeCodedError("Workflow not found", "WORKFLOW_NOT_FOUND");
+  if (!workflow.is_active) throw makeCodedError("Workflow is not active", "WORKFLOW_INACTIVE");
 
-  if (!workflow) {
-    throw makeCodedError("Workflow not found", "WORKFLOW_NOT_FOUND");
-  }
-
-  if (!workflow.is_active) {
-    throw makeCodedError("Workflow is not active", "WORKFLOW_INACTIVE");
-  }
-
-  // 2. Fetch nodes AND edges for this workflow
-  const [nodes, edges] = await Promise.all([
+  const [nodesRaw, edgesRaw] = await Promise.all([
     prisma.workflow_nodes.findMany({
       where: { workflow_id: workflowId },
       orderBy: { id: "asc" },
@@ -204,21 +202,23 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
     }),
   ]);
 
-  if (nodes.length === 0) {
+  if (nodesRaw.length === 0) {
     throw makeCodedError("Workflow has no nodes", "WORKFLOW_HAS_NO_NODES");
   }
 
   const startTime = new Date();
 
-  // We'll keep both input and engine info in run_context so we can debug later.
   const runContextPayload: RunContextPayload = {
     input: input ?? null,
     engine: {
       n8n: null,
+      n8nWorkflowId: null,
+      n8nCreated: null,
+      webhookPath: null,
+      webhookUrl: null,
     },
   };
 
-  // 3. Create execution in "running" state
   const execution = await prisma.executions.create({
     data: {
       workflow_id: workflowId,
@@ -232,58 +232,95 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
       finished_at: null,
       duration_ms: null,
       error_message: null,
+      n8n_execution_id: null,
     },
   });
 
   let n8nResult: unknown | null = null;
-  let finalStatus: ExecutionFinalStatus = "completed";
+  let finalStatus: ExecutionFinalStatus = "failed";
   let errorMessage: string | null = null;
 
-  // 4. Call n8n
-  try {
-    n8nResult = await callN8nExecute({
-      hrflowWorkflowId: workflowId,
-      executionId: execution.id,
-      nodes: nodes.map((node) => ({
-        id: node.id,
-        name: node.name,
-        kind: node.kind,
-        config: safeParseJson<Record<string, unknown>>(node.config_json, {}),
-      })),
-      edges: edges.map((edge) => ({
-        id: edge.id,
-        from: edge.from_node_id,
-        to: edge.to_node_id,
-      })),
-      input:
-  input && typeof input === "object"
-    ? (input as Record<string, unknown>)
-    : ({} as Record<string, unknown>),
+  
+  const webhookPath = `/webhook/hrflow-${workflowId}-execute`;
+  const webhookUrl = `${getWebhookBaseUrl()}${webhookPath}`;
 
+  try {
+    // 1) Compile HRFlow graph -> n8n workflow JSON
+    const compiled = compileToN8n({
+      hrflowWorkflowId: workflowId,
+      workflowName: workflow.name,
+      webhookPath,
+      nodes: nodesRaw.map((n) => ({
+        id: n.id,
+        kind: n.kind,
+        name: n.name ?? null,
+        config: safeParseJson<Record<string, unknown>>(n.config_json, {}),
+        posX: n.pos_x,
+        posY: n.pos_y,
+      })),
+      edges: edgesRaw.map((e) => ({
+        id: e.id,
+        fromNodeId: e.from_node_id,
+        toNodeId: e.to_node_id,
+        priority: e.priority ?? 0,
+        label: e.label ?? null,
+        condition: safeParseJson<Record<string, unknown>>(e.condition_json, {}),
+      })),
     });
 
-    // For now, if n8n returns a 2xx response, we treat it as completed.
+    // 2) Upsert into n8n by name (stable)
+    const n8nName = `HRFlow: ${workflow.name} (#${workflowId})`;
+    const upsert = await upsertN8nWorkflow({
+      name: n8nName,
+      nodes: compiled.nodes,
+      connections: compiled.connections,
+    });
+
+    runContextPayload.engine.n8nWorkflowId = upsert.id;
+    runContextPayload.engine.n8nCreated = upsert.created;
+    runContextPayload.engine.webhookPath = webhookPath;
+    runContextPayload.engine.webhookUrl = webhookUrl;
+
+    // Save engine metadata in our DB
+    await prisma.workflows.update({
+      where: { id: workflowId },
+      data: {
+        n8n_workflow_id: upsert.id,
+        n8n_webhook_path: webhookPath, // ✅ store the real unique path
+      },
+    });
+
+    // 3) Activate workflow
+    await activateN8nWorkflow(upsert.id);
+
+    // 4) Execute via the compiled workflow's webhook URL
+    const triggerNode = nodesRaw.find((n) => n.kind === "trigger");
+    const triggerConfig = triggerNode
+      ? safeParseJson<Record<string, unknown>>(triggerNode.config_json, {})
+      : null;
+
+    const body = buildDemoExecuteBody(input, triggerConfig);
+
+    n8nResult = await callN8nExecute(webhookUrl, body);
+
+    // If we got here without throwing, we treat it as completed for MVP.
     finalStatus = "completed";
   } catch (err: unknown) {
-    console.error("[ExecutionService] Failed to call n8n:", err);
+    console.error("[ExecutionService] Engine failure:", err);
 
     const code = getErrorCode(err);
-
-    if (code === "N8N_UNREACHABLE" || code === "N8N_HTTP_ERROR") {
+    if (code === "N8N_UNREACHABLE" || code === "N8N_HTTP_ERROR" || code === "N8N_MISSING_API_KEY") {
       finalStatus = "engine_error";
     } else {
       finalStatus = "failed";
     }
 
-    errorMessage =
-      getErrorMessage(err) ||
-      "Failed to execute workflow via automation engine (n8n)";
+    errorMessage = getErrorMessage(err) || "Failed to execute workflow via n8n";
   }
 
   const finishedTime = new Date();
   const durationMs = finishedTime.getTime() - startTime.getTime();
 
-  // Attach engine result (might be null on failure) for debugging
   runContextPayload.engine.n8n = n8nResult;
 
   const updatedExecution = await prisma.executions.update({
@@ -297,29 +334,25 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
     },
   });
 
-  // 5. Create synthetic steps for now (even if engine failed → mark as "skipped")
+  // MVP steps behavior: mark completed if execution completed, else skipped
   const stepsStatus: StepStatus = finalStatus === "completed" ? "completed" : "skipped";
 
-  const stepsData = nodes.map((node, index) => ({
+  const stepsData = nodesRaw.map((node, index) => ({
     execution_id: updatedExecution.id,
     node_id: node.id,
     status: stepsStatus,
-    input_json: "{}", // later we can put per-node input
-    output_json: "{}", // later we can put per-node output from the engine
+    input_json: "{}",
+    output_json: "{}",
     logs:
       finalStatus === "completed"
         ? `Executed node ${node.name ?? node.kind} (order ${index + 1}) via n8n`
-        : `Skipped node ${node.name ?? node.kind} (order ${
-            index + 1
-          }) due to engine status "${finalStatus}"`,
+        : `Skipped node ${node.name ?? node.kind} (order ${index + 1}) due to engine status "${finalStatus}"`,
     started_at: startTime,
     finished_at: finishedTime,
   }));
 
   if (stepsData.length > 0) {
-    await prisma.execution_steps.createMany({
-      data: stepsData,
-    });
+    await prisma.execution_steps.createMany({ data: stepsData });
   }
 
   const steps = await prisma.execution_steps.findMany({
@@ -334,19 +367,11 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
       logs: true,
       started_at: true,
       finished_at: true,
-      workflow_nodes: {
-        select: {
-          id: true,
-          name: true,
-          kind: true,
-        },
-      },
+      workflow_nodes: { select: { id: true, name: true, kind: true } },
     },
     orderBy: { id: "asc" },
   });
 
-  // We do NOT throw here; the controller always gets an execution.
-  // The frontend can navigate to /executions/:id and show status + error_message.
   return {
     execution: updatedExecution,
     steps,

@@ -111,6 +111,10 @@ model executions {
   finished_at     DateTime?         @db.Timestamptz(6)
   duration_ms     Int?
   error_message   String?           @db.VarChar
+
+  // NEW
+  n8n_execution_id String?          @unique @db.VarChar
+
   execution_steps execution_steps[]
   workflows       workflows?        @relation(fields: [workflow_id], references: [id], onUpdate: NoAction)
 
@@ -229,6 +233,11 @@ model workflows {
   archived_at     DateTime?        @db.Timestamptz(6)
   created_at      DateTime         @default(now()) @db.Timestamptz(6)
   updated_at      DateTime         @default(now()) @db.Timestamptz(6)
+
+  // NEW
+  n8n_workflow_id  String?         @unique @db.VarChar
+  n8n_webhook_path String?         @db.VarChar
+
   data_stores     data_stores[]
   executions      executions[]
   webhooks        webhooks[]

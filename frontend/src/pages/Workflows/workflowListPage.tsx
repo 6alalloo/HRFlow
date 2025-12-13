@@ -1,7 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FiPlay, FiEye } from "react-icons/fi";
-import { fetchWorkflows, executeWorkflow } from "../../api/workflows";
+import { FiPlay, FiEye, FiPlus } from "react-icons/fi";
+import {
+  fetchWorkflows,
+  executeWorkflow,
+  createWorkflow,
+} from "../../api/workflows";
 import type { WorkflowApi } from "../../api/workflows";
 
 /** ---------- Types ---------- **/
@@ -276,7 +280,8 @@ const ExecuteWorkflowModal: React.FC<RunModalProps> = ({
                 onChange={(e) => onInputTextChange(e.target.value)}
               />
               <div className="form-text">
-                This JSON is sent to the backend and forwarded to n8n as the execution input.
+                This JSON is sent to the backend and forwarded to n8n as the
+                execution input.
               </div>
             </div>
           </div>
@@ -381,20 +386,25 @@ const WorkflowsListPage: React.FC = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "archived">(
-    "all"
-  );
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "active" | "archived"
+  >("all");
 
-  const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null);
+  const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(
+    null
+  );
   const [isRunModalOpen, setIsRunModalOpen] = useState(false);
 
-  // JSON string typed by user
   const [runInputText, setRunInputText] = useState("");
 
   const [isRunning, setIsRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
 
   const [lastExecution, setLastExecution] = useState<LastExecution | null>(null);
+
+  // Create workflow UI state
+  const [isCreating, setIsCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -418,7 +428,8 @@ const WorkflowsListPage: React.FC = () => {
     return workflows.filter((wf) => {
       const isArchived = Boolean(wf.archivedAt);
 
-      if (statusFilter === "active" && (isArchived || !wf.isActive)) return false;
+      if (statusFilter === "active" && (isArchived || !wf.isActive))
+        return false;
       if (statusFilter === "archived" && !isArchived) return false;
 
       const query = search.trim().toLowerCase();
@@ -445,7 +456,6 @@ const WorkflowsListPage: React.FC = () => {
   const handleConfirmRun = async () => {
     if (!selectedWorkflow) return;
 
-    // Parse JSON input (or allow empty input)
     let inputObj: Record<string, unknown> | null = null;
 
     const trimmed = runInputText.trim();
@@ -453,8 +463,14 @@ const WorkflowsListPage: React.FC = () => {
       try {
         const parsed = JSON.parse(trimmed) as unknown;
 
-        if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-          setRunError("Run input must be a JSON object (example: { \"name\": \"Sara\" }).");
+        if (
+          parsed === null ||
+          typeof parsed !== "object" ||
+          Array.isArray(parsed)
+        ) {
+          setRunError(
+            'Run input must be a JSON object (example: { "name": "Sara" }).'
+          );
           return;
         }
 
@@ -504,6 +520,29 @@ const WorkflowsListPage: React.FC = () => {
     setIsRunModalOpen(false);
   };
 
+  const handleCreateWorkflow = async () => {
+    try {
+      setIsCreating(true);
+      setCreateError(null);
+
+      const created = await createWorkflow({
+        name: "New Workflow",
+        description: "Empty workflow. Add nodes to build your flow.",
+        is_active: true,
+      });
+
+      const mapped = mapWorkflow(created);
+      setWorkflows((prev) => [mapped, ...prev]);
+
+      navigate(`/workflows/${created.id}/builder`);
+    } catch (err) {
+      console.error("[Workflows] Failed to create workflow", err);
+      setCreateError("Failed to create workflow. Please try again.");
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
   return (
     <div className="p-4">
       <div className="d-flex justify-content-between align-items-center mb-3">
@@ -512,7 +551,23 @@ const WorkflowsListPage: React.FC = () => {
           <p className="text-muted mb-0">
             Browse, filter, and run HR automation workflows.
           </p>
+
+          {createError && (
+            <div className="alert alert-danger py-2 mt-2 mb-0">
+              <small>{createError}</small>
+            </div>
+          )}
         </div>
+
+        <button
+          type="button"
+          className="btn btn-primary btn-sm"
+          onClick={handleCreateWorkflow}
+          disabled={isCreating}
+        >
+          <FiPlus className="me-1" />
+          {isCreating ? "Creating..." : "Create workflow"}
+        </button>
       </div>
 
       <WorkflowSearchBar

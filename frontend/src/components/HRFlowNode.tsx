@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Handle, Position, type NodeProps } from "reactflow";
 import type { WorkflowGraphConfig } from "../api/workflows";
 
@@ -9,13 +9,23 @@ export type HRFlowNodeData = {
   config?: WorkflowGraphConfig;
 };
 
-const HRFlowNode: React.FC<NodeProps<HRFlowNodeData>> = ({
-  data,
-  selected,
-}) => {
-  const hasConfig =
-    data.config &&
-    Object.keys(data.config as Record<string, unknown>).length > 0;
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+const HRFlowNode: React.FC<NodeProps<HRFlowNodeData>> = ({ data, selected }) => {
+  const { hasConfig, configPreview, configLen } = useMemo(() => {
+    if (!isRecord(data.config) || Object.keys(data.config).length === 0) {
+      return { hasConfig: false, configPreview: "", configLen: 0 };
+    }
+
+    const str = JSON.stringify(data.config);
+    return {
+      hasConfig: true,
+      configPreview: str.slice(0, 60),
+      configLen: str.length,
+    };
+  }, [data.config]);
 
   return (
     <div
@@ -23,9 +33,7 @@ const HRFlowNode: React.FC<NodeProps<HRFlowNodeData>> = ({
       style={{
         borderRadius: "0.85rem",
         backgroundColor: "rgba(15,23,42,0.95)",
-        border: selected
-          ? "2px solid #3b82f6"
-          : "1px solid rgba(148,163,184,0.5)",
+        border: selected ? "2px solid #3b82f6" : "1px solid rgba(148,163,184,0.5)",
         boxShadow: selected
           ? "0 0 0 1px rgba(59,130,246,0.7), 0 18px 35px rgba(15,23,42,0.9)"
           : "0 10px 25px rgba(15,23,42,0.9), 0 0 0 1px rgba(15,23,42,1)",
@@ -37,39 +45,27 @@ const HRFlowNode: React.FC<NodeProps<HRFlowNodeData>> = ({
       }}
     >
       <div className="d-flex justify-content-between align-items-center mb-1">
-        <span
-          className="text-uppercase text-muted"
-          style={{ fontSize: "0.65rem" }}
-        >
+        <span className="text-uppercase text-muted" style={{ fontSize: "0.65rem" }}>
           {data.kind}
         </span>
-        <span
-          className="badge bg-primary"
-          style={{ fontSize: "0.65rem" }}
-        >
+        <span className="badge bg-primary" style={{ fontSize: "0.65rem" }}>
           #{data.backendId}
         </span>
       </div>
 
       <div className="fw-semibold">
-        {data.name && data.name.trim().length > 0
-          ? data.name
-          : "Untitled node"}
+        {data.name && data.name.trim().length > 0 ? data.name : "Untitled node"}
       </div>
 
       {hasConfig && (
-        <div
-          className="mt-1 text-muted"
-          style={{ fontSize: "0.7rem", maxWidth: 200 }}
-        >
+        <div className="mt-1 text-muted" style={{ fontSize: "0.7rem", maxWidth: 200 }}>
           <code>
-            {JSON.stringify(data.config).slice(0, 60)}
-            {JSON.stringify(data.config).length > 60 ? "…" : ""}
+            {configPreview}
+            {configLen > 60 ? "…" : ""}
           </code>
         </div>
       )}
 
-      {/* Target handle (incoming edges) */}
       <Handle
         type="target"
         position={Position.Left}
@@ -82,7 +78,6 @@ const HRFlowNode: React.FC<NodeProps<HRFlowNodeData>> = ({
         }}
       />
 
-      {/* Source handle (outgoing edges) */}
       <Handle
         type="source"
         position={Position.Right}

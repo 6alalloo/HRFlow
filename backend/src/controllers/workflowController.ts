@@ -216,7 +216,7 @@ export async function updateWorkflowNode(req: Request, res: Response) {
     }
 
     // Return whatever the frontend expects as the node shape
-    return res.json(updated);
+    return res.status(200).json({ data: updated });
   } catch (err) {
     console.error("[updateWorkflowNode] error:", err);
     return res.status(500).json({
@@ -449,7 +449,7 @@ export async function updateWorkflowNodePosition(req: Request, res: Response) {
       return res.status(404).json({ message: "Node not found" });
     }
 
-    return res.status(200).json(updated);
+    return res.status(200).json({ data: updated });
   } catch (error) {
     console.error(
       "[WorkflowController] Error updating workflow node position:",
@@ -460,3 +460,36 @@ export async function updateWorkflowNodePosition(req: Request, res: Response) {
 
 }
 
+/**
+ * POST /api/workflows
+ * Create a workflow.
+ */
+export async function createWorkflow(req: Request, res: Response) {
+  try {
+    const { name, description, isActive, ownerUserId, defaultTrigger } =
+      req.body ?? {};
+
+    if (typeof name !== "string" || name.trim().length === 0) {
+      return res.status(400).json({ message: "Workflow name is required" });
+    }
+
+    const created = await workflowService.createWorkflow({
+      name: name.trim(),
+      description:
+        typeof description === "string" && description.trim().length > 0
+          ? description.trim()
+          : null,
+      isActive: typeof isActive === "boolean" ? isActive : undefined,
+      ownerUserId: typeof ownerUserId === "number" ? ownerUserId : null,
+      defaultTrigger:
+        typeof defaultTrigger === "string" && defaultTrigger.trim().length > 0
+          ? defaultTrigger.trim()
+          : null,
+    });
+
+    return res.status(201).json({ data: created });
+  } catch (error) {
+    console.error("[WorkflowController] Error creating workflow:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+}

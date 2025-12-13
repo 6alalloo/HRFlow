@@ -1,4 +1,5 @@
-import { N8N_EXECUTE_URL } from "../config/n8nConfig";
+// backend/src/services/n8nService.ts
+import { N8N_EXECUTE_URL, N8N_API_BASE_URL, N8N_API_KEY } from "../config/n8nConfig";
 
 export type N8nExecutePayload = {
   hrflowWorkflowId: number;
@@ -17,7 +18,6 @@ export type N8nExecutePayload = {
   input: Record<string, unknown> | null;
 };
 
-
 export type N8nExecuteResult = {
   status: string;
   nodeCount: number;
@@ -27,39 +27,254 @@ export type N8nExecuteResult = {
   raw?: unknown;
 }[];
 
-export async function callN8nExecute(
-  payload: N8nExecutePayload
-): Promise<N8nExecuteResult> {
+// ---------- N8N API types (minimal) ----------
+type N8nWorkflowDto = {
+  id: string;
+  name: string;
+  active: boolean;
+};
+
+type N8nWorkflowListResponse =
+  | N8nWorkflowDto[]
+  | { data: N8nWorkflowDto[] }
+  | { data: N8nWorkflowDto[]; nextCursor?: string };
+
+// IMPORTANT: do NOT include `active` in v1 create/update body (read-only)
+type N8nWorkflowUpsertBody = {
+  name: string;
+  nodes: unknown[];
+  connections: Record<string, unknown>;
+  settings?: Record<string, unknown>;
+};
+
+type N8nApiError = Error & { code?: string };
+
+// ---------- helpers ----------
+function requireApiKey() {
+  if (!N8N_API_KEY || N8N_API_KEY.trim().length === 0) {
+    const err: N8nApiError = new Error("Missing N8N_API_KEY in backend environment");
+    err.code = "N8N_MISSING_API_KEY";
+    throw err;
+  }
+}
+
+function requireExecuteUrl(url: string | undefined | null) {
+  if (!url || url.trim().length === 0) {
+    const err: N8nApiError = new Error(
+      "Missing n8n execute webhook URL. Provide a webhookUrl to callN8nExecute(), or set N8N_EXECUTE_URL."
+    );
+    err.code = "N8N_MISSING_EXECUTE_URL";
+    throw err;
+  }
+}
+
+async function n8nApiFetch(path: string, init?: RequestInit): Promise<Response> {
+  requireApiKey();
+
+  const url = `${N8N_API_BASE_URL}${path}`;
   let res: Response;
 
   try {
-    res = await fetch(N8N_EXECUTE_URL, {
-      method: "POST",
+    res = await fetch(url, {
+      ...init,
       headers: {
         "Content-Type": "application/json",
-        // "X-API-Key": process.env.N8N_API_KEY ?? ""  // future
+        "X-N8N-API-KEY": N8N_API_KEY,
+        ...(init?.headers ?? {}),
       },
-      body: JSON.stringify(payload),
+    });
+  } catch (e: any) {
+    const err: N8nApiError = new Error(`Failed to reach n8n API: ${e?.message ?? String(e)}`);
+    err.code = "N8N_UNREACHABLE";
+    throw err;
+  }
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    const err: N8nApiError = new Error(
+      `n8n API error (${res.status} ${res.statusText}) on ${path}: ${text}`
+    );
+    err.code = "N8N_HTTP_ERROR";
+    throw err;
+  }
+
+  return res;
+}
+
+function normalizeListResponse(data: N8nWorkflowListResponse): N8nWorkflowDto[] {
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === "object" && "data" in data && Array.isArray((data as any).data)) {
+    return (data as any).data as N8nWorkflowDto[];
+  }
+  return [];
+}
+
+async function findWorkflowIdByName(name: string): Promise<string | null> {
+  let cursor: string | undefined;
+
+  while (true) {
+    const path = cursor ? `/workflows?cursor=${encodeURIComponent(cursor)}` : `/workflows`;
+    const res = await n8nApiFetch(path, { method: "GET" });
+    const data = (await res.json()) as N8nWorkflowListResponse;
+
+    const list = normalizeListResponse(data);
+    const found = list.find((w) => w.name === name);
+    if (found) return found.id;
+
+    if (data && typeof data === "object" && "nextCursor" in data && (data as any).nextCursor) {
+      cursor = (data as any).nextCursor as string;
+      continue;
+    }
+
+    return null;
+  }
+}
+
+// Parse n8n error response nicely when possible
+async function readErrorDetails(res: Response): Promise<string> {
+  const text = await res.text().catch(() => "");
+  if (!text) return "";
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed?.message) return String(parsed.message);
+    return text;
+  } catch {
+    return text;
+  }
+}
+
+// ---------- public API ----------
+
+/**
+ * Create or update a workflow in n8n by workflow name (stable).
+ * Returns n8n workflow id.
+ *
+ * NOTE:
+ * - n8n v1 rejects `active` in request body (read-only).
+ * - Activating is done via POST /workflows/:id/activate
+ */
+export async function upsertN8nWorkflow(args: {
+  name: string;
+  nodes: unknown[];
+  connections: Record<string, unknown>;
+}): Promise<{ id: string; created: boolean }> {
+  const existingId = await findWorkflowIdByName(args.name);
+
+  const bodyBase: N8nWorkflowUpsertBody = {
+    name: args.name,
+    nodes: args.nodes,
+    connections: args.connections,
+    settings: {},
+  };
+
+  if (!existingId) {
+    const res = await n8nApiFetch(`/workflows`, {
+      method: "POST",
+      body: JSON.stringify(bodyBase),
+    });
+
+    const created = (await res.json()) as { id: string };
+    return { id: created.id, created: true };
+  }
+
+  await n8nApiFetch(`/workflows/${existingId}`, {
+    method: "PUT",
+    body: JSON.stringify(bodyBase),
+  });
+
+  return { id: existingId, created: false };
+}
+
+/**
+ * Activate workflow in n8n.
+ */
+export async function activateN8nWorkflow(id: string): Promise<void> {
+  await n8nApiFetch(`/workflows/${id}/activate`, { method: "POST" });
+}
+
+/**
+ * Deactivate workflow in n8n.
+ */
+export async function deactivateN8nWorkflow(id: string): Promise<void> {
+  await n8nApiFetch(`/workflows/${id}/deactivate`, { method: "POST" });
+}
+
+
+export async function callN8nExecute(payload: N8nExecutePayload): Promise<N8nExecuteResult>;
+export async function callN8nExecute(webhookUrl: string, body: unknown): Promise<N8nExecuteResult>;
+export async function callN8nExecute(arg1: any, arg2?: any): Promise<N8nExecuteResult> {
+  const isLegacyCall = typeof arg1 === "object" && arg1 !== null && arg2 === undefined;
+
+  const url = isLegacyCall ? N8N_EXECUTE_URL : String(arg1);
+  requireExecuteUrl(url);
+
+  const body = isLegacyCall ? arg1 : arg2;
+
+  let res: Response;
+
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body ?? {}),
     });
   } catch (err: any) {
     const error: any = new Error(
-      `Failed to reach automation engine (n8n): ${
-        err?.message ?? String(err)
-      }`
+      `Failed to reach automation engine (n8n) at ${url}: ${err?.message ?? String(err)}`
     );
     error.code = "N8N_UNREACHABLE";
     throw error;
   }
 
+  // Read text ONCE so we can both parse JSON and show meaningful errors.
+  const text = await res.text().catch(() => "");
+
   if (!res.ok) {
-    const text = await res.text();
-    const error: any = new Error(
-      `n8n call failed (${res.status} ${res.statusText}): ${text}`
+    let details: string = text || "(empty response body)";
+
+    // Try common n8n error shapes
+    try {
+      const parsed: any = text ? JSON.parse(text) : null;
+
+      const candidate =
+        parsed?.message ??
+        parsed?.error?.message ??
+        parsed?.error ??
+        parsed?.cause?.message ??
+        parsed?.cause ??
+        parsed?.data?.message ??
+        parsed;
+
+      if (typeof candidate === "string") details = candidate;
+      else if (candidate != null) details = JSON.stringify(candidate);
+    } catch {
+      // If it's not JSON, keep raw text (could be HTML)
+    }
+
+    // Keep logs readable (n8n can dump big stacks)
+    if (details.length > 4000) details = details.slice(0, 4000) + "…(truncated)";
+
+    const err: N8nApiError = new Error(
+      `n8n webhook error (${res.status} ${res.statusText}) on ${url}: ${details}`
     );
-    error.code = "N8N_HTTP_ERROR";
-    throw error;
+    err.code = "N8N_HTTP_ERROR";
+    throw err;
   }
 
-  const data = (await res.json()) as N8nExecuteResult;
-  return data;
+  // Success: parse JSON if possible, otherwise return raw wrapper
+  try {
+    return (text ? JSON.parse(text) : []) as N8nExecuteResult;
+  } catch {
+    return [
+      {
+        status: "unknown",
+        nodeCount: 0,
+        edgeCount: 0,
+        inputEcho: null,
+        finishedAt: new Date().toISOString(),
+        raw: text,
+      },
+    ];
+  }
 }
+

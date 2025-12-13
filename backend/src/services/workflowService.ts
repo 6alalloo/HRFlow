@@ -1,14 +1,11 @@
 // src/services/workflowService.ts
 import prisma from "../lib/prisma";
 
-
-
 type WorkflowFilters = {
   isActive?: boolean;
   ownerId?: number;
   query?: string; // for ?q= search
 };
-
 
 function safeParseJson<T = any>(value: string | null | undefined, fallback: T): T {
   if (!value) return fallback;
@@ -48,6 +45,50 @@ export interface WorkflowEdgeDTO {
   priority?: number | null;
   condition?: Record<string, any>;
 }
+
+/** -------------------- WORKFLOW CRUD -------------------- **/
+
+export type CreateWorkflowDTO = {
+  name: string;
+  description?: string | null;
+  isActive?: boolean;
+  ownerUserId?: number | null;
+  defaultTrigger?: string | null;
+};
+
+/**
+ * Create a workflow.
+ * (Optionally you can add a default trigger node later, but keep it minimal for now.)
+ */
+export async function createWorkflow(dto: CreateWorkflowDTO) {
+  const created = await prisma.workflows.create({
+    data: {
+      name: dto.name,
+      description: dto.description ?? null,
+      is_active: typeof dto.isActive === "boolean" ? dto.isActive : true,
+      owner_user_id: dto.ownerUserId ?? null,
+      default_trigger: dto.defaultTrigger ?? null,
+      // version/created_at/updated_at defaults are handled by Prisma schema
+    },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      is_active: true,
+      version: true,
+      default_trigger: true,
+      owner_user_id: true,
+      archived_at: true,
+      created_at: true,
+      updated_at: true,
+      n8n_workflow_id: true,
+      n8n_webhook_path: true,
+    },
+  });
+
+  return created;
+}
+
 /**
  * Get all workflows (list) with optional filters:
  * - isActive: filter by is_active
@@ -99,6 +140,10 @@ export async function getAllWorkflows(filters: WorkflowFilters = {}) {
       version: true,
       default_trigger: true,
       owner_user_id: true,
+
+      // ✅ IMPORTANT: your frontend uses archived_at for "Archived" filtering
+      archived_at: true,
+
       created_at: true,
       updated_at: true,
       users: {
@@ -134,6 +179,8 @@ export async function getWorkflowById(id: number) {
       archived_at: true,
       created_at: true,
       updated_at: true,
+      n8n_workflow_id: true,
+      n8n_webhook_path: true,
       users: {
         select: {
           id: true,
@@ -211,7 +258,7 @@ export async function getWorkflowGraph(workflowId: number) {
     return null;
   }
 
-  // 2) Fetch nodes and edges in parallel 
+  // 2) Fetch nodes and edges in parallel
   const [nodesRaw, edgesRaw] = await Promise.all([
     prisma.workflow_nodes.findMany({
       where: { workflow_id: workflowId },
@@ -264,11 +311,6 @@ export async function getWorkflowGraph(workflowId: number) {
 // -------------------- NODE CRUD --------------------
 
 /**
- * Create a new node for a workflow.
- */
-
-
-/**
  * Update an existing node for a workflow.
  */
 export async function updateWorkflowNode(
@@ -316,10 +358,7 @@ export async function updateWorkflowNode(
 /**
  * Delete a node from a workflow.
  */
-export async function deleteWorkflowNode(
-  workflowId: number,
-  nodeId: number
-) {
+export async function deleteWorkflowNode(workflowId: number, nodeId: number) {
   // Check ownership
   const existing = await prisma.workflow_nodes.findFirst({
     where: { id: nodeId, workflow_id: workflowId },
@@ -336,6 +375,7 @@ export async function deleteWorkflowNode(
 
   return true;
 }
+
 export async function updateWorkflowNodePosition(
   workflowId: number,
   nodeId: number,
@@ -364,17 +404,14 @@ export async function updateWorkflowNodePosition(
     workflowId: updated.workflow_id,
     kind: updated.kind as WorkflowNodeKind,
     name: updated.name,
-    config: safeParseJson(
-      updated.config_json,
-      {} as Record<string, unknown>
-    ),
+    config: safeParseJson(updated.config_json, {} as Record<string, unknown>),
     posX: updated.pos_x,
     posY: updated.pos_y,
   };
 }
+
 /**
  * List edges for a workflow with parsed JSON condition.
- * 
  */
 export async function listWorkflowEdgesParsed(workflowId: number) {
   const edgesRaw = await prisma.workflow_edges.findMany({
@@ -398,8 +435,7 @@ export async function listWorkflowEdgesParsed(workflowId: number) {
  */
 export async function createWorkflowEdge(
   workflowId: number,
-  dto: Required<Pick<WorkflowEdgeDTO, "fromNodeId" | "toNodeId">> &
-    WorkflowEdgeDTO
+  dto: Required<Pick<WorkflowEdgeDTO, "fromNodeId" | "toNodeId">> & WorkflowEdgeDTO
 ) {
   // 1) Validate that both nodes exist and belong to this workflow
   const [fromNode, toNode] = await Promise.all([
@@ -490,8 +526,7 @@ export async function updateWorkflowEdge(
       from_node_id: fromNodeId,
       to_node_id: toNodeId,
       label: dto.label ?? existing.label,
-      priority:
-        dto.priority !== undefined ? dto.priority : existing.priority ?? 0,
+      priority: dto.priority !== undefined ? dto.priority : existing.priority ?? 0,
       condition_json:
         dto.condition !== undefined
           ? JSON.stringify(dto.condition)
@@ -513,10 +548,7 @@ export async function updateWorkflowEdge(
 /**
  * Delete an edge from the workflow.
  */
-export async function deleteWorkflowEdge(
-  workflowId: number,
-  edgeId: number
-) {
+export async function deleteWorkflowEdge(workflowId: number, edgeId: number) {
   // 1) Ensure the edge belongs to this workflow
   const existing = await prisma.workflow_edges.findFirst({
     where: { id: edgeId, workflow_id: workflowId },
@@ -534,10 +566,7 @@ export async function deleteWorkflowEdge(
   return true;
 }
 
-export async function createWorkflowNode(
-  workflowId: number,
-  dto: WorkflowNodeDTO
-) {
+export async function createWorkflowNode(workflowId: number, dto: WorkflowNodeDTO) {
   // How many nodes already exist for this workflow?
   const count = await prisma.workflow_nodes.count({
     where: { workflow_id: workflowId },
@@ -548,11 +577,11 @@ export async function createWorkflowNode(
 
   // If no explicit position was provided, place node in a simple grid
   if (posX === undefined || posY === undefined) {
-    const col = count % 3;               // 0,1,2
-    const row = Math.floor(count / 3);   // 0,1,2,...
+    const col = count % 3; // 0,1,2
+    const row = Math.floor(count / 3); // 0,1,2,...
 
-    posX = 80 + col * 220;               // 80, 300, 520,...
-    posY = 80 + row * 160;               // 80, 240, 400,...
+    posX = 80 + col * 220; // 80, 300, 520,...
+    posY = 80 + row * 160; // 80, 240, 400,...
   }
 
   const node = await prisma.workflow_nodes.create({
@@ -576,4 +605,3 @@ export async function createWorkflowNode(
     posY: node.pos_y,
   };
 }
-

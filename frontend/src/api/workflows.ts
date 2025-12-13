@@ -1,4 +1,5 @@
-const API_BASE_URL = "http://localhost:4000/api";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000/api";
+
 
 /* ---------- Core API types ---------- */
 
@@ -253,6 +254,8 @@ export async function executeWorkflow(
 ): Promise<{
   execution: ExecutionApi;
   steps: ExecutionStepApi[];
+  // backend may include this; keep it optional so it doesn't break typing
+  n8nResult?: unknown;
 }> {
   const res = await fetch(`${API_BASE_URL}/workflows/${workflowId}/execute`, {
     method: "POST",
@@ -261,7 +264,7 @@ export async function executeWorkflow(
     },
     body: JSON.stringify({
       triggerType: triggerType ?? "manual",
-      input: input ?? null,
+      input: input ?? {},
     }),
   });
 
@@ -273,8 +276,18 @@ export async function executeWorkflow(
   }
 
   const json = (await res.json()) as
-    | { data: { execution: ExecutionApi; steps: ExecutionStepApi[] } }
-    | { execution: ExecutionApi; steps: ExecutionStepApi[] };
+    | {
+        data: {
+          execution: ExecutionApi;
+          steps: ExecutionStepApi[];
+          n8nResult?: unknown;
+        };
+      }
+    | {
+        execution: ExecutionApi;
+        steps: ExecutionStepApi[];
+        n8nResult?: unknown;
+      };
 
   if ("data" in json) return json.data;
   return json;
@@ -689,4 +702,34 @@ export async function fetchExecutionSteps(
   }
 
   throw new Error("Unexpected execution steps response shape");
+}
+
+type CreateWorkflowResponse = WorkflowApi | { data: WorkflowApi };
+
+export type CreateWorkflowPayload = {
+  name: string;
+  description?: string | null;
+  is_active?: boolean;
+};
+
+export async function createWorkflow(payload: {
+  name: string;
+  description?: string | null;
+  isActive?: boolean;
+  ownerUserId?: number | null;
+  defaultTrigger?: string | null;
+}): Promise<WorkflowApi> {
+  const res = await fetch(`${API_BASE_URL}/workflows`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    console.error("[createWorkflow] HTTP error:", res.status, res.statusText);
+    throw new Error(`Failed to create workflow (status ${res.status})`);
+  }
+
+  const json = (await res.json()) as CreateWorkflowResponse;
+  return "data" in json ? json.data : json;
 }

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import {
   fetchExecutionWithSteps,
   type ExecutionDetailResponse,
@@ -7,6 +7,7 @@ import {
   type ExecutionStatus,
   type ExecutionStepStatus,
 } from "../../api/executions";
+import { executeWorkflow } from "../../api/workflows";
 
 const executionStatusBadgeClass: Record<ExecutionStatus, string> = {
   running: "bg-info",
@@ -63,14 +64,22 @@ function safeStringify(value: unknown): string {
 
 const ExecutionDetailPage: React.FC = () => {
   const params = useParams<{ id: string }>();
+  const navigate = useNavigate();
+
   const [data, setData] = useState<ExecutionDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Non-fatal errors (poll/manual refresh/rerun) should not replace the whole page
+  const [inlineError, setInlineError] = useState<string | null>(null);
+
   const [showEngine, setShowEngine] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [rerunning, setRerunning] = useState(false);
 
   const executionId = params.id ? Number(params.id) : NaN;
 
+  // Initial load: can show full-page error if this fails
   const load = useCallback(async () => {
     if (!executionId || Number.isNaN(executionId)) {
       setError("Invalid execution ID");
@@ -80,7 +89,9 @@ const ExecutionDetailPage: React.FC = () => {
 
     try {
       setError(null);
+      setInlineError(null);
       setLoading(true);
+
       const result = await fetchExecutionWithSteps(executionId);
       setData(result);
     } catch (err: unknown) {
@@ -91,25 +102,85 @@ const ExecutionDetailPage: React.FC = () => {
     }
   }, [executionId]);
 
+  // Manual refresh: non-fatal
   const handleRefresh = useCallback(async () => {
     if (!executionId || Number.isNaN(executionId)) return;
 
     try {
       setRefreshing(true);
-      setError(null);
+      setInlineError(null);
+
       const result = await fetchExecutionWithSteps(executionId);
       setData(result);
     } catch (err: unknown) {
       console.error("[ExecutionDetailPage] Refresh failed:", err);
-      setError(getErrorMessage(err));
+      setInlineError(getErrorMessage(err));
     } finally {
       setRefreshing(false);
     }
   }, [executionId]);
 
+  // Poll refresh: non-fatal, silent
+  const refreshSilently = useCallback(async () => {
+    if (!executionId || Number.isNaN(executionId)) return;
+
+    try {
+      setInlineError(null);
+      const result = await fetchExecutionWithSteps(executionId);
+      setData(result);
+    } catch (err: unknown) {
+      console.error("[ExecutionDetailPage] Poll refresh failed:", err);
+      setInlineError(getErrorMessage(err));
+    }
+  }, [executionId]);
+
+  // Re-run workflow and navigate to the new execution
+  const handleRerun = useCallback(async () => {
+    if (!data) return;
+
+    try {
+      setRerunning(true);
+      setInlineError(null);
+
+      const workflowId = data.execution.workflow_id ?? null;
+      if (!workflowId) {
+        throw new Error("Execution has no workflow_id");
+      }
+
+      const result = await executeWorkflow(workflowId, null, "manual");
+      const newId = result?.execution?.id;
+
+      if (!newId) {
+        throw new Error("Execute succeeded but no execution.id returned");
+      }
+
+      navigate(`/executions/${newId}`);
+    } catch (err: unknown) {
+      console.error("[ExecutionDetailPage] Rerun failed:", err);
+      setInlineError(getErrorMessage(err));
+    } finally {
+      setRerunning(false);
+    }
+  }, [data, navigate]);
+
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Poll only while running/queued
+  useEffect(() => {
+    if (!data) return;
+
+    const status = data.execution.status;
+    const shouldPoll = status === "running" || status === "queued";
+    if (!shouldPoll) return;
+
+    const t = window.setInterval(() => {
+      void refreshSilently();
+    }, 1500);
+
+    return () => window.clearInterval(t);
+  }, [data, refreshSilently]);
 
   if (loading && !data && !error) {
     return (
@@ -183,8 +254,22 @@ const ExecutionDetailPage: React.FC = () => {
           >
             {refreshing ? "Refreshing…" : "Refresh"}
           </button>
+
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={handleRerun}
+            disabled={rerunning}
+          >
+            {rerunning ? "Re-running…" : "Re-run"}
+          </button>
         </div>
       </div>
+
+      {/* Inline error (non-fatal) */}
+      {inlineError && (
+        <div className="alert alert-warning py-2 small mb-3">{inlineError}</div>
+      )}
 
       {/* Summary + meta */}
       <div className="row g-3">
@@ -328,8 +413,7 @@ const ExecutionDetailPage: React.FC = () => {
                         <tr key={step.id}>
                           <td>{idx + 1}</td>
                           <td>
-                            {step.workflow_nodes?.name ??
-                              `Node #${step.node_id}`}
+                            {step.workflow_nodes?.name ?? `Node #${step.node_id}`}
                           </td>
                           <td className="text-muted small">
                             {step.workflow_nodes?.kind ?? "-"}

@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
+import type { Edge } from "reactflow";
+
 
 import {
   fetchWorkflows,
@@ -50,6 +52,61 @@ const nodeTypesMap = {
 };
 
 /**
+ * Helpers: normalize config shapes so backend/n8nCompiler gets what it expects.
+ * We keep UI-friendly fields (bodyTemplate, fieldMappings, etc.) but convert
+ * to compiler-friendly keys when saving.
+ */
+function parseKeyValueLines(input: unknown): Record<string, unknown> {
+  if (input && typeof input === "object" && !Array.isArray(input)) {
+    return input as Record<string, unknown>;
+  }
+  if (typeof input !== "string") return {};
+
+  const s = input.trim();
+  if (!s) return {};
+
+  // Try JSON first
+  if (s.startsWith("{") && s.endsWith("}")) {
+    try {
+      const obj = JSON.parse(s);
+      if (obj && typeof obj === "object" && !Array.isArray(obj)) return obj;
+    } catch {
+      // fall through
+    }
+  }
+
+  // Fallback: key:value per line
+  const out: Record<string, unknown> = {};
+  for (const line of s.split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
+    const idx = t.indexOf(":");
+    if (idx === -1) continue;
+    const key = t.slice(0, idx).trim();
+    const value = t.slice(idx + 1).trim();
+    if (!key) continue;
+    out[key] = value;
+  }
+  return out;
+}
+
+function tryParseJsonObject(input: unknown): Record<string, unknown> | null {
+  if (input && typeof input === "object" && !Array.isArray(input)) {
+    return input as Record<string, unknown>;
+  }
+  if (typeof input !== "string") return null;
+  const s = input.trim();
+  if (!s) return null;
+  try {
+    const obj = JSON.parse(s);
+    if (obj && typeof obj === "object" && !Array.isArray(obj)) return obj;
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+/**
  * Custom edge with a small delete (X) button rendered near the middle.
  */
 const DeletableEdge: React.FC<EdgeProps> = (props) => {
@@ -75,9 +132,9 @@ const DeletableEdge: React.FC<EdgeProps> = (props) => {
     targetPosition,
   });
 
-type DeletableEdgeData = { onDelete?: (edgeId: string) => void };
+  type DeletableEdgeData = { onDelete?: (edgeId: string) => void };
 
-const onDelete = (data as DeletableEdgeData | undefined)?.onDelete;
+  const onDelete = (data as DeletableEdgeData | undefined)?.onDelete;
 
   const handleDeleteClick = (event: React.MouseEvent) => {
     event.stopPropagation();
@@ -148,7 +205,6 @@ const nodePaletteTypes: string[] = [
 function getFromNodeId(edge: WorkflowGraphEdge): number {
   const e = edge as Partial<{ fromNodeId: number; from_node_id: number }>;
   return e.fromNodeId ?? e.from_node_id ?? 0;
-
 }
 
 function getToNodeId(edge: WorkflowGraphEdge): number {
@@ -187,7 +243,8 @@ const WorkflowBuilderContent: React.FC = () => {
 
   const [rfNodes, setRfNodes, onNodesChange] =
     useNodesState<HRFlowNodeData>([]);
-  const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<RFEdge>([]);
+const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
+
 
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -241,16 +298,17 @@ const WorkflowBuilderContent: React.FC = () => {
 
   // Helper to map backend edges to RF edges, wiring the delete callback
   const mapToReactFlowEdge = useCallback(
-    (edge: WorkflowGraphEdge): RFEdge => ({
-      id: String(edge.id),
-      source: String(getFromNodeId(edge)),
-      target: String(getToNodeId(edge)),
-      label: edge.label ?? undefined,
-      type: "deletable",
-      data: { onDelete: handleEdgeDeleteClick },
-    }),
-    [handleEdgeDeleteClick]
-  );
+  (edge: WorkflowGraphEdge): Edge => ({
+    id: String(edge.id),
+    source: String(getFromNodeId(edge)),
+    target: String(getToNodeId(edge)),
+    label: edge.label ?? undefined,
+    type: "deletable",
+    data: { onDelete: handleEdgeDeleteClick },
+  }),
+  [handleEdgeDeleteClick]
+);
+
 
   // --------------- LOAD WORKFLOW + GRAPH ----------------
 
@@ -438,7 +496,7 @@ const WorkflowBuilderContent: React.FC = () => {
     if (startDate) input.startDate = startDate;
     if (managerEmail) input.managerEmail = managerEmail;
 
-    return input;
+    return { employee: input };
   }, [state.nodes]);
 
   const handleRunClick = async () => {
@@ -546,11 +604,10 @@ const WorkflowBuilderContent: React.FC = () => {
 
       const bounds = flowWrapperRef.current.getBoundingClientRect();
 
+      // FIX: correct Y calculation
       const position = project({
         x: event.clientX - bounds.left,
-        y: event.clientX - bounds.left
-          ? event.clientY - bounds.top
-          : event.clientY - bounds.top,
+        y: event.clientY - bounds.top,
       });
 
       try {
@@ -704,7 +761,92 @@ const WorkflowBuilderContent: React.FC = () => {
         string,
         unknown
       >;
-      const newConfig = { ...currentConfig, ...partialConfig };
+
+      const newConfig: Record<string, unknown> = { ...currentConfig, ...partialConfig };
+
+      // Normalize into the shape n8nCompiler expects (for the 5 core nodes)
+      const kind = String(existingNode?.kind ?? "").toLowerCase();
+
+      if (kind === "http") {
+        // headers: string -> object
+        if ("headers" in newConfig) {
+          newConfig.headers = parseKeyValueLines(newConfig.headers);
+        }
+
+        // bodyTemplate -> body (object if JSON, else store _raw)
+        if ("bodyTemplate" in newConfig) {
+          const parsed = tryParseJsonObject(newConfig.bodyTemplate);
+          if (parsed) newConfig.body = parsed;
+          else if (typeof newConfig.bodyTemplate === "string" && newConfig.bodyTemplate.trim()) {
+            newConfig.body = { _raw: newConfig.bodyTemplate };
+          }
+          delete newConfig.bodyTemplate;
+        }
+
+        // Optional query parsing if you add it later (no harm)
+        if ("query" in newConfig) {
+          newConfig.query = parseKeyValueLines(newConfig.query);
+        }
+      }
+
+      if (kind === "email") {
+        // bodyTemplate -> text
+        if ("bodyTemplate" in newConfig) {
+          const bt = typeof newConfig.bodyTemplate === "string" ? newConfig.bodyTemplate : "";
+          newConfig.text = bt;
+          delete newConfig.bodyTemplate;
+        }
+      }
+
+      if (kind === "database") {
+        // Convert friendly fields into a SQL query string for compiler
+        const table = typeof newConfig.table === "string" ? newConfig.table.trim() : "";
+        const op = typeof newConfig.operation === "string" ? newConfig.operation.trim().toLowerCase() : "insert";
+        const mappings = parseKeyValueLines(newConfig.fieldMappings);
+
+        if (table && Object.keys(mappings).length > 0) {
+          const cols = Object.keys(mappings).map((c) => `"${c}"`).join(", ");
+          const vals = Object.keys(mappings)
+            .map((k) => {
+              const v = mappings[k];
+              const lit =
+                typeof v === "string"
+                  ? v.replaceAll("'", "''")
+                  : JSON.stringify(v).replaceAll("'", "''");
+              return `'${lit}'`;
+            })
+            .join(", ");
+
+          if (op === "insert") {
+            newConfig.query = `INSERT INTO ${table} (${cols}) VALUES (${vals});`;
+          } else if (op === "update") {
+            const sets = Object.keys(mappings)
+              .map((k) => {
+                const v = mappings[k];
+                const lit =
+                  typeof v === "string"
+                    ? v.replaceAll("'", "''")
+                    : JSON.stringify(v).replaceAll("'", "''");
+                return `"${k}"='${lit}'`;
+              })
+              .join(", ");
+            newConfig.query = `UPDATE ${table} SET ${sets};`;
+          } else {
+            // upsert is schema-dependent
+            newConfig.query = `-- TODO UPSERT for ${table}\nINSERT INTO ${table} (${cols}) VALUES (${vals});`;
+          }
+        }
+
+        // Compiler only needs query; we can keep other fields for UI.
+      }
+
+      if (kind === "condition") {
+        // Your compiler expects left/op/right.
+        // UI currently stores expression. Keep it, but ensure compiler has valid defaults.
+        if (!("left" in newConfig)) newConfig.left = "value";
+        if (!("op" in newConfig)) newConfig.op = "eq";
+        if (!("right" in newConfig)) newConfig.right = "";
+      }
 
       // 1) Update our in-memory graph state
       setState((prev) => ({
@@ -795,13 +937,14 @@ const WorkflowBuilderContent: React.FC = () => {
 
       // Optimistic edge so you SEE it immediately
       const tempEdgeId = `temp-${Date.now()}`;
-      const tempEdge: RFEdge = {
-        id: tempEdgeId,
-        source: connection.source,
-        target: connection.target,
-        type: "deletable",
-        data: { onDelete: handleEdgeDeleteClick },
-      };
+const tempEdge: Edge = {
+  id: tempEdgeId,
+  source: connection.source,
+  target: connection.target,
+  type: "deletable",
+  data: { onDelete: handleEdgeDeleteClick },
+};
+
 
       setRfEdges((current) => addEdge(tempEdge, current));
 
@@ -1197,15 +1340,15 @@ const WorkflowBuilderContent: React.FC = () => {
                     </div>
                   )}
 
-                    {activeTab === "config" && selectedNode && (
-                      <div className="small">
-                        {/* Friendly forms per node type */}
-                        {(() => {
-                          const cfg = (selectedNode.config ?? {}) as Record<
-                            string,
-                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                            any
-                          >;
+                  {activeTab === "config" && selectedNode && (
+                    <div className="small">
+                      {/* Friendly forms per node type */}
+                      {(() => {
+                        const cfg = (selectedNode.config ?? {}) as Record<
+                          string,
+                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                          any
+                        >;
 
                         if (selectedNode.kind === "trigger") {
                           return (
@@ -1385,8 +1528,8 @@ const WorkflowBuilderContent: React.FC = () => {
                                   placeholder={`Authorization: Bearer {{token}}`}
                                 />
                                 <div className="form-text">
-                                  For now this is stored as plain text. Later we
-                                  can add a proper key/value editor.
+                                  Stored as text here, but saved to backend as an
+                                  object for the compiler.
                                 </div>
                               </div>
 
@@ -1405,6 +1548,10 @@ const WorkflowBuilderContent: React.FC = () => {
                                   }
                                   placeholder={`{"name": "{{user.name}}", "email": "{{user.email}}"}`}
                                 />
+                                <div className="form-text">
+                                  Saved to backend as <code>body</code> (object if
+                                  valid JSON).
+                                </div>
                               </div>
                             </>
                           );
@@ -1500,6 +1647,9 @@ const WorkflowBuilderContent: React.FC = () => {
                                   }
                                   placeholder={`Hi {{user.name}},\n\nYour account is now active.\n\nThanks,\nHRFlow`}
                                 />
+                                <div className="form-text">
+                                  Saved to backend as <code>text</code> for the compiler.
+                                </div>
                               </div>
                             </>
                           );
@@ -1525,7 +1675,7 @@ const WorkflowBuilderContent: React.FC = () => {
                                       table: e.target.value,
                                     })
                                   }
-                                  placeholder="e.g. hr_candidates"
+                                  placeholder="e.g. candidates"
                                 />
                               </div>
 
@@ -1561,8 +1711,11 @@ const WorkflowBuilderContent: React.FC = () => {
                                       fieldMappings: e.target.value,
                                     })
                                   }
-                                  placeholder={`name: {{candidate.name}}\nemail: {{candidate.email}}`}
+                                  placeholder={`full_name: Sara Ali\nemail: sara@company.com`}
                                 />
+                                <div className="form-text">
+                                  Saved to backend as a generated SQL <code>query</code>.
+                                </div>
                               </div>
                             </>
                           );
@@ -1588,12 +1741,11 @@ const WorkflowBuilderContent: React.FC = () => {
                                       expression: e.target.value,
                                     })
                                   }
-                                  placeholder={`{{candidate.score}} > 80 && {{candidate.yearsExperience}} >= 3`}
+                                  placeholder={`value == "approved"`}
                                 />
                                 <div className="form-text">
-                                  For now this is just a string. Later we can
-                                  build a visual condition builder that outputs
-                                  this expression.
+                                  Stored as text for now. Compiler uses left/op/right defaults
+                                  unless you extend it later.
                                 </div>
                               </div>
                             </>

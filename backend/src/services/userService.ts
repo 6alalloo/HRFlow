@@ -1,4 +1,5 @@
 import prisma from "../lib/prisma";
+import { hashPassword } from "./authService";
 
 
 type UserFilters = {
@@ -103,4 +104,74 @@ export async function getUserById(id: number) {
   });
 
   return user;
+}
+
+export interface CreateUserInput {
+  email: string;
+  password: string;
+  full_name: string;
+  role_id: number;
+  is_active?: boolean;
+}
+
+/**
+ * Create a new user with hashed password
+ */
+export async function createUser(input: CreateUserInput) {
+  const password_hash = await hashPassword(input.password);
+
+  const user = await prisma.users.create({
+    data: {
+      email: input.email,
+      password_hash,
+      full_name: input.full_name,
+      role_id: input.role_id,
+      is_active: input.is_active ?? true
+    },
+    select: {
+      id: true,
+      email: true,
+      full_name: true,
+      is_active: true,
+      created_at: true,
+      roles: {
+        select: {
+          id: true,
+          name: true
+        }
+      }
+    }
+  });
+
+  return user;
+}
+
+/**
+ * Update a user's password (with hashing)
+ */
+export async function updateUserPassword(userId: number, newPassword: string) {
+  const password_hash = await hashPassword(newPassword);
+
+  const user = await prisma.users.update({
+    where: { id: userId },
+    data: { password_hash },
+    select: {
+      id: true,
+      email: true,
+      full_name: true
+    }
+  });
+
+  return user;
+}
+
+/**
+ * Check if an email already exists
+ */
+export async function emailExists(email: string): Promise<boolean> {
+  const user = await prisma.users.findUnique({
+    where: { email },
+    select: { id: true }
+  });
+  return user !== null;
 }

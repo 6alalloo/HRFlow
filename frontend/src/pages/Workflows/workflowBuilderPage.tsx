@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import type { Edge } from "reactflow";
+
 
 
 import {
@@ -32,7 +32,7 @@ import ReactFlow, {
   getSmoothStepPath,
   type Connection,
   type Node as RFNode,
-  type Edge as RFEdge,
+  type Edge,
   type EdgeProps,
   type NodeDragHandler,
 } from "reactflow";
@@ -44,6 +44,9 @@ type BuilderState = {
   workflowMeta?: WorkflowGraphMeta;
   nodes: WorkflowGraphNode[];
 };
+
+type WorkflowEdgeData = { onDelete?: (edgeId: string) => void | Promise<void> };
+type WorkflowEdge = Edge<WorkflowEdgeData>;
 
 type ConfigTab = "general" | "config" | "advanced";
 
@@ -243,7 +246,7 @@ const WorkflowBuilderContent: React.FC = () => {
 
   const [rfNodes, setRfNodes, onNodesChange] =
     useNodesState<HRFlowNodeData>([]);
-const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
+const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<WorkflowEdgeData>([]);
 
 
   const [loading, setLoading] = useState<boolean>(true);
@@ -298,7 +301,7 @@ const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
   // Helper to map backend edges to RF edges, wiring the delete callback
   const mapToReactFlowEdge = useCallback(
-  (edge: WorkflowGraphEdge): Edge => ({
+  (edge: WorkflowGraphEdge): WorkflowEdge => ({
     id: String(edge.id),
     source: String(getFromNodeId(edge)),
     target: String(getToNodeId(edge)),
@@ -944,7 +947,7 @@ const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
       // Optimistic edge so you SEE it immediately
       const tempEdgeId = `temp-${Date.now()}`;
-const tempEdge: Edge = {
+const tempEdge: WorkflowEdge = {
   id: tempEdgeId,
   source: connection.source,
   target: connection.target,
@@ -989,7 +992,7 @@ const tempEdge: Edge = {
   // --------------- SELECTION CHANGE ---------------
 
   const handleSelectionChange = useCallback(
-    (params: { nodes: RFNode[]; edges: RFEdge[] }) => {
+    (params: { nodes: RFNode[]; edges: Edge[] }) => {
       const nodes = params.nodes ?? [];
       if (nodes.length === 0) {
         setSelectedNodeId(null);
@@ -1735,6 +1738,307 @@ const tempEdge: Edge = {
                                 <div className="form-text">
                                   Stored as text for now. Compiler uses left/op/right defaults
                                   unless you extend it later.
+                                </div>
+                              </div>
+                            </>
+                          );
+                        }
+
+                        if (selectedNode.kind === "cv_parse") {
+                          return (
+                            <>
+                              <div className="text-muted mb-2">
+                                CV Parse node configuration
+                              </div>
+
+                              <div className="mb-3">
+                                <label className="form-label text-muted mb-1">
+                                  Input Type
+                                </label>
+                                <select
+                                  className="form-select form-select-sm"
+                                  value={cfg.inputType ?? "file"}
+                                  onChange={(e) =>
+                                    updateSelectedNodeConfig({
+                                      inputType: e.target.value,
+                                    })
+                                  }
+                                >
+                                  <option value="file">File Upload</option>
+                                  <option value="url">URL</option>
+                                </select>
+                                <div className="form-text">
+                                  Choose whether to parse from uploaded file or URL
+                                </div>
+                              </div>
+
+                              {cfg.inputType === "file" ? (
+                                <div className="mb-3">
+                                  <label className="form-label text-muted mb-1">
+                                    File Field Name
+                                  </label>
+                                  <input
+                                    type="text"
+                                    className="form-control form-control-sm"
+                                    value={cfg.fileField ?? "resume_file"}
+                                    onChange={(e) =>
+                                      updateSelectedNodeConfig({
+                                        fileField: e.target.value,
+                                      })
+                                    }
+                                    placeholder="resume_file"
+                                  />
+                                  <div className="form-text">
+                                    Field name for uploaded CV file
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="mb-3">
+                                  <label className="form-label text-muted mb-1">
+                                    CV URL
+                                  </label>
+                                  <input
+                                    type="text"
+                                    className="form-control form-control-sm"
+                                    value={cfg.cvUrl ?? ""}
+                                    onChange={(e) =>
+                                      updateSelectedNodeConfig({
+                                        cvUrl: e.target.value,
+                                      })
+                                    }
+                                    placeholder="https://example.com/resume.pdf"
+                                  />
+                                  <div className="form-text">
+                                    URL to CV file (supports n8n expressions)
+                                  </div>
+                                </div>
+                              )}
+                            </>
+                          );
+                        }
+
+                        if (selectedNode.kind === "variable") {
+                          return (
+                            <>
+                              <div className="text-muted mb-2">
+                                Variable node configuration
+                              </div>
+
+                              <div className="mb-3">
+                                <label className="form-label text-muted mb-1">
+                                  Variable Name
+                                </label>
+                                <input
+                                  type="text"
+                                  className="form-control form-control-sm"
+                                  value={cfg.variableName ?? ""}
+                                  onChange={(e) =>
+                                    updateSelectedNodeConfig({
+                                      variableName: e.target.value,
+                                    })
+                                  }
+                                  placeholder="myVariable"
+                                />
+                                <div className="form-text">
+                                  Name of the variable to set
+                                </div>
+                              </div>
+
+                              <div className="mb-3">
+                                <label className="form-label text-muted mb-1">
+                                  Value
+                                </label>
+                                <textarea
+                                  className="form-control form-control-sm font-monospace"
+                                  rows={3}
+                                  value={cfg.value ?? ""}
+                                  onChange={(e) =>
+                                    updateSelectedNodeConfig({
+                                      value: e.target.value,
+                                    })
+                                  }
+                                  placeholder="Static value or expression: {{ $node.previousNode.json.field }}"
+                                />
+                                <div className="form-text">
+                                  Supports n8n expressions
+                                </div>
+                              </div>
+                            </>
+                          );
+                        }
+
+                        if (selectedNode.kind === "datetime") {
+                          return (
+                            <>
+                              <div className="text-muted mb-2">
+                                Datetime node configuration
+                              </div>
+
+                              <div className="mb-3">
+                                <label className="form-label text-muted mb-1">
+                                  Operation
+                                </label>
+                                <select
+                                  className="form-select form-select-sm"
+                                  value={cfg.operation ?? "format"}
+                                  onChange={(e) =>
+                                    updateSelectedNodeConfig({
+                                      operation: e.target.value,
+                                    })
+                                  }
+                                >
+                                  <option value="format">Format Date</option>
+                                  <option value="add">Add Time</option>
+                                  <option value="subtract">Subtract Time</option>
+                                  <option value="parse">Parse String</option>
+                                </select>
+                                <div className="form-text">
+                                  Choose the datetime operation
+                                </div>
+                              </div>
+
+                              {cfg.operation === "format" && (
+                                <div className="mb-3">
+                                  <label className="form-label text-muted mb-1">
+                                    Format String
+                                  </label>
+                                  <input
+                                    type="text"
+                                    className="form-control form-control-sm font-monospace"
+                                    value={cfg.format ?? "YYYY-MM-DD"}
+                                    onChange={(e) =>
+                                      updateSelectedNodeConfig({
+                                        format: e.target.value,
+                                      })
+                                    }
+                                    placeholder="YYYY-MM-DD HH:mm:ss"
+                                  />
+                                  <div className="form-text">
+                                    Uses moment.js format tokens
+                                  </div>
+                                </div>
+                              )}
+
+                              {(cfg.operation === "add" ||
+                                cfg.operation === "subtract") && (
+                                <>
+                                  <div className="mb-3">
+                                    <label className="form-label text-muted mb-1">
+                                      Amount
+                                    </label>
+                                    <input
+                                      type="number"
+                                      className="form-control form-control-sm"
+                                      value={cfg.amount ?? 1}
+                                      onChange={(e) =>
+                                        updateSelectedNodeConfig({
+                                          amount: parseInt(e.target.value),
+                                        })
+                                      }
+                                    />
+                                    <div className="form-text">
+                                      Number of units to add/subtract
+                                    </div>
+                                  </div>
+
+                                  <div className="mb-3">
+                                    <label className="form-label text-muted mb-1">
+                                      Unit
+                                    </label>
+                                    <select
+                                      className="form-select form-select-sm"
+                                      value={cfg.unit ?? "days"}
+                                      onChange={(e) =>
+                                        updateSelectedNodeConfig({
+                                          unit: e.target.value,
+                                        })
+                                      }
+                                    >
+                                      <option value="seconds">Seconds</option>
+                                      <option value="minutes">Minutes</option>
+                                      <option value="hours">Hours</option>
+                                      <option value="days">Days</option>
+                                      <option value="weeks">Weeks</option>
+                                      <option value="months">Months</option>
+                                      <option value="years">Years</option>
+                                    </select>
+                                    <div className="form-text">Time unit</div>
+                                  </div>
+                                </>
+                              )}
+                            </>
+                          );
+                        }
+
+                        if (selectedNode.kind === "logger") {
+                          return (
+                            <>
+                              <div className="text-muted mb-2">
+                                Logger node configuration
+                              </div>
+
+                              <div className="mb-3">
+                                <label className="form-label text-muted mb-1">
+                                  Log Message
+                                </label>
+                                <textarea
+                                  className="form-control form-control-sm font-monospace"
+                                  rows={3}
+                                  value={cfg.message ?? ""}
+                                  onChange={(e) =>
+                                    updateSelectedNodeConfig({
+                                      message: e.target.value,
+                                    })
+                                  }
+                                  placeholder="Workflow step completed: {{ $node.previousNode.json.status }}"
+                                />
+                                <div className="form-text">
+                                  Supports n8n expressions
+                                </div>
+                              </div>
+
+                              <div className="mb-3">
+                                <label className="form-label text-muted mb-1">
+                                  Log Level
+                                </label>
+                                <select
+                                  className="form-select form-select-sm"
+                                  value={cfg.level ?? "info"}
+                                  onChange={(e) =>
+                                    updateSelectedNodeConfig({
+                                      level: e.target.value,
+                                    })
+                                  }
+                                >
+                                  <option value="debug">Debug</option>
+                                  <option value="info">Info</option>
+                                  <option value="warn">Warn</option>
+                                  <option value="error">Error</option>
+                                </select>
+                                <div className="form-text">
+                                  Logging severity level
+                                </div>
+                              </div>
+
+                              <div className="mb-3">
+                                <div className="form-check">
+                                  <input
+                                    type="checkbox"
+                                    className="form-check-input"
+                                    id="includeInputCheck"
+                                    checked={cfg.includeInput !== false}
+                                    onChange={(e) =>
+                                      updateSelectedNodeConfig({
+                                        includeInput: e.target.checked,
+                                      })
+                                    }
+                                  />
+                                  <label
+                                    className="form-check-label text-muted"
+                                    htmlFor="includeInputCheck"
+                                  >
+                                    Include input data in log
+                                  </label>
                                 </div>
                               </div>
                             </>

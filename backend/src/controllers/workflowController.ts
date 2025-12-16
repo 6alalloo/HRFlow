@@ -1,6 +1,7 @@
 // src/controllers/workflowController.ts
 import { Request, Response } from "express";
 import * as workflowService from "../services/workflowService";
+import * as auditService from "../services/auditService";
 
 /**
  * GET /api/workflows
@@ -215,6 +216,18 @@ export async function updateWorkflowNode(req: Request, res: Response) {
       });
     }
 
+    // Audit log
+    const userId = (req as any).user?.id || 1;
+    await auditService.logAuditEvent({
+      eventType: "workflow_updated",
+      userId,
+      targetType: "workflow",
+      targetId: workflowId,
+      details: { action: "node_updated", nodeId: numericNodeId, kind },
+      ipAddress: req.ip,
+      userAgent: req.get("user-agent"),
+    });
+
     // Return whatever the frontend expects as the node shape
     return res.status(200).json({ data: updated });
   } catch (err) {
@@ -249,6 +262,18 @@ export async function deleteWorkflowNode(req: Request, res: Response) {
     if (!ok) {
       return res.status(404).json({ message: "Node not found" });
     }
+
+    // Audit log
+    const userId = (req as any).user?.id || 1;
+    await auditService.logAuditEvent({
+      eventType: "workflow_updated",
+      userId,
+      targetType: "workflow",
+      targetId: numericId,
+      details: { action: "node_deleted", nodeId: numericNodeId },
+      ipAddress: req.ip,
+      userAgent: req.get("user-agent"),
+    });
 
     // 204 No Content is standard for successful delete
     return res.status(204).send();
@@ -485,6 +510,18 @@ export async function createWorkflow(req: Request, res: Response) {
         typeof defaultTrigger === "string" && defaultTrigger.trim().length > 0
           ? defaultTrigger.trim()
           : null,
+    });
+
+    // Audit log
+    const userId = (req as any).user?.id || ownerUserId || 1;
+    await auditService.logAuditEvent({
+      eventType: "workflow_created",
+      userId,
+      targetType: "workflow",
+      targetId: created.id,
+      details: { name: created.name },
+      ipAddress: req.ip,
+      userAgent: req.get("user-agent"),
     });
 
     return res.status(201).json({ data: created });

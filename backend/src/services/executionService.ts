@@ -6,6 +6,7 @@ import {
   activateN8nWorkflow,
 } from "./n8nService";
 import { compileToN8n } from "./n8nCompiler";
+import * as auditService from "./auditService";
 
 type ExecutionFilters = {
   status?: string;
@@ -331,6 +332,21 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
       finished_at: finishedTime,
       duration_ms: durationMs,
       error_message: errorMessage,
+    },
+  });
+
+  // Audit log execution
+  await auditService.logAuditEvent({
+    eventType: finalStatus === "completed" ? "execution_completed" : "execution_failed",
+    userId: workflow.owner_user_id || 1,
+    targetType: "execution",
+    targetId: updatedExecution.id,
+    details: {
+      workflowId,
+      workflowName: workflow.name,
+      status: finalStatus,
+      durationMs,
+      triggerType,
     },
   });
 

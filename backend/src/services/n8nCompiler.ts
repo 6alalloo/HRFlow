@@ -490,6 +490,125 @@ case "email": {
   };
 }
 
+    case "cv_parse": {
+      const inputType = safeString(cfg.inputType, "file");
+      const cvUrl = safeString(cfg.cvUrl, "");
+      const fileField = safeString(cfg.fileField, "resume_file");
+
+      return {
+        id: `hrflow_node_${n.id}`,
+        name,
+        type: "n8n-nodes-base.httpRequest",
+        typeVersion: 4.1,
+        position,
+        parameters: {
+          method: "POST",
+          url: "http://cv-parser:8000/parse",
+          sendBody: true,
+          bodyParametersUi: {
+            parameter: [
+              {
+                name: inputType === "file" ? "file" : "url",
+                value: inputType === "file"
+                  ? `={{ $node["${name}"].binary.file }}`
+                  : cvUrl,
+              },
+            ],
+          },
+          options: {
+            timeout: 30000,
+            response: {
+              response: {
+                fullResponse: false,
+                responseFormat: "json",
+              },
+            },
+          },
+        },
+      };
+    }
+
+    case "variable": {
+      const variableName = safeString(cfg.variableName, "myVariable");
+      const value = safeString(cfg.value, "");
+
+      const jsCode = [
+        "const items = $input.all();",
+        `const variableName = ${JSON.stringify(variableName)};`,
+        `const value = ${JSON.stringify(value)};`,
+        "// Set the variable in the output",
+        "return items.map(item => ({",
+        "  json: {",
+        "    ...item.json,",
+        "    [variableName]: value",
+        "  }",
+        "}));",
+      ].join("\n");
+
+      return makeCodeNode({
+        id: `hrflow_node_${n.id}`,
+        name,
+        position,
+        jsCode,
+      });
+    }
+
+    case "datetime": {
+      const operation = safeString(cfg.operation, "format");
+      const format = safeString(cfg.format, "YYYY-MM-DD");
+      const amount = typeof cfg.amount === "number" ? cfg.amount : 1;
+      const unit = safeString(cfg.unit, "days");
+
+      let jsCode = "";
+
+      if (operation === "format") {
+        jsCode = [
+          "const items = $input.all();",
+          "const moment = require('moment');",
+          `const format = ${JSON.stringify(format)};`,
+          "return items.map(item => ({",
+          "  json: {",
+          "    ...item.json,",
+          "    formatted_date: moment().format(format)",
+          "  }",
+          "}));",
+        ].join("\n");
+      } else if (operation === "add" || operation === "subtract") {
+        const op = operation === "add" ? "add" : "subtract";
+        jsCode = [
+          "const items = $input.all();",
+          "const moment = require('moment');",
+          `const amount = ${amount};`,
+          `const unit = ${JSON.stringify(unit)};`,
+          "return items.map(item => ({",
+          "  json: {",
+          "    ...item.json,",
+          `    modified_date: moment().${op}(amount, unit).toISOString()`,
+          "  }",
+          "}));",
+        ].join("\n");
+      } else {
+        // parse operation
+        jsCode = [
+          "const items = $input.all();",
+          "const moment = require('moment');",
+          "return items.map(item => ({",
+          "  json: {",
+          "    ...item.json,",
+          "    parsed_date: moment(item.json.date_string).toISOString()",
+          "  }",
+          "}));",
+        ].join("\n");
+      }
+
+      return makeCodeNode({
+        id: `hrflow_node_${n.id}`,
+        name,
+        position,
+        jsCode,
+      });
+    }
+
 
 
 

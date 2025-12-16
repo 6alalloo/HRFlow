@@ -528,7 +528,7 @@ const WorkflowsListPage: React.FC = () => {
       const created = await createWorkflow({
         name: "New Workflow",
         description: "Empty workflow. Add nodes to build your flow.",
-        is_active: true,
+        isActive: true,
       });
 
       const mapped = mapWorkflow(created);

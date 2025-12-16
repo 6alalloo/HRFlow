@@ -557,9 +557,6 @@ const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
         }));
 
         setRfNodes((prev) => [...prev, toReactFlowNode(newNode)]);
-
-        setSelectedNodeId(newNode.id);
-        setActiveTab("general");
       } catch (e) {
         console.error("[WorkflowBuilderPage] Failed to create node:", e);
         alert("Failed to create node. Check console for details.");
@@ -624,9 +621,6 @@ const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
         }));
 
         setRfNodes((prev) => [...prev, toReactFlowNode(newNode)]);
-
-        setSelectedNodeId(newNode.id);
-        setActiveTab("general");
       } catch (e) {
         console.error(
           "[WorkflowBuilderPage] Failed to create node via drop:",
@@ -899,6 +893,19 @@ const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
       const backendId = data.backendId;
       const { x, y } = node.position;
 
+      // Validate position values are finite numbers
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        console.warn(`[WorkflowBuilderPage] Invalid position values for node ${backendId}: (${x}, ${y})`);
+        return;
+      }
+
+      // Verify node exists in our state before updating
+      const nodeExists = state.nodes.some(n => n.id === backendId);
+      if (!nodeExists) {
+        console.warn(`[WorkflowBuilderPage] Node ${backendId} not found in state, skipping position update`);
+        return;
+      }
+
       setState((prev) => ({
         ...prev,
         nodes: prev.nodes.map((n) =>
@@ -922,7 +929,7 @@ const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
         })();
       }
     },
-    [state.workflowId, beginSave, endSave]
+    [state.workflowId, state.nodes, beginSave, endSave]
   );
 
   // --------------- CONNECT HANDLER ---------------
@@ -1256,7 +1263,6 @@ const tempEdge: Edge = {
                           type="text"
                           className="form-control form-control-sm"
                           value={selectedNode.name ?? ""}
-                          placeholder="Enter a friendly name"
                           onChange={(e) =>
                             updateSelectedNode({ name: e.target.value })
                           }
@@ -1370,7 +1376,6 @@ const tempEdge: Edge = {
                                       name: e.target.value,
                                     })
                                   }
-                                  placeholder="e.g. Sara Ali"
                                 />
                               </div>
 
@@ -1387,7 +1392,6 @@ const tempEdge: Edge = {
                                       email: e.target.value,
                                     })
                                   }
-                                  placeholder="e.g. sara@company.com"
                                 />
                               </div>
 
@@ -1404,7 +1408,6 @@ const tempEdge: Edge = {
                                       role: e.target.value,
                                     })
                                   }
-                                  placeholder="e.g. Analyst"
                                 />
                               </div>
 
@@ -1421,7 +1424,6 @@ const tempEdge: Edge = {
                                       department: e.target.value,
                                     })
                                   }
-                                  placeholder="e.g. HR"
                                 />
                               </div>
 
@@ -1438,7 +1440,6 @@ const tempEdge: Edge = {
                                       startDate: e.target.value,
                                     })
                                   }
-                                  placeholder="e.g. 2025-12-15"
                                 />
                               </div>
 
@@ -1455,7 +1456,6 @@ const tempEdge: Edge = {
                                       managerEmail: e.target.value,
                                     })
                                   }
-                                  placeholder="e.g. manager@company.com"
                                 />
                               </div>
 
@@ -1508,7 +1508,6 @@ const tempEdge: Edge = {
                                       url: e.target.value,
                                     })
                                   }
-                                  placeholder="https://api.example.com/resource"
                                 />
                               </div>
 
@@ -1525,7 +1524,6 @@ const tempEdge: Edge = {
                                       headers: e.target.value,
                                     })
                                   }
-                                  placeholder={`Authorization: Bearer {{token}}`}
                                 />
                                 <div className="form-text">
                                   Stored as text here, but saved to backend as an
@@ -1546,7 +1544,6 @@ const tempEdge: Edge = {
                                       bodyTemplate: e.target.value,
                                     })
                                   }
-                                  placeholder={`{"name": "{{user.name}}", "email": "{{user.email}}"}`}
                                 />
                                 <div className="form-text">
                                   Saved to backend as <code>body</code> (object if
@@ -1577,7 +1574,6 @@ const tempEdge: Edge = {
                                       to: e.target.value,
                                     })
                                   }
-                                  placeholder="user@example.com, {{recipientEmail}}"
                                 />
                               </div>
 
@@ -1594,7 +1590,6 @@ const tempEdge: Edge = {
                                       cc: e.target.value,
                                     })
                                   }
-                                  placeholder="Optional, comma-separated"
                                 />
                               </div>
 
@@ -1611,7 +1606,6 @@ const tempEdge: Edge = {
                                       bcc: e.target.value,
                                     })
                                   }
-                                  placeholder="Optional, comma-separated"
                                 />
                               </div>
 
@@ -1628,7 +1622,6 @@ const tempEdge: Edge = {
                                       subject: e.target.value,
                                     })
                                   }
-                                  placeholder="Welcome {{user.name}}"
                                 />
                               </div>
 
@@ -1645,7 +1638,6 @@ const tempEdge: Edge = {
                                       bodyTemplate: e.target.value,
                                     })
                                   }
-                                  placeholder={`Hi {{user.name}},\n\nYour account is now active.\n\nThanks,\nHRFlow`}
                                 />
                                 <div className="form-text">
                                   Saved to backend as <code>text</code> for the compiler.
@@ -1675,7 +1667,6 @@ const tempEdge: Edge = {
                                       table: e.target.value,
                                     })
                                   }
-                                  placeholder="e.g. candidates"
                                 />
                               </div>
 
@@ -1711,7 +1702,6 @@ const tempEdge: Edge = {
                                       fieldMappings: e.target.value,
                                     })
                                   }
-                                  placeholder={`full_name: Sara Ali\nemail: sara@company.com`}
                                 />
                                 <div className="form-text">
                                   Saved to backend as a generated SQL <code>query</code>.
@@ -1741,7 +1731,6 @@ const tempEdge: Edge = {
                                       expression: e.target.value,
                                     })
                                   }
-                                  placeholder={`value == "approved"`}
                                 />
                                 <div className="form-text">
                                   Stored as text for now. Compiler uses left/op/right defaults

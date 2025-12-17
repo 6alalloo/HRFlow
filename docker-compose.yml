@@ -9,8 +9,6 @@ services:
       POSTGRES_USER: hrflow
       POSTGRES_PASSWORD: hrflow123
       POSTGRES_DB: HRFlow
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
@@ -38,8 +36,6 @@ services:
       - DB_POSTGRESDB_DATABASE=n8n
       - DB_POSTGRESDB_USER=hrflow
       - DB_POSTGRESDB_PASSWORD=hrflow123
-    ports:
-      - "5678:5678"
     volumes:
       - n8n_data:/home/node/.n8n
     depends_on:
@@ -75,11 +71,13 @@ services:
     environment:
       - DATABASE_URL=postgresql://hrflow:hrflow123@postgres:5432/HRFlow?schema=Core
       - N8N_BASE_URL=http://n8n:5678
+      - N8N_WEBHOOK_BASE_URL=http://n8n:5678
       - N8N_API_KEY=${N8N_API_KEY:-}
       - N8N_POSTGRES_CREDENTIAL_ID=${N8N_POSTGRES_CREDENTIAL_ID:-}
+      - N8N_POSTGRES_CREDENTIAL_NAME=${N8N_POSTGRES_CREDENTIAL_NAME:-}
       - N8N_SMTP_CREDENTIAL_ID=${N8N_SMTP_CREDENTIAL_ID:-}
+      - N8N_SMTP_CREDENTIAL_NAME=${N8N_SMTP_CREDENTIAL_NAME:-}
       - JWT_SECRET=${JWT_SECRET:-hrflow-jwt-secret-change-in-production}
-      - NODE_ENV=production
       - PORT=4000
     ports:
       - "4000:4000"
@@ -90,10 +88,6 @@ services:
         condition: service_healthy
       cv-parser:
         condition: service_healthy
-    volumes:
-      - ./backend:/app
-      - /app/node_modules
-    command: sh -c "npx prisma generate && npx prisma db push && npx prisma db seed && npm run dev"
     healthcheck:
       test: ["CMD-SHELL", "wget --spider -q http://localhost:4000/health || exit 1"]
       interval: 10s

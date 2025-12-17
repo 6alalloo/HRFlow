@@ -14,7 +14,36 @@ HRFlow is a visual workflow automation platform for HR processes. It provides a 
 
 ## Development Commands
 
-### Running the Application
+### Running with Docker (Recommended)
+
+```bash
+# Development mode (automatic - uses docker-compose.override.yml)
+docker-compose up
+
+# Or run in detached mode
+docker-compose up -d
+
+# Production mode (for testing prod configuration)
+docker-compose -f docker-compose.yml -f docker-compose.prod.yml up
+
+# Stop services (keeps data)
+docker-compose down
+
+# Reset database (when volumes get corrupted)
+docker-compose down -v && docker-compose up -d
+
+# View logs
+docker-compose logs -f
+docker logs -f hrflow-backend
+docker logs -f hrflow-postgres
+```
+
+**Docker Configuration Files**:
+- `docker-compose.yml` - Base configuration (shared by dev and prod)
+- `docker-compose.override.yml` - Development overrides (auto-loaded)
+- `docker-compose.prod.yml` - Production overrides (use explicitly)
+
+### Running Locally (Without Docker)
 
 ```bash
 # Run both frontend and backend concurrently (from root)

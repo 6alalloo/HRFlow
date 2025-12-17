@@ -1,0 +1,45 @@
+# Development overrides - automatically loaded by docker-compose
+# This file is loaded automatically when you run: docker-compose up
+# It extends docker-compose.yml with development-specific configurations
+
+version: '3.8'
+
+services:
+  # PostgreSQL - Development configuration
+  postgres:
+    ports:
+      - "5432:5432"  # Expose for local access (pgAdmin, DBeaver, etc.)
+
+  # n8n - Development configuration
+  n8n:
+    ports:
+      - "5678:5678"  # Expose for workflow editor access
+
+  # Backend - Development configuration
+  backend:
+    environment:
+      - NODE_ENV=development
+    volumes:
+      - ./backend:/app           # Mount source code for hot reload
+      - /app/node_modules         # Exclude node_modules from mount
+    command: sh -c "npx prisma generate && npx prisma db push && npx prisma db seed && npm run dev"
+    # Note: npm run dev uses ts-node-dev for hot reload
+
+  # Frontend - Development configuration
+  frontend:
+    volumes:
+      - ./frontend/src:/app/src              # Mount source for hot reload
+      - ./frontend/public:/app/public        # Mount public assets
+      - ./frontend/index.html:/app/index.html
+      - ./frontend/vite.config.ts:/app/vite.config.ts
+      - ./frontend/tsconfig.json:/app/tsconfig.json
+      - ./frontend/tsconfig.node.json:/app/tsconfig.node.json
+    # Frontend runs nginx in container (already built in Dockerfile)
+    # For live Vite dev server, you'd need to override the Dockerfile or run locally
+
+  # CV Parser - Development configuration
+  cv-parser:
+    volumes:
+      - ./cv-parser:/app         # Mount source code for hot reload
+    environment:
+      - PYTHONUNBUFFERED=1       # Show Python logs immediately

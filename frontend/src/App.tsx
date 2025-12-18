@@ -81,10 +81,6 @@ const App: React.FC = () => {
                 <Route path="/workflows" element={<WorkflowsListPage />} />
                 <Route path="/workflows/:id" element={<WorkflowDetailPage />} />
 
-                {/* Builder */}
-                <Route path="/builder" element={<WorkflowBuilderPage />} />
-                <Route path="/workflows/:id/builder" element={<WorkflowBuilderPage />} />
-
                 {/* Executions */}
                 <Route path="/executions/:id" element={<ExecutionDetailPage />} />
                 <Route path="/executions" element={<ExecutionsListPage />} />
@@ -107,6 +103,25 @@ const App: React.FC = () => {
           </ProtectedRoute>
         }
       />
+
+      {/* Builder Routes - Full Screen (No AppLayout) */}
+      <Route
+        path="/builder"
+        element={
+          <ProtectedRoute>
+            <WorkflowBuilderPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/workflows/:id/builder"
+        element={
+          <ProtectedRoute>
+            <WorkflowBuilderPage />
+          </ProtectedRoute>
+        }
+      />
+
     </Routes>
   );
 };

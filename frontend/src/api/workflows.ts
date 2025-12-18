@@ -733,3 +733,34 @@ export async function createWorkflow(payload: {
   const json = (await res.json()) as CreateWorkflowResponse;
   return "data" in json ? json.data : json;
 }
+
+export type UpdateWorkflowPayload = {
+  name?: string;
+  description?: string | null;
+  isActive?: boolean;
+  defaultTrigger?: string | null;
+  ownerUserId?: number | null;
+  is_active?: boolean;
+  default_trigger?: string | null;
+};
+
+// PATCH /api/workflows/:id
+export async function updateWorkflow(
+  id: number,
+  payload: UpdateWorkflowPayload
+): Promise<WorkflowApi> {
+  const res = await fetch(`${API_BASE_URL}/workflows/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    console.error(`[updateWorkflow] HTTP error:`, res.status, res.statusText);
+    throw new Error(`Failed to update workflow ${id} (status ${res.status})`);
+  }
+
+  const json = await res.json();
+  const data = "data" in json ? json.data : json;
+  return data as WorkflowApi;
+}

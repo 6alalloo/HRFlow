@@ -155,7 +155,7 @@ const WorkflowBuilderContent: React.FC = () => {
   const params = useParams<{ id?: string }>();
   const navigate = useNavigate();
 
-  const { fitView } = useReactFlow();
+  const { fitView, project } = useReactFlow();
   const flowWrapperRef = useRef<HTMLDivElement | null>(null);
   const hasInitialFit = useRef(false);
 
@@ -239,7 +239,7 @@ const WorkflowBuilderContent: React.FC = () => {
       const realNodes: RFNode<WorkflowNodeData>[] = backendNodes.map(n => ({
           id: String(n.id),
           type: 'hrflow',
-          position: { x: 0, y: 0 }, // Dagre will fix
+          position: { x: n.pos_x || 0, y: n.pos_y || 0 },
           data: {
               backendId: n.id,
               name: n.name,
@@ -280,7 +280,8 @@ const WorkflowBuilderContent: React.FC = () => {
       const ghostNodes: RFNode<WorkflowNodeData>[] = leafNodes.map(leaf => ({
           id: `ghost-${leaf.id}`,
           type: 'ghost',
-          position: { x: 0, y: 0 },
+          // Position relative to parent (since we aren't using Dagre for updates)
+          position: { x: (leaf.pos_x || 0) + 400, y: (leaf.pos_y || 0) }, 
           data: {
               kind: 'ghost',
               onAdd: (e: React.MouseEvent) => {
@@ -302,14 +303,38 @@ const WorkflowBuilderContent: React.FC = () => {
           style: { stroke: '#38bdf8', strokeDasharray: '5,5', opacity: 0.5 }, // Blue-ish for ghost connection
       }));
 
-      // 5. Run Layout
+      // 5. Run Layout (Only if needed)
       const allNodes = [...realNodes, ...ghostNodes];
       const allEdges = [...realRfEdges, ...ghostEdges];
+
+      // Check if any real node has a non-zero position (meaning it's been moved/saved)
+      const hasPositions = realNodes.some(n => n.position.x !== 0 || n.position.y !== 0);
+
+      // We only force layout if it's a fresh graph (all 0,0) OR if specifically requested (could add flag later)
+      // For now, if we have positions, we TRUST them.
+      // Exception: Ghost nodes always get layouted relative to their parents, but since they are leaves, 
+      // we might need a smarter way. For now, let's trust Dagre only for initial load.
       
-      const layouted = getLayoutedElements(allNodes, allEdges);
-      
-      setRfNodes(layouted.nodes);
-      setRfEdges(layouted.edges);
+      if (!hasPositions && realNodes.length > 0) {
+          const layouted = getLayoutedElements(allNodes, allEdges);
+          setRfNodes(layouted.nodes);
+          setRfEdges(layouted.edges);
+      } else {
+          // Trust backend positions for real nodes, but we still need specific spots for ghosts.
+          // Ghosts are tricky without Dagre. 
+          // Simple fix: If we skip Dagre, just place ghosts near their parents?
+          // Since "ghosts" are just "+" buttons, maybe simple offsets work.
+          
+          // Actually, if we skip Dagre, we just pass the nodes as is. 
+          // But realNodes have (0,0) if created without pos.
+          // Backend creations should ideally have positions. Auto-layout is mostly for "first view".
+          
+          // Better logic: IF positions exist, use them. IF (0,0), run layout for those specific nodes?
+          // Mixed mode is hard. Let's stick to: "If mostly 0,0, run full layout. Else, respect positions."
+          
+          setRfNodes(allNodes);
+          setRfEdges(allEdges);
+      }
   }, [setRfNodes, setRfEdges, mapToReactFlowEdge]);
 
   // Keep the ref updated
@@ -359,8 +384,11 @@ const WorkflowBuilderContent: React.FC = () => {
   // Initial fitView once nodes are loaded
   useEffect(() => {
     if (!loading && !hasInitialFit.current && rfNodes.length > 0) {
-      fitView({ padding: 0.4, duration: 200 });
-      hasInitialFit.current = true;
+      // Small delay to allow React Flow to measure the nodes in the DOM
+      setTimeout(() => {
+          fitView({ padding: 0.4, duration: 500 });
+          hasInitialFit.current = true;
+      }, 100);
     }
   }, [loading, rfNodes, fitView]);
 
@@ -548,11 +576,29 @@ const WorkflowBuilderContent: React.FC = () => {
 
       try {
           beginSave();
-          // 1. Create Node (backend positions don't matter much due to auto-layout)
+          
+          let posX = 100;
+          let posY = 100;
+
+          if (pickerPosition) {
+              // Convert the screen coordinates (from the click event) to ReactFlow internal coordinates
+              const projected = project({ x: pickerPosition.x, y: pickerPosition.y });
+              posX = projected.x;
+              posY = projected.y;
+          } else if (pickerParentId) {
+             // Fallback if we don't have position for some reason
+             const parent = state.nodes.find(n => n.id === pickerParentId);
+             if (parent) {
+                 posX = parent.pos_x + 300;
+                 posY = parent.pos_y;
+             }
+          }
+
+          // 1. Create Node (backend positions now used since we skip auto-layout often)
           const newNode = await createWorkflowNode(state.workflowId, {
               kind,
-              posX: 0, 
-              posY: 0
+              posX, 
+              posY
           });
 
           // 2. Create Edge from Parent -> New Node (ONLY if parent exists)
@@ -610,7 +656,7 @@ const WorkflowBuilderContent: React.FC = () => {
 
 
   return (
-    <div className="flex h-screen w-screen bg-navy-950 overflow-hidden">
+    <div className="flex h-screen w-screen overflow-hidden bg-navy-950">
         {/* 1. Sidebar */}
         <Sidebar />
 
@@ -658,10 +704,10 @@ const WorkflowBuilderContent: React.FC = () => {
                              setSelectedNodeId(Number(node.id));
                          }
                     }}
-                    fitView
+                    // Removed default fitView to prevent "weird zoom" on updates
                     fitViewOptions={{ padding: 0.2 }}
-                    minZoom={0.2}
-                    maxZoom={2}
+                    minZoom={0.5} // Prevent too far zoom out
+                    maxZoom={1.5}
                     proOptions={{ hideAttribution: true }}
                 >
                     <Background color="#1e293b" gap={20} size={1} />
@@ -689,6 +735,40 @@ const WorkflowBuilderContent: React.FC = () => {
                      try {
                          beginSave();
                          await updateWorkflowNode(state.workflowId!, nodeId, updates as any);
+                     } finally {
+                         endSave();
+                     }
+                }}
+                onDelete={async (nodeId) => {
+                     if (!state.workflowId) return;
+                     
+                     // 1. Optimistic Backend State Update
+                     const newNodes = state.nodes.filter(n => n.id !== nodeId);
+                     const newEdges = state.edges.filter(e => e.from_node_id !== nodeId && e.to_node_id !== nodeId);
+
+                     setState(prev => ({
+                        ...prev,
+                        nodes: newNodes,
+                        edges: newEdges
+                     }));
+
+                     // 2. Optimistic Visual Update (Crucial fix for "node still visible")
+                     setRfNodes(prev => prev.filter(n => n.id !== String(nodeId)));
+                     setRfEdges(prev => prev.filter(e => e.source !== String(nodeId) && e.target !== String(nodeId)));
+                     
+                     try {
+                         beginSave();
+                         // 3. Backend Call
+                         await import('../../api/workflows').then(api => api.deleteWorkflowNode(state.workflowId!, nodeId));
+                         /* 
+                            Values are already updated optimistically. 
+                            If we want to be safe, we could re-fetch, but that causes a flicker.
+                            Optimistic is better for UX.
+                         */
+                     } catch(e) {
+                         console.error("Delete failed", e);
+                         alert("Failed to delete node");
+                         // Revert on failure (optional but good practice)
                      } finally {
                          endSave();
                      }

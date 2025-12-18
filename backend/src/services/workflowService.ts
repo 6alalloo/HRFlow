@@ -365,7 +365,7 @@ export async function deleteWorkflowNode(workflowId: number, nodeId: number) {
   });
 
   if (!existing) {
-    return false;
+    return null;
   }
 
   // Deleting the node will also impact edges/steps via FK rules
@@ -373,7 +373,7 @@ export async function deleteWorkflowNode(workflowId: number, nodeId: number) {
     where: { id: nodeId },
   });
 
-  return true;
+  return existing;
 }
 
 export async function updateWorkflowNodePosition(

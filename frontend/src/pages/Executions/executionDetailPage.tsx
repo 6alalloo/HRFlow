@@ -1,66 +1,12 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
+import { FiCheck, FiX, FiClock, FiBox, FiArrowRight, FiActivity, FiCpu, FiMessageSquare } from "react-icons/fi";
 import {
   fetchExecutionWithSteps,
   type ExecutionDetailResponse,
   type ExecutionStep,
-  type ExecutionStatus,
-  type ExecutionStepStatus,
 } from "../../api/executions";
 import { executeWorkflow } from "../../api/workflows";
-
-const executionStatusBadgeClass: Record<ExecutionStatus, string> = {
-  running: "bg-info",
-  completed: "bg-success",
-  failed: "bg-danger",
-  queued: "bg-secondary",
-  engine_error: "bg-warning text-dark",
-};
-
-const stepStatusBadgeClass: Record<ExecutionStepStatus, string> = {
-  completed: "bg-success",
-  skipped: "bg-secondary",
-  failed: "bg-danger",
-};
-
-function formatDate(value: string | null | undefined): string {
-  if (!value) return "-";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString();
-}
-
-function formatDuration(ms: number | null | undefined): string {
-  if (ms == null) return "-";
-  if (ms < 1000) return `${ms} ms`;
-  const seconds = ms / 1000;
-  if (seconds < 60) return `${seconds.toFixed(1)} s`;
-  const minutes = Math.floor(seconds / 60);
-  const rem = Math.round(seconds % 60);
-  return `${minutes} min ${rem}s`;
-}
-
-function formatStatusLabel(status: string): string {
-  return status.replace(/_/g, " ").toUpperCase();
-}
-
-function getErrorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (typeof err === "string") return err;
-  try {
-    return JSON.stringify(err);
-  } catch {
-    return "Unknown error";
-  }
-}
-
-function safeStringify(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return "// Could not stringify engine payload";
-  }
-}
 
 const ExecutionDetailPage: React.FC = () => {
   const params = useParams<{ id: string }>();
@@ -69,374 +15,235 @@ const ExecutionDetailPage: React.FC = () => {
   const [data, setData] = useState<ExecutionDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // Non-fatal errors (poll/manual refresh/rerun) should not replace the whole page
-  const [inlineError, setInlineError] = useState<string | null>(null);
-
-  const [showEngine, setShowEngine] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+  const [selectedStep, setSelectedStep] = useState<ExecutionStep | null>(null);
   const [rerunning, setRerunning] = useState(false);
 
   const executionId = params.id ? Number(params.id) : NaN;
 
-  // Initial load: can show full-page error if this fails
   const load = useCallback(async () => {
-    if (!executionId || Number.isNaN(executionId)) {
-      setError("Invalid execution ID");
-      setLoading(false);
-      return;
-    }
-
+    if (!executionId || Number.isNaN(executionId)) return;
     try {
-      setError(null);
-      setInlineError(null);
       setLoading(true);
-
       const result = await fetchExecutionWithSteps(executionId);
       setData(result);
-    } catch (err: unknown) {
-      console.error("[ExecutionDetailPage] Failed to load execution:", err);
-      setError(getErrorMessage(err));
+      if (result.steps.length > 0) {
+          // Verify if there's a failed step to select by default, otherwise select first
+          const failedStep = result.steps.find(s => s.status === 'failed');
+          setSelectedStep(failedStep || result.steps[0]);
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to load");
     } finally {
       setLoading(false);
     }
   }, [executionId]);
 
-  // Manual refresh: non-fatal
-  const handleRefresh = useCallback(async () => {
-    if (!executionId || Number.isNaN(executionId)) return;
+  useEffect(() => { void load(); }, [load]);
 
-    try {
-      setRefreshing(true);
-      setInlineError(null);
-
-      const result = await fetchExecutionWithSteps(executionId);
-      setData(result);
-    } catch (err: unknown) {
-      console.error("[ExecutionDetailPage] Refresh failed:", err);
-      setInlineError(getErrorMessage(err));
-    } finally {
-      setRefreshing(false);
-    }
-  }, [executionId]);
-
-  // Poll refresh: non-fatal, silent
-  const refreshSilently = useCallback(async () => {
-    if (!executionId || Number.isNaN(executionId)) return;
-
-    try {
-      setInlineError(null);
-      const result = await fetchExecutionWithSteps(executionId);
-      setData(result);
-    } catch (err: unknown) {
-      console.error("[ExecutionDetailPage] Poll refresh failed:", err);
-      setInlineError(getErrorMessage(err));
-    }
-  }, [executionId]);
-
-  // Re-run workflow and navigate to the new execution
-  const handleRerun = useCallback(async () => {
-    if (!data) return;
-
-    try {
+  const handleRerun = async () => {
+      if (!data) return;
       setRerunning(true);
-      setInlineError(null);
-
-      const workflowId = data.execution.workflow_id ?? null;
-      if (!workflowId) {
-        throw new Error("Execution has no workflow_id");
+      try {
+          const res = await executeWorkflow(data.execution.workflow_id, null, "manual");
+          if (res?.execution?.id) navigate(`/executions/${res.execution.id}`);
+      } catch (e) {
+          console.error(e);
+      } finally {
+          setRerunning(false);
       }
-
-      const result = await executeWorkflow(workflowId, null, "manual");
-      const newId = result?.execution?.id;
-
-      if (!newId) {
-        throw new Error("Execute succeeded but no execution.id returned");
-      }
-
-      navigate(`/executions/${newId}`);
-    } catch (err: unknown) {
-      console.error("[ExecutionDetailPage] Rerun failed:", err);
-      setInlineError(getErrorMessage(err));
-    } finally {
-      setRerunning(false);
-    }
-  }, [data, navigate]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  // Poll only while running/queued
-  useEffect(() => {
-    if (!data) return;
-
-    const status = data.execution.status;
-    const shouldPoll = status === "running" || status === "queued";
-    if (!shouldPoll) return;
-
-    const t = window.setInterval(() => {
-      void refreshSilently();
-    }, 1500);
-
-    return () => window.clearInterval(t);
-  }, [data, refreshSilently]);
-
-  if (loading && !data && !error) {
-    return (
-      <div className="py-4">
-        <div className="text-muted">Loading execution…</div>
-      </div>
-    );
   }
 
-  if (error) {
-    return (
-      <div className="py-4">
-        <h1 className="h4 mb-3">Execution details</h1>
-        <div className="alert alert-danger">{error}</div>
-        <Link to="/executions" className="btn btn-outline-light btn-sm">
-          Back to executions
-        </Link>
-      </div>
-    );
-  }
+  if (loading) return <div className="flex h-full items-center justify-center text-slate-500">Loading details...</div>;
+  if (!data) return <div className="p-10 text-center text-slate-500">Execution not found</div>;
 
-  if (!data) {
-    return (
-      <div className="py-4">
-        <div className="text-muted">Execution not found.</div>
-      </div>
-    );
-  }
-
-  const { execution, steps, n8nResult } = data;
-  const wfName =
-    execution.workflows?.name ?? `Workflow #${execution.workflow_id}`;
-
-  const badgeClass =
-    executionStatusBadgeClass[execution.status] ?? "bg-secondary";
-
-  const hasEnginePayload = n8nResult !== undefined && n8nResult !== null;
+  const { execution, steps } = data;
+  const isSuccess = execution.status === 'completed';
 
   return (
-    <div className="py-3">
-      {/* Header */}
-      <div className="d-flex justify-content-between align-items-center mb-3">
+    <div className="h-full flex flex-col bg-navy-950 text-white overflow-hidden relative">
+      {/* Background Ambience */}
+      <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-blue-600/5 rounded-full blur-[120px] pointer-events-none" />
+
+      {/* 1. Header Area */}
+      <div className="px-8 py-6 border-b border-white/5 bg-navy-950/50 backdrop-blur-md z-10 flex items-center justify-between shrink-0">
         <div>
-          <h1 className="h4 mb-1">Execution #{execution.id}</h1>
-          <div className="text-muted small">
-            Workflow:&nbsp;
-            <Link to={`/workflows/${execution.workflow_id}`}>{wfName}</Link>
-          </div>
+            <div className="flex items-center gap-3 mb-1">
+                <Link to="/executions" className="text-slate-500 hover:text-white transition-colors text-sm font-medium flex items-center gap-1">
+                    Waitlist <FiActivity />
+                </Link>
+                <span className="text-slate-600">/</span>
+                <span className="text-slate-400 text-sm">Run #{execution.id}</span>
+            </div>
+            <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
+                {execution.workflows?.name || "Untitled Workflow"}
+                <span className="text-slate-500 text-lg font-normal">#{execution.id}</span>
+            </h1>
+            <div className="flex items-center gap-4 text-xs text-slate-400 mt-2 font-mono">
+                <span className="flex items-center gap-1.5">
+                    <FiActivity className="text-blue-400"/> Triggered by <b className="text-slate-300 uppercase">{execution.trigger_type || 'Manual'}</b>
+                </span>
+                <span className="w-px h-3 bg-white/10" />
+                <span className="flex items-center gap-1.5">
+                    <FiClock className="text-purple-400"/> {execution.duration_ms ? `${(execution.duration_ms/1000).toFixed(2)}s` : '0s'}
+                </span>
+            </div>
         </div>
 
-        <div className="d-flex align-items-center gap-2">
-          <span className={`badge ${badgeClass} text-uppercase`}>
-            {formatStatusLabel(execution.status)}
-          </span>
+        <div className="flex items-center gap-6">
+            {/* BIG STATUS PILL */}
+            <div className={`
+                px-6 py-2 rounded-full border shadow-[0_0_30px_rgba(0,0,0,0.3)] backdrop-blur-sm
+                flex items-center gap-3 text-lg font-bold tracking-widest uppercase
+                ${isSuccess 
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 shadow-emerald-900/20' 
+                    : 'bg-rose-500/10 border-rose-500/30 text-rose-400 shadow-rose-900/20'}
+            `}>
+                {isSuccess ? 'Success' : 'Failed'}
+                {isSuccess ? <FiCheck className="w-6 h-6 border-2 border-current rounded-full p-0.5" /> : <FiX className="w-6 h-6 border-2 border-current rounded-full p-0.5" />}
+            </div>
 
-          {execution.error_message && (
-            <span className="badge bg-danger-subtle text-danger border border-danger border-opacity-50">
-              Error
-            </span>
-          )}
-
-          <Link to="/executions" className="btn btn-outline-secondary btn-sm">
-            Back to executions
-          </Link>
-
-          <button
-            type="button"
-            className="btn btn-outline-primary btn-sm"
-            onClick={handleRefresh}
-            disabled={refreshing}
-          >
-            {refreshing ? "Refreshing…" : "Refresh"}
-          </button>
-
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            onClick={handleRerun}
-            disabled={rerunning}
-          >
-            {rerunning ? "Re-running…" : "Re-run"}
-          </button>
+            <button 
+                onClick={handleRerun}
+                disabled={rerunning}
+                className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm font-bold text-white transition-all flex items-center gap-2"
+            >
+                {rerunning ? <FiActivity className="animate-spin" /> : <FiActivity />} Re-run
+            </button>
         </div>
       </div>
 
-      {/* Inline error (non-fatal) */}
-      {inlineError && (
-        <div className="alert alert-warning py-2 small mb-3">{inlineError}</div>
-      )}
-
-      {/* Summary + meta */}
-      <div className="row g-3">
-        <div className="col-md-7">
-          <div
-            className="card h-100"
-            style={{
-              backgroundColor: "#070716",
-              borderColor: "rgba(255,255,255,0.08)",
-            }}
-          >
-            <div className="card-body">
-              <h2 className="h6 mb-3">Execution summary</h2>
-              <dl className="row small mb-0">
-                <dt className="col-4 text-muted">Trigger</dt>
-                <dd className="col-8">{execution.trigger_type ?? "manual"}</dd>
-
-                <dt className="col-4 text-muted">Started at</dt>
-                <dd className="col-8">{formatDate(execution.started_at)}</dd>
-
-                <dt className="col-4 text-muted">Finished at</dt>
-                <dd className="col-8">{formatDate(execution.finished_at)}</dd>
-
-                <dt className="col-4 text-muted">Duration</dt>
-                <dd className="col-8">
-                  {formatDuration(execution.duration_ms)}
-                </dd>
-
-                <dt className="col-4 text-muted">Error message</dt>
-                <dd className="col-8">
-                  {execution.error_message ? (
-                    <span className="text-danger">{execution.error_message}</span>
-                  ) : (
-                    <span className="text-muted">None</span>
-                  )}
-                </dd>
-              </dl>
-            </div>
-          </div>
-        </div>
-
-        {/* Engine panel */}
-        <div className="col-md-5">
-          <div
-            className="card h-100"
-            style={{
-              backgroundColor: "#070716",
-              borderColor: "rgba(255,255,255,0.08)",
-            }}
-          >
-            <div className="card-body d-flex flex-column">
-              <div className="d-flex justify-content-between align-items-center mb-2">
-                <h2 className="h6 mb-0">Automation engine</h2>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline-secondary"
-                  onClick={() => setShowEngine((v) => !v)}
-                >
-                  {showEngine ? "Hide raw result" : "Show raw result"}
-                </button>
+      {/* 2. Split Content */}
+      <div className="flex-1 flex overflow-hidden z-10">
+          
+          {/* LEFT: Timeline Panel */}
+          <div className="w-[300px] border-r border-white/5 bg-navy-900/20 backdrop-blur-sm flex flex-col">
+              <div className="p-3 border-b border-white/5">
+                  <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Execution Steps</h3>
               </div>
+              <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
+                  <div className="relative pl-3 space-y-4">
+                      {/* Vertical Line */}
+                      <div className="absolute left-[24px] top-3 bottom-3 w-px bg-white/5 z-0" />
 
-              <p className="text-muted small mb-2">
-                {execution.status === "engine_error"
-                  ? "This execution could not reach n8n or n8n returned an error. Check the error message in the summary. Engine payload may be empty."
-                  : "This execution was sent to n8n. The raw engine payload is stored in run_context.engine.n8n."}
-              </p>
+                      {steps.map((step, idx) => {
+                          const isSelected = selectedStep?.id === step.id;
+                          const isStepSuccess = step.status === 'completed';
+                          const isStepFailed = step.status === 'failed';
+                          
+                          return (
+                              <div 
+                                key={step.id} 
+                                onClick={() => setSelectedStep(step)}
+                                className={`relative z-10 cursor-pointer group flex items-start gap-3 p-2.5 rounded-lg border transition-all duration-200
+                                    ${isSelected 
+                                        ? 'bg-blue-600/10 border-blue-500/30 shadow-lg shadow-blue-900/10' 
+                                        : 'bg-navy-950/40 border-white/5 hover:bg-white/5 hover:border-white/10'}
+                                `}
+                              >
+                                  {/* Status Circle */}
+                                  <div className={`
+                                      mt-0.5 w-5 h-5 rounded-full flex items-center justify-center border shrink-0 shadow-lg
+                                      ${isStepSuccess ? 'bg-emerald-500 text-navy-950 border-emerald-400' : ''}
+                                      ${isStepFailed ? 'bg-rose-500 text-white border-rose-400' : ''}
+                                      ${!isStepSuccess && !isStepFailed ? 'bg-slate-700 text-slate-400 border-slate-600' : ''}
+                                  `}>
+                                      {isStepSuccess && <FiCheck size={12} strokeWidth={3} />}
+                                      {isStepFailed && <FiX size={12} strokeWidth={3} />}
+                                  </div>
 
-              {showEngine && (
-                <div
-                  className="mt-2"
-                  style={{
-                    maxHeight: "260px",
-                    overflow: "auto",
-                    borderRadius: "0.5rem",
-                    backgroundColor: "#020617",
-                    border: "1px solid rgba(148,163,184,0.4)",
-                    padding: "0.5rem",
-                  }}
-                >
-                  <pre
-                    className="mb-0"
-                    style={{
-                      fontSize: "0.7rem",
-                      lineHeight: 1.4,
-                      color: "#e5e7eb",
-                    }}
-                  >
-                    <code>
-                      {hasEnginePayload
-                        ? safeStringify(n8nResult)
-                        : "// No engine payload recorded"}
-                    </code>
-                  </pre>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Steps table */}
-      <div className="mt-3">
-        <div
-          className="card"
-          style={{
-            backgroundColor: "#070716",
-            borderColor: "rgba(255,255,255,0.08)",
-          }}
-        >
-          <div className="card-body">
-            <h2 className="h6 mb-3">Execution steps</h2>
-
-            {steps.length === 0 && (
-              <p className="text-muted small mb-0">
-                No steps were recorded for this execution. This usually means
-                the engine failed before running any nodes.
-              </p>
-            )}
-
-            {steps.length > 0 && (
-              <div className="table-responsive">
-                <table className="table table-sm table-dark table-striped align-middle mb-0">
-                  <thead>
-                    <tr className="small text-muted">
-                      <th scope="col">#</th>
-                      <th scope="col">Node</th>
-                      <th scope="col">Kind</th>
-                      <th scope="col">Status</th>
-                      <th scope="col">Started</th>
-                      <th scope="col">Finished</th>
-                      <th scope="col">Logs</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {steps.map((step: ExecutionStep, idx: number) => {
-                      const stepBadge =
-                        stepStatusBadgeClass[step.status] ?? "bg-secondary";
-
-                      return (
-                        <tr key={step.id}>
-                          <td>{idx + 1}</td>
-                          <td>
-                            {step.workflow_nodes?.name ?? `Node #${step.node_id}`}
-                          </td>
-                          <td className="text-muted small">
-                            {step.workflow_nodes?.kind ?? "-"}
-                          </td>
-                          <td>
-                            <span className={"badge " + stepBadge}>
-                              {formatStatusLabel(step.status)}
-                            </span>
-                          </td>
-                          <td className="small">{formatDate(step.started_at)}</td>
-                          <td className="small">{formatDate(step.finished_at)}</td>
-                          <td className="small">
-                            <code>{step.logs ?? "-"}</code>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                                  <div className="min-w-0">
+                                      <h4 className={`text-xs font-bold mb-0.5 ${isSelected ? 'text-white' : 'text-slate-300 group-hover:text-white'}`}>
+                                          {step.workflow_nodes?.name || `Node ${step.node_id}`}
+                                      </h4>
+                                      <div className="flex items-center gap-2 text-[9px] text-slate-500 font-mono">
+                                          <span>{new Date(step.started_at || '').toLocaleTimeString()}</span>
+                                      </div>
+                                  </div>
+                                  
+                                  {isSelected && (
+                                      <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                                          <FiActivity className="text-blue-400 animate-pulse w-3 h-3" />
+                                      </div>
+                                  )}
+                              </div>
+                          );
+                      })}
+                  </div>
               </div>
-            )}
           </div>
-        </div>
+
+          {/* RIGHT: Detail Viewer */}
+          <div className="flex-1 overflow-y-auto bg-navy-950/40 p-6 custom-scrollbar relative">
+               {selectedStep ? (
+                   <div className="max-w-4xl mx-auto space-y-5 animate-fade-in-up">
+                       <div className="flex items-center gap-3 mb-4">
+                           <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center border border-white/10 text-lg">
+                               <FiCpu className="text-blue-400" />
+                           </div>
+                           <div>
+                               <h2 className="text-lg font-bold text-white">Step Details</h2>
+                               <p className="text-slate-400 text-xs">Reviewing data for <span className="text-white font-mono">{selectedStep.workflow_nodes?.name}</span></p>
+                           </div>
+                       </div>
+
+                       {/* Input Data Card */}
+                       <div className="bg-[#0B0E14] border border-white/10 rounded-xl overflow-hidden shadow-2xl">
+                           <div className="px-4 py-2.5 border-b border-white/5 bg-white/5 flex items-center justify-between">
+                               <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest flex items-center gap-2">
+                                   <FiBox /> Input Data
+                               </span>
+                               <span className="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 text-[10px] font-mono border border-blue-500/20">JSON</span>
+                           </div>
+                           <div className="p-0 overflow-x-auto">
+                               <pre className="text-[11px] font-mono text-slate-300 p-4 leading-relaxed">
+                                   {selectedStep.input_json ? JSON.stringify(JSON.parse(selectedStep.input_json), null, 2) : <span className="text-slate-600 italic">// No input data received</span>}
+                               </pre>
+                           </div>
+                       </div>
+
+                        {/* Arrow Divider */}
+                       <div className="flex justify-center opacity-30">
+                           <FiArrowRight size={20} className="text-slate-400 rotate-90" />
+                       </div>
+
+                       {/* Output Data Card */}
+                       <div className={`bg-[#0B0E14] border rounded-xl overflow-hidden shadow-2xl ${
+                           selectedStep.status === 'failed' ? 'border-rose-500/20 shadow-rose-900/10' : 'border-white/10'
+                       }`}>
+                           <div className={`px-4 py-2.5 border-b flex items-center justify-between ${
+                               selectedStep.status === 'failed' ? 'bg-rose-500/10 border-rose-500/20' : 'bg-white/5 border-white/5'
+                           }`}>
+                               <span className={`text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 ${
+                                   selectedStep.status === 'failed' ? 'text-rose-400' : 'text-emerald-400'
+                               }`}>
+                                   <FiMessageSquare /> Output Data
+                               </span>
+                               <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono border ${
+                                   selectedStep.status === 'failed' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                               }`}>
+                                   {selectedStep.status.toUpperCase()}
+                               </span>
+                           </div>
+                           <div className="p-0 overflow-x-auto">
+                               {selectedStep.logs && (
+                                   <div className="border-b border-white/5 bg-rose-950/10 p-4 text-[11px] font-mono text-rose-300">
+                                       <b className="block mb-1 text-rose-400">Error Log:</b>
+                                       {selectedStep.logs}
+                                   </div>
+                               )}
+                               <pre className="text-[11px] font-mono text-slate-300 p-4 leading-relaxed">
+                                   {selectedStep.output_json ? JSON.stringify(JSON.parse(selectedStep.output_json), null, 2) : <span className="text-slate-600 italic">// No output data produced</span>}
+                               </pre>
+                           </div>
+                       </div>
+                   </div>
+               ) : (
+                   <div className="flex flex-col items-center justify-center h-full text-slate-600">
+                       <FiActivity size={48} className="mb-4 opacity-20" />
+                       <p className="text-sm">Select a step from the timeline to view data.</p>
+                   </div>
+               )}
+          </div>
       </div>
     </div>
   );

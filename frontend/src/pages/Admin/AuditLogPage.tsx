@@ -1,13 +1,27 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { apiGet } from "../../api/apiClient";
+import { 
+    FiShield, 
+    FiActivity, 
+    FiUser, 
+    FiSearch, 
+    FiFilter,
+    FiPlusCircle,
+    FiEdit3,
+    FiTrash2,
+    FiLogIn,
+    FiLogOut,
+    FiChevronRight,
+    FiChevronLeft
+} from "react-icons/fi";
 
 interface AuditLog {
   id: number;
-  action: string; // Maps to event_type in our service
+  action: string;
   actor_user_id: number | null;
-  entity_type: string | null; // Maps to target_type
-  entity_id: number | null; // Maps to target_id
+  entity_type: string | null;
+  entity_id: number | null;
   data_json: string | null;
   created_at: string;
   users?: {
@@ -28,18 +42,15 @@ export default function AuditLogPage() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
-  const [limit] = useState(50);
+  const [limit] = useState(25); // Slightly increased limit for compact view
   const [offset, setOffset] = useState(0);
   const [filters, setFilters] = useState({
     eventType: "",
     targetType: "",
   });
+  const [expandedLogs, setExpandedLogs] = useState<number[]>([]);
 
-  useEffect(() => {
-    fetchAuditLogs();
-  }, [offset, filters]);
-
-  const fetchAuditLogs = async () => {
+  const fetchAuditLogs = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams({
@@ -58,211 +69,354 @@ export default function AuditLogPage() {
     } finally {
       setLoading(false);
     }
+  }, [limit, offset, filters]);
+
+  useEffect(() => {
+    fetchAuditLogs();
+  }, [fetchAuditLogs]);
+
+  const toggleExpand = (id: number) => {
+    setExpandedLogs(prev => 
+      prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]
+    );
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString();
+  const getActionIcon = (action: string) => {
+    if (action.includes("create")) return <FiPlusCircle className="text-emerald-400" />;
+    if (action.includes("update")) return <FiEdit3 className="text-blue-400" />;
+    if (action.includes("delete")) return <FiTrash2 className="text-rose-400" />;
+    if (action.includes("login")) return <FiLogIn className="text-amber-400" />;
+    if (action.includes("logout")) return <FiLogOut className="text-slate-400" />;
+    return <FiActivity className="text-purple-400" />;
   };
 
-  const getEventBadgeColor = (eventType: string) => {
-    if (eventType.includes("created")) return "badge-success";
-    if (eventType.includes("updated")) return "badge-info";
-    if (eventType.includes("deleted")) return "badge-danger";
-    if (eventType.includes("failed")) return "badge-danger";
-    if (eventType.includes("completed")) return "badge-success";
-    return "badge-secondary";
+  const getActionColor = (action: string) => {
+    if (action.includes("create")) return "from-emerald-500/20 to-teal-500/5 border-emerald-500/20";
+    if (action.includes("update")) return "from-blue-500/20 to-indigo-500/5 border-blue-500/20";
+    if (action.includes("delete")) return "from-rose-500/20 to-red-500/5 border-rose-500/20";
+    if (action.includes("login")) return "from-amber-500/20 to-orange-500/5 border-amber-500/20";
+    return "from-slate-800/50 to-slate-900/50 border-white/5";
   };
 
-  const getUserName = (log: AuditLog) => {
-    if (!log.users) return log.actor_user_id ? `User ${log.actor_user_id}` : "System";
-    return log.users.email;
+  const formatActionName = (action: string) => {
+    return action.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  };
+
+  const formatKey = (key: string) => {
+    // Handle snake_case and camelCase/PascalCase
+    return key
+      .replace(/([A-Z])/g, ' $1') // Insert space before capital letters
+      .replace(/_/g, ' ')         // Replace underscores with spaces
+      .trim()
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  };
+
+  const formatValue = (value: any): React.ReactNode => {
+    if (value === null || value === undefined) return <span className="text-slate-600">-</span>;
+    
+    if (typeof value === 'boolean') {
+      return value ? (
+        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+          Yes
+        </span>
+      ) : (
+        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20">
+          No
+        </span>
+      );
+    }
+
+    if (typeof value === 'object') {
+        // Flatten object to comma-separated key: value string for "plaintext" feel
+        return (
+             <div className="flex flex-col gap-1">
+                {Object.entries(value).map(([k, v]) => (
+                    <div key={k} className="flex gap-1 text-[10px]">
+                        <span className="text-slate-500">{formatKey(k)}:</span>
+                        <span className="text-slate-300">{formatValue(v)}</span>
+                    </div>
+                ))}
+            </div>
+        );
+    }
+
+    // Check if valid date string (simple check)
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value)) {
+        try {
+            return new Date(value).toLocaleString();
+        } catch {}
+    }
+
+    // Humanize snake_case strings (e.g. "node_deleted" -> "Node Deleted")
+    if (typeof value === 'string' && value.includes('_')) {
+        return value.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    }
+    
+    // Capitalize first letter of simple strings
+    if (typeof value === 'string') {
+        return value.charAt(0).toUpperCase() + value.slice(1);
+    }
+
+    return String(value);
   };
 
   const parseDetails = (log: AuditLog) => {
     try {
-      if (log.data_json) {
-        return JSON.parse(log.data_json);
+      if (!log.data_json) return {};
+      
+      const raw = JSON.parse(log.data_json);
+      // Flatten details if present
+      const { details, ...topLevel } = raw;
+      let flat = { ...topLevel };
+      if (details && typeof details === 'object') {
+          flat = { ...flat, ...details };
       }
-      return {};
+
+
+      // Filter out technical/noisy fields
+      // Added case-insensitive checking logic below, so we list canonical forms to ban here
+      const bannedKeys = [
+          'ipaddress', 'useragent', 'ip_address', 'user_agent', 
+          'node_id', 'nodeid', 'id', 'workflow_id', 'execution_id', 'org_id',
+          'nodetype', 'node_type', 'kind' // We will handle node type/kind manually
+      ];
+      
+      const clean: Record<string, any> = {};
+      
+      // Add "Performed By" first
+      const actorName = log.users?.email || `User #${log.actor_user_id}`;
+      clean["Performed By"] = actorName;
+
+      // Handle Node Type manually to ensure it shows up nicely
+      const nodeTypeKey = Object.keys(flat).find(k => k.toLowerCase() === 'node_type' || k.toLowerCase() === 'nodetype' || k.toLowerCase() === 'kind');
+      if (nodeTypeKey && flat[nodeTypeKey]) {
+          // Format e.g. "send_email" -> "Send Email"
+          let typeVal = flat[nodeTypeKey];
+          if (typeof typeVal === 'string') {
+               // Remove "Node" suffix if present for cleaner look, e.g. "EmailNode" -> "Email"
+               typeVal = typeVal.replace(/node$/i, '');
+               typeVal = typeVal.split(/[_ ]/).map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+          }
+          clean["Node Type"] = typeVal;
+      }
+
+      // Add rest, filtering keys
+      Object.entries(flat).forEach(([k, v]) => {
+          const lowerK = k.toLowerCase().replace(/_/g, '');
+          // Check if strictly banned or contains specific substrings we definitely don't want
+          const isBanned = bannedKeys.some(b => b.replace(/_/g, '') === lowerK);
+          
+          if (!isBanned) {
+              clean[k] = v;
+          }
+      });
+
+      return clean;
+
     } catch {
-      return {};
+        return {}; 
     }
   };
 
   if (!user || user.role?.name !== "Admin") {
     return (
-      <div className="container mt-5">
-        <div className="alert alert-danger">
-          <h4>Access Denied</h4>
-          <p>You must be an administrator to view audit logs.</p>
+      <div className="flex items-center justify-center h-[60vh]">
+        <div className="p-8 mt-10 rounded-2xl bg-rose-500/10 border border-rose-500/20 backdrop-blur-xl text-center max-w-md">
+            <FiShield className="mx-auto text-5xl text-rose-500 mb-4" />
+            <h2 className="text-2xl font-bold text-white mb-2">Access Denied</h2>
+            <p className="text-rose-200">Restricted area. Administrator privileges required.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="container-fluid py-4">
-      <div className="row mb-4">
-        <div className="col">
-          <h1 className="h3 mb-0">Audit Logs</h1>
-          <p className="text-muted">View all system activity and changes</p>
+    <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-white/5">
+        <div>
+           <div className="flex items-center gap-3 mb-2">
+                <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                    <FiShield className="text-blue-400 text-xl" />
+                </div>
+                <h1 className="text-3xl font-bold tracking-tight text-white bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">
+                    Audit Logs
+                </h1>
+           </div>
+           <p className="text-slate-400 text-sm max-w-2xl">
+                Comprehensive record of system activities, security events, and data modifications.
+           </p>
+        </div>
+        
+        {/* Filters */}
+        <div className="flex flex-wrap gap-3">
+            <div className="relative group">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <FiFilter className="text-slate-500" />
+                </div>
+                <select 
+                    value={filters.eventType}
+                    onChange={(e) => setFilters(prev => ({ ...prev, eventType: e.target.value }))}
+                    className="pl-10 pr-8 py-2.5 bg-black/20 border border-white/10 rounded-xl text-sm text-slate-300 focus:outline-none focus:border-blue-500/50 focus:bg-white/5 appearance-none hover:bg-white/5 transition-colors cursor-pointer min-w-[180px]"
+                >
+                    <option value="" className="bg-slate-900">All Events</option>
+                    <option value="workflow_created" className="bg-slate-900">Workflow Created</option>
+                    <option value="workflow_updated" className="bg-slate-900">Workflow Updated</option>
+                    <option value="workflow_deleted" className="bg-slate-900">Workflow Deleted</option>
+                    <option value="execution_started" className="bg-slate-900">Execution Started</option>
+                    <option value="execution_completed" className="bg-slate-900">Execution Completed</option>
+                    <option value="execution_failed" className="bg-slate-900">Execution Failed</option>
+                    <option value="user_login" className="bg-slate-900">User Login</option>
+                </select>
+            </div>
+
+            <div className="relative group">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <FiSearch className="text-slate-500" />
+                </div>
+                <select 
+                    value={filters.targetType}
+                    onChange={(e) => setFilters(prev => ({ ...prev, targetType: e.target.value }))}
+                    className="pl-10 pr-8 py-2.5 bg-black/20 border border-white/10 rounded-xl text-sm text-slate-300 focus:outline-none focus:border-blue-500/50 focus:bg-white/5 appearance-none hover:bg-white/5 transition-colors cursor-pointer min-w-[150px]"
+                >
+                    <option value="" className="bg-slate-900">All Targets</option>
+                    <option value="workflow" className="bg-slate-900">Workflow</option>
+                    <option value="execution" className="bg-slate-900">Execution</option>
+                    <option value="user" className="bg-slate-900">User</option>
+                </select>
+            </div>
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="card mb-4">
-        <div className="card-body">
-          <div className="row g-3">
-            <div className="col-md-4">
-              <label className="form-label">Event Type</label>
-              <select
-                className="form-select"
-                value={filters.eventType}
-                onChange={(e) =>
-                  setFilters({ ...filters, eventType: e.target.value })
-                }
-              >
-                <option value="">All Events</option>
-                <option value="workflow_created">Workflow Created</option>
-                <option value="workflow_updated">Workflow Updated</option>
-                <option value="workflow_deleted">Workflow Deleted</option>
-                <option value="execution_started">Execution Started</option>
-                <option value="execution_completed">Execution Completed</option>
-                <option value="execution_failed">Execution Failed</option>
-                <option value="user_login">User Login</option>
-                <option value="user_logout">User Logout</option>
-              </select>
+      {/* Logs Feed - Ultra Compact */}
+      <div className="space-y-1">
+        {loading ? (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-500 gap-4">
+                <FiActivity className="animate-spin text-3xl opacity-50" />
+                <p className="animate-pulse font-medium">Loading audit trail...</p>
             </div>
-            <div className="col-md-4">
-              <label className="form-label">Target Type</label>
-              <select
-                className="form-select"
-                value={filters.targetType}
-                onChange={(e) =>
-                  setFilters({ ...filters, targetType: e.target.value })
-                }
-              >
-                <option value="">All Targets</option>
-                <option value="workflow">Workflow</option>
-                <option value="execution">Execution</option>
-                <option value="user">User</option>
-              </select>
+        ) : logs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-500 border border-dashed border-white/10 rounded-2xl bg-white/[0.02]">
+                <FiShield className="text-4xl mb-4 opacity-30" />
+                <p>No audit logs found matching your filters.</p>
             </div>
-            <div className="col-md-4 d-flex align-items-end">
-              <button
-                className="btn btn-secondary"
-                onClick={() => setFilters({ eventType: "", targetType: "" })}
-              >
-                Clear Filters
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+        ) : (
+            <>
+                {logs.map((log, idx) => {
+                    const details = parseDetails(log);
+                    const isExpanded = expandedLogs.includes(log.id);
+                    const actionColor = getActionColor(log.action);
+                    const hasDetails = details && Object.keys(details).length > 0;
 
-      {/* Stats */}
-      <div className="row mb-4">
-        <div className="col-md-12">
-          <div className="alert alert-info mb-0">
-            Showing {logs.length} of {total} total audit log entries
-          </div>
-        </div>
-      </div>
-
-      {/* Logs Table */}
-      <div className="card">
-        <div className="card-body">
-          {loading ? (
-            <div className="text-center py-5">
-              <div className="spinner-border text-primary" role="status">
-                <span className="visually-hidden">Loading...</span>
-              </div>
-            </div>
-          ) : logs.length === 0 ? (
-            <div className="text-center py-5 text-muted">
-              <p>No audit logs found</p>
-            </div>
-          ) : (
-            <div className="table-responsive">
-              <table className="table table-hover">
-                <thead>
-                  <tr>
-                    <th>Timestamp</th>
-                    <th>Event</th>
-                    <th>User</th>
-                    <th>Target</th>
-                    <th>Details</th>
-                    <th>IP Address</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {logs.map((log) => (
-                    <tr key={log.id}>
-                      <td className="text-nowrap">
-                        {formatDate(log.created_at)}
-                      </td>
-                      <td>
-                        <span
-                          className={`badge ${getEventBadgeColor(
-                            log.action
-                          )}`}
+                    return (
+                        <div 
+                            key={log.id} 
+                            style={{ animationDelay: `${idx * 20}ms` }}
+                            className={`group relative overflow-hidden rounded-md border transition-all duration-300 bg-gradient-to-br animate-in fade-in slide-in-from-bottom-2 fill-mode-backwards
+                                ${actionColor} ${isExpanded ? 'bg-white/[0.04] border-white/20 shadow-lg' : 'bg-white/[0.01] hover:bg-white/[0.03]'}
+                            `}
                         >
-                          {log.action}
-                        </span>
-                      </td>
-                      <td>{getUserName(log)}</td>
-                      <td>
-                        {log.entity_type && log.entity_id ? (
-                          <span className="text-muted">
-                            {log.entity_type} #{log.entity_id}
-                          </span>
-                        ) : (
-                          <span className="text-muted">-</span>
-                        )}
-                      </td>
-                      <td>
-                        <details>
-                          <summary className="cursor-pointer text-primary">
-                            View
-                          </summary>
-                          <pre className="mt-2 mb-0 p-2 bg-light rounded small">
-                            {JSON.stringify(parseDetails(log), null, 2)}
-                          </pre>
-                        </details>
-                      </td>
-                      <td className="text-muted">
-                        {parseDetails(log).ipAddress || "-"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                            <div className={`flex items-center gap-3 px-3 py-2 ${hasDetails ? 'cursor-pointer' : 'cursor-default'}`}
+                                 onClick={hasDetails ? () => toggleExpand(log.id) : undefined}
+                            >
+                                {/* Icon */}
+                                <div className="p-1.5 rounded-full bg-black/40 border border-white/5 shadow-inner shrink-0 text-white/90">
+                                    {getActionIcon(log.action)}
+                                </div>
 
-          {/* Pagination */}
-          {total > limit && (
-            <div className="d-flex justify-content-between align-items-center mt-3">
-              <button
-                className="btn btn-outline-primary"
-                disabled={offset === 0}
+                                {/* Content Line: Action - User - Entity */}
+                                <div className="flex-1 flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
+                                    <span className="text-white font-medium text-xs tracking-wide">
+                                        {formatActionName(log.action)}
+                                    </span>
+                                    
+                                    {/* Divider */}
+                                    <span className="hidden sm:inline w-1 h-1 rounded-full bg-slate-600"></span>
+
+                                    <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                                        <FiUser size={10} className="text-slate-500"/>
+                                        <span className="truncate max-w-[150px]">
+                                            {log.users?.email || `User ${log.actor_user_id || 'System'}`}
+                                        </span>
+                                    </div>
+
+                                    {log.entity_type && (
+                                        <>
+                                            <span className="text-slate-600 text-[10px] hidden sm:inline">on</span>
+                                            <div className="px-1.5 py-px rounded border border-white/10 bg-white/5 text-[10px] text-slate-300 font-mono flex items-center gap-1">
+                                                <span>{log.entity_type}</span>
+                                                <span className="opacity-50">#{log.entity_id}</span>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+
+                                {/* Right Side: Time & Chevron */}
+                                <div className="flex items-center gap-4 shrink-0">
+                                    <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-mono">
+                                        <span className="hidden md:inline">{new Date(log.created_at).toLocaleString()}</span>
+                                        <span className="md:hidden">{new Date(log.created_at).toLocaleTimeString()}</span>
+                                    </div>
+                                    
+                                    {hasDetails && (
+                                        <div className={`text-slate-500 transition-transform duration-300 ${isExpanded ? 'rotate-90 text-blue-400' : 'group-hover:text-slate-300'}`}>
+                                            <FiChevronRight size={14} />
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Details Panel - Smart Grid */}
+                            {isExpanded && (
+                                <div className="border-t border-white/5 bg-black/40 px-4 py-3 animate-in slide-in-from-top-1">
+                                    <div className="flex items-center gap-2 text-[10px] text-slate-500 mb-3 uppercase tracking-wider font-bold">
+                                        <FiActivity size={10} />
+                                        <span>Event Properties</span>
+                                    </div>
+                                    
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                                        {Object.entries(details).map(([key, value]) => (
+                                            <div key={key} className="flex flex-col gap-1 min-w-0">
+                                                <span className="text-[10px] text-slate-500 font-medium tracking-wide truncate">
+                                                    {formatKey(key)}
+                                                </span>
+                                                <span className="text-sm text-slate-200 break-words font-medium">
+                                                    {formatValue(value)}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
+            </>
+        )}
+      </div>
+
+       {/* Pagination */}
+      <div className="flex items-center justify-between border-t border-white/5 pt-6">
+        <p className="text-sm text-slate-500 pointer-events-none">
+            Showing <span className="font-bold text-white">{logs.length}</span> of <span className="font-bold text-white">{total}</span> events
+        </p>
+        <div className="flex gap-2">
+            <button
                 onClick={() => setOffset(Math.max(0, offset - limit))}
-              >
-                Previous
-              </button>
-              <span className="text-muted">
-                Page {Math.floor(offset / limit) + 1} of{" "}
-                {Math.ceil(total / limit)}
-              </span>
-              <button
-                className="btn btn-outline-primary"
-                disabled={offset + limit >= total}
+                disabled={offset === 0}
+                className="p-2.5 rounded-lg border border-white/10 bg-white/5 text-slate-400 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            >
+                <FiChevronLeft size={16} />
+            </button>
+            <button
                 onClick={() => setOffset(offset + limit)}
-              >
-                Next
-              </button>
-            </div>
-          )}
+                disabled={offset + limit >= total}
+                className="p-2.5 rounded-lg border border-white/10 bg-white/5 text-slate-400 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            >
+                <FiChevronRight size={16} />
+            </button>
         </div>
       </div>
     </div>

@@ -223,7 +223,8 @@ export async function updateWorkflowNode(req: Request, res: Response) {
       userId,
       targetType: "workflow",
       targetId: workflowId,
-      details: { action: "node_updated", nodeId: numericNodeId, kind },
+      // Use updated.kind specifically
+      details: { action: "node_updated", nodeId: numericNodeId, kind: updated.kind },
       ipAddress: req.ip,
       userAgent: req.get("user-agent"),
     });
@@ -270,7 +271,8 @@ export async function deleteWorkflowNode(req: Request, res: Response) {
       userId,
       targetType: "workflow",
       targetId: numericId,
-      details: { action: "node_deleted", nodeId: numericNodeId },
+      // Use ok.kind (since 'ok' is now the node object)
+      details: { action: "node_deleted", nodeId: numericNodeId, kind: ok.kind },
       ipAddress: req.ip,
       userAgent: req.get("user-agent"),
     });

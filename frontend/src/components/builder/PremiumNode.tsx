@@ -60,7 +60,7 @@ const PremiumNode = ({ data, selected }: NodeProps) => {
                             {kind}
                         </span>
                         <span className="text-sm font-bold text-white leading-tight">
-                            {name || "Untitled Step"}
+                            {name || kind.charAt(0).toUpperCase() + kind.slice(1)}
                         </span>
                     </div>
                 </div>

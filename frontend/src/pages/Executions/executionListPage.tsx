@@ -113,26 +113,28 @@ const ExecutionsListPage: React.FC = () => {
   };
 
   return (
-    <div className="h-full flex flex-col bg-[#020617] text-white overflow-hidden relative">
-       {/* Ambient Glows */}
-       <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-blue-600/10 rounded-full blur-[100px] pointer-events-none" />
-       <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-indigo-600/10 rounded-full blur-[100px] pointer-events-none" />
+    <div className="h-full flex flex-col bg-[#020408] text-white overflow-hidden relative font-sans">
+       {/* Tech Grid Background */}
+       <div className="absolute inset-0 bg-[linear-gradient(rgba(6,182,212,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(6,182,212,0.03)_1px,transparent_1px)] bg-[size:40px_40px] pointer-events-none" />
 
       {/* Header */}
-      <div className="px-8 py-8 border-b border-white/5 z-10 shrink-0 bg-white/[0.02] backdrop-blur-xl">
+      <div className="px-8 py-6 border-b border-cyan-900/20 z-10 shrink-0 bg-[#020408]/90 backdrop-blur-md">
         <div className="flex items-end justify-between mb-8">
             <div>
-                <h1 className="text-3xl font-bold tracking-tight text-white mb-2 bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">Executions</h1>
-                <p className="text-slate-400 text-sm">Monitor your automation history in real-time.</p>
+                <h1 className="text-2xl font-bold tracking-widest text-white mb-1 uppercase font-mono flex items-center gap-3">
+                    <FiActivity className="text-cyan-500" /> System Executions
+                </h1>
+                <p className="text-cyan-900/60 text-xs font-mono tracking-widest uppercase">Real-time Automation Monitoring v2.4.0</p>
             </div>
             <div className="flex gap-3">
                  {/* Refresh Button */}
                 <button 
                     onClick={() => loadExecutions({ silent: false })}
                     disabled={refreshing || loading}
-                    className="p-2.5 bg-white/5 border border-white/10 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all disabled:opacity-50"
+                    className="group p-2.5 bg-cyan-950/10 border border-cyan-900/30 text-cyan-500 hover:text-cyan-300 hover:bg-cyan-900/20 hover:border-cyan-500/50 transition-all disabled:opacity-50 clip-path-polygon"
+                    style={{ clipPath: 'polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px)' }}
                 >
-                    <FiRefreshCw className={refreshing ? "animate-spin" : ""} size={16} />
+                    <FiRefreshCw className={`group-hover:rotate-180 transition-transform duration-700 ${refreshing ? "animate-spin" : ""}`} size={16} />
                 </button>
             </div>
         </div>
@@ -140,43 +142,31 @@ const ExecutionsListPage: React.FC = () => {
         {/* Toolbar */}
         <div className="flex items-center justify-between gap-6">
              {/* Search */}
-            <div className="relative flex-1 max-w-lg">
+            <div className="relative flex-1 max-w-lg group">
                 <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                    <FiSearch className="text-slate-500 text-lg" />
+                    <FiSearch className="text-cyan-900 group-focus-within:text-cyan-500 transition-colors" />
                 </div>
                 <input 
                     type="text" 
-                    placeholder="Search by execution ID, workflow ID, or name..." 
+                    placeholder="SEARCH PROTOCOL LOGS..." 
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    className="w-full bg-black/40 border border-white/10 rounded-xl pl-11 pr-4 py-3 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500/50 focus:bg-black/60 focus:ring-1 focus:ring-blue-500/20 transition-all shadow-inner"
+                    className="w-full bg-[#050b14] border border-cyan-900/30 pl-10 pr-4 py-2 text-xs font-mono text-cyan-100 placeholder:text-cyan-900/50 focus:outline-none focus:border-cyan-500/50 focus:shadow-[0_0_15px_rgba(6,182,212,0.1)] transition-all uppercase tracking-wider"
                 />
             </div>
 
-            {/* Status Filters - Neon Glass Style */}
-            <div className="flex items-center p-1 bg-black/40 border border-white/10 rounded-xl backdrop-blur-2xl shadow-2xl">
+            {/* Status Filters - Tech Tabs */}
+            <div className="flex items-center gap-1">
                 {(['all', 'running', 'completed', 'failed'] as const).map((s) => (
                     <button
                         key={s}
                         onClick={() => setStatusFilter(s)}
-                        className={`px-6 py-2 rounded-lg text-xs font-bold uppercase tracking-widest transition-all duration-300 relative overflow-hidden
+                        className={`px-4 py-2 text-[10px] font-bold font-mono uppercase tracking-widest transition-all duration-300 border
                             ${statusFilter === s 
-                                ? 'text-white shadow-[0_0_20px_rgba(37,99,235,0.3)]' 
-                                : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'}
+                                ? 'bg-cyan-950/30 border-cyan-500/50 text-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.15)]' 
+                                : 'bg-[#050b14] border-transparent text-slate-600 hover:text-cyan-500 hover:border-cyan-900/30'}
                         `}
                     >
-                        {statusFilter === s && (
-                            <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-indigo-600 opacity-90 rounded-lg -z-10 animate-pulse-slow" />
-                        )}
-                        {statusFilter === s && s === 'running' && (
-                            <div className="absolute inset-0 bg-gradient-to-r from-amber-600 to-orange-600 opacity-90 rounded-lg -z-10" />
-                        )}
-                        {statusFilter === s && s === 'failed' && (
-                            <div className="absolute inset-0 bg-gradient-to-r from-rose-600 to-red-600 opacity-90 rounded-lg -z-10" />
-                        )}
-                        {statusFilter === s && s === 'completed' && (
-                            <div className="absolute inset-0 bg-gradient-to-r from-emerald-600 to-teal-600 opacity-90 rounded-lg -z-10" />
-                        )}
                         {s}
                     </button>
                 ))}
@@ -185,95 +175,76 @@ const ExecutionsListPage: React.FC = () => {
       </div>
 
       {/* List Content */}
-      <div className="flex-1 overflow-y-auto px-8 py-6 custom-scrollbar z-10 space-y-3">
+      <div className="flex-1 overflow-y-auto px-8 py-6 custom-scrollbar z-10 space-y-2">
           {loading && !refreshing ? (
               <div className="flex justify-center pt-24 flex-col items-center">
-                  <div className="relative w-16 h-16 flex items-center justify-center mb-6">
-                      <div className="absolute inset-0 rounded-full border-2 border-blue-500/20 border-t-blue-500 animate-spin" />
-                      <FiActivity className="text-blue-500 text-xl" />
-                  </div>
-                  <span className="text-slate-500 text-sm tracking-wide">Fetching executions...</span>
+                  <div className="w-12 h-12 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin mb-4" />
+                  <span className="text-cyan-900 text-xs font-mono uppercase tracking-widest animate-pulse">Scanning Logs...</span>
               </div>
           ) : filteredExecutions.length === 0 ? (
               <div className="flex flex-col items-center justify-center pt-24 text-slate-500 opacity-60">
-                  <div className="w-20 h-20 rounded-3xl bg-white/5 flex items-center justify-center mb-6 border border-white/5 transform rotate-3">
-                      <FiSearch size={32} className="text-slate-400 -rotate-3" />
-                  </div>
-                  <h3 className="text-lg font-medium text-slate-300 mb-1">No executions found</h3>
-                  <p className="text-sm">Try adjusting your filters or search terms.</p>
+                  <FiActivity size={48} className="text-cyan-900/50 mb-4" />
+                  <h3 className="text-sm font-mono text-cyan-800 uppercase tracking-widest">No Logs Found</h3>
               </div>
           ) : (
-              <div className="space-y-3 pb-8">
+              <div className="pb-8 space-y-2">
                   {filteredExecutions.map((ex) => (
                       <div 
                         key={ex.id}
                         onClick={() => navigate(`/executions/${ex.id}`)}
-                        className="group relative flex items-center justify-between p-4 pl-5 bg-white/[0.02] border border-white/5 rounded-2xl cursor-pointer transition-all duration-300 hover:bg-white/[0.04] hover:border-white/10 hover:shadow-xl hover:shadow-black/20 hover:-translate-y-0.5 overflow-hidden"
+                        className="group relative flex items-center justify-between p-3 pl-4 bg-[#050b14] border border-white/5 hover:border-cyan-500/30 cursor-pointer transition-all duration-200 hover:bg-cyan-950/10 hover:shadow-[0_0_15px_rgba(6,182,212,0.05)]"
                       >
                           {/* Left Accent Bar */}
-                          <div className={`absolute left-0 top-0 bottom-0 w-1 transition-colors duration-300
-                              ${ex.status === 'completed' ? 'bg-emerald-500' : ''}
-                              ${ex.status === 'failed' ? 'bg-rose-500' : ''}
-                              ${ex.status === 'running' ? 'bg-amber-500' : ''}
+                          <div className={`absolute left-0 top-0 bottom-0 w-0.5 transition-colors duration-300
+                              ${ex.status === 'completed' ? 'bg-emerald-500 shadow-[0_0_10px_#10b981]' : ''}
+                              ${ex.status === 'failed' ? 'bg-rose-500 shadow-[0_0_10px_#f43f5e]' : ''}
+                              ${ex.status === 'running' ? 'bg-amber-500 shadow-[0_0_10px_#f59e0b]' : ''}
                               ${!['completed','failed','running'].includes(ex.status) ? 'bg-slate-700' : ''}
                           `} />
 
-                          <div className="flex items-center gap-6 z-10">
-                               {/* Status Icon */}
-                              <div className={`
-                                  w-11 h-11 rounded-xl flex items-center justify-center border shadow-lg transition-transform group-hover:scale-110 duration-300
-                                  ${ex.status === 'completed' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 shadow-emerald-500/10' : ''}
-                                  ${ex.status === 'failed' ? 'bg-rose-500/10 border-rose-500/20 text-rose-400 shadow-rose-500/10' : ''}
-                                  ${ex.status === 'running' ? 'bg-amber-500/10 border-amber-500/20 text-amber-400 shadow-amber-500/10' : ''}
-                                  ${!['completed','failed','running'].includes(ex.status) ? 'bg-slate-800 border-slate-700 text-slate-500' : ''}
-                              `}>
-                                  {ex.status === 'completed' && <FiCheck size={18} strokeWidth={2.5} />}
-                                  {ex.status === 'failed' && <FiX size={18} strokeWidth={2.5} />}
-                                  {ex.status === 'running' && <div className="w-2.5 h-2.5 bg-current rounded-full animate-pulse shadow-[0_0_10px_currentColor]" />}
-                              </div>
+                          <div className="flex items-center gap-4 z-10">
+                               {/* ID Badge */}
+                               <div className="w-12 h-12 flex items-center justify-center bg-[#020408] border border-white/5 group-hover:border-cyan-500/20 transition-colors">
+                                   <span className="font-mono text-xs text-slate-500 group-hover:text-cyan-400">#{ex.id}</span>
+                               </div>
 
-                              <div className="flex flex-col gap-1.5">
+                              <div className="flex flex-col gap-1">
                                   <div className="flex items-center gap-3">
-                                      <span className="text-white font-bold text-lg group-hover:text-blue-400 transition-colors">
-                                          {ex.workflows?.name || "Untitled Workflow"}
-                                      </span>
-                                      <span className="text-slate-600 text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/5 border border-white/5">
-                                          #{ex.id}
+                                      <span className="text-slate-200 font-bold text-sm tracking-wide group-hover:text-cyan-400 transition-colors uppercase">
+                                          {ex.workflows?.name || "Untitled Protocol"}
                                       </span>
                                   </div>
-                                  <div className="flex items-center gap-4 text-xs font-medium text-slate-500">
-                                      <span className={`uppercase tracking-wider text-[10px] flex items-center gap-1.5
-                                          ${ex.status === 'failed' ? 'text-rose-400' : ''}
-                                          ${ex.status === 'running' ? 'text-amber-400' : ''}
-                                          ${ex.status === 'completed' ? 'text-emerald-400' : ''}
+                                  <div className="flex items-center gap-4 text-[10px] font-mono uppercase tracking-wider text-slate-600">
+                                      <span className={`flex items-center gap-1.5
+                                          ${ex.status === 'failed' ? 'text-rose-500' : ''}
+                                          ${ex.status === 'running' ? 'text-amber-500' : ''}
+                                          ${ex.status === 'completed' ? 'text-emerald-500' : ''}
                                       `}>
                                           {ex.status}
                                       </span>
-                                      <span className="w-1 h-1 rounded-full bg-slate-700" />
-                                      <span className="flex items-center gap-1.5 text-slate-400">
+                                      <span className="text-cyan-900">//</span>
+                                      <span className="flex items-center gap-1.5 text-slate-500">
                                           {getTriggerIcon(ex.trigger_type || 'manual')} 
-                                          <span className="capitalize">{ex.trigger_type || 'Manual'}</span>
+                                          <span>{ex.trigger_type || 'MANUAL'}</span>
                                       </span>
                                   </div>
                               </div>
                           </div>
 
-                          <div className="flex items-center gap-10 z-10">
+                          <div className="flex items-center gap-8 z-10 pr-4">
                                 <div className="text-right hidden sm:block">
-                                    <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">Duration</div>
-                                    <div className="font-mono text-sm text-slate-300 font-medium">
-                                        {ex.duration_ms ? `${(ex.duration_ms/1000).toFixed(2)}s` : '-'}
+                                    <div className="text-[9px] uppercase tracking-wider text-cyan-900 mb-0.5">Exec Time</div>
+                                    <div className="font-mono text-xs text-cyan-400">
+                                        {ex.duration_ms ? `${(ex.duration_ms/1000).toFixed(3)}s` : '--'}
                                     </div>
                                 </div>
-                                <div className="text-right min-w-[100px]">
-                                    <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">Started</div>
-                                    <div className="text-sm text-slate-300 font-medium">
-                                        {new Date(ex.started_at || '').toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                <div className="text-right min-w-[80px]">
+                                    <div className="text-[9px] uppercase tracking-wider text-cyan-900 mb-0.5">Timestamp</div>
+                                    <div className="text-xs text-slate-400 font-mono">
+                                        {new Date(ex.started_at || '').toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second: '2-digit'})}
                                     </div>
                                 </div>
-                                <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center opacity-0 group-hover:opacity-100 -translate-x-4 group-hover:translate-x-0 transition-all duration-300">
-                                    <FiChevronRight className="text-white" />
-                                </div>
+                                <FiChevronRight className="text-cyan-900 opacity-0 group-hover:opacity-100 group-hover:text-cyan-500 transition-all -translate-x-2 group-hover:translate-x-0" />
                           </div>
                       </div>
                   ))}
@@ -284,4 +255,4 @@ const ExecutionsListPage: React.FC = () => {
   );
 };
 
-export default ExecutionsListPage
+export default ExecutionsListPage;

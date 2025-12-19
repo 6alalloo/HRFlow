@@ -19,6 +19,9 @@ router.patch(
 // Get one workflow by id
 router.get("/:id", workflowController.getWorkflowById);
 
+// Delete workflow
+router.delete("/:id", workflowController.deleteWorkflow);
+
 // Get workflow nodes
 router.get("/:id/nodes", workflowController.getWorkflowNodes);
 

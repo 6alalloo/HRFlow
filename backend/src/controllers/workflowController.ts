@@ -532,3 +532,36 @@ export async function createWorkflow(req: Request, res: Response) {
     return res.status(500).json({ message: "Internal server error" });
   }
 }
+
+/**
+ * DELETE /api/workflows/:id
+ * Delete a workflow.
+ */
+export async function deleteWorkflow(req: Request, res: Response) {
+  const { id } = req.params;
+
+  const numericId = Number(id);
+  if (Number.isNaN(numericId)) {
+    return res.status(400).json({
+      message: "Invalid workflow ID",
+    });
+  }
+
+  try {
+    const workflow = await workflowService.getWorkflowById(numericId);
+    if (!workflow) {
+      return res.status(404).json({
+        message: "Workflow not found",
+      });
+    }
+
+    await workflowService.deleteWorkflow(numericId);
+
+    return res.status(204).send();
+  } catch (error) {
+    console.error("[WorkflowController] Error deleting workflow:", error);
+    return res.status(500).json({
+      message: "Internal server error",
+    });
+  }
+}

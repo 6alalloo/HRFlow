@@ -1,5 +1,5 @@
 import React from 'react';
-import { FiPlay, FiLayers, FiClock, FiSettings, FiActivity } from 'react-icons/fi';
+import { FiLayers, FiSettings, FiPlay, FiCpu, FiTrash2 } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
 import type { WorkflowApi } from '../../../api/workflows';
 import RecentExecutions from './RecentExecutions';
@@ -7,111 +7,139 @@ import RecentExecutions from './RecentExecutions';
 type WorkflowDetailPanelProps = {
     workflow: WorkflowApi | null;
     onRun: (wf: WorkflowApi) => void;
+    onDelete: (wf: WorkflowApi) => void;
 };
 
-const WorkflowDetailPanel: React.FC<WorkflowDetailPanelProps> = ({ workflow, onRun }) => {
+const WorkflowDetailPanel: React.FC<WorkflowDetailPanelProps> = ({ workflow, onRun, onDelete }) => {
     const navigate = useNavigate();
 
     if (!workflow) {
         return (
-            <div className="flex-1 flex flex-col items-center justify-center text-slate-500 h-full bg-navy-950/50 backdrop-blur-sm">
-                <div className="w-14 h-14 rounded-xl bg-white/5 flex items-center justify-center mb-4">
-                     <FiLayers size={24} className="opacity-20" />
+            <div className="flex-1 flex flex-col items-center justify-center text-slate-500 h-full bg-[#020408] border-l border-white/5 font-mono">
+                <div className="w-16 h-16 rounded-full border border-cyan-900/30 flex items-center justify-center mb-4 animate-pulse">
+                     <FiLayers size={24} className="text-cyan-900" />
                 </div>
-                <p className="text-sm">Select a workflow to view details</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-cyan-900">Awaiting Selection...</p>
             </div>
         );
     }
 
     return (
-        <div className="flex flex-col h-full bg-navy-950/80 backdrop-blur-xl border-l border-white/5 relative">
-            {/* Background Glow */}
-            <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-blue-600/10 rounded-full blur-[100px] pointer-events-none -translate-y-1/2 translate-x-1/2" />
+        <div className="flex flex-col h-full bg-[#020408] relative overflow-hidden font-sans text-slate-300">
+            {/* 1. Cyber Grid Background */}
+            <div className="absolute inset-0 bg-[linear-gradient(rgba(19,40,76,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(19,40,76,0.1)_1px,transparent_1px)] bg-[size:40px_40px] pointer-events-none" />
+            <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-cyan-500/10 rounded-full blur-[150px] pointer-events-none -translate-y-1/3 translate-x-1/3" />
             
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-5">
-                <div className="max-w-4xl"> 
-                    {/* 1. Header (Compact) */}
-                    <div className="mb-5 relative z-10">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-white/10 to-white/5 flex items-center justify-center border border-white/10 shadow-lg backdrop-blur-md flex-shrink-0">
-                                <FiLayers className="text-blue-400 text-lg" />
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-8 relative z-10">
+                <div className="max-w-4xl space-y-10"> 
+                    
+                    {/* Header: Identification */}
+                    <div className="flex items-start gap-6 border-b border-white/5 pb-8">
+                        <div className="w-16 h-16 rounded-2xl bg-black/40 border border-cyan-500/30 flex items-center justify-center shadow-[0_0_30px_rgba(6,182,212,0.15)] relative group">
+                             <div className="absolute inset-0 bg-cyan-400/10 animate-pulse rounded-2xl" />
+                             <FiLayers size={32} className="text-cyan-400 relative z-10" />
+                        </div>
+                        <div className="pt-1">
+                            <div className="flex items-center gap-3 mb-2">
+                                <span className="text-[10px] font-mono text-cyan-500 border border-cyan-500/30 px-1.5 py-0.5 rounded tracking-widest bg-cyan-950/30">ID: {workflow.id.toString().padStart(4, '0')}</span>
+                                <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Ver. 2.4.0</span>
                             </div>
-                            <div>
-                                <h1 className="text-xl font-bold text-white tracking-tight leading-tight">
-                                    {workflow.name}
-                                </h1>
-                                <p className="text-slate-400 text-xs leading-snug max-w-2xl mt-0.5">
-                                    {workflow.description || "No description provided."}
-                                </p>
+                            <h1 className="text-4xl font-bold text-white tracking-tight mb-3 uppercase text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400 drop-shadow-[0_0_10px_rgba(255,255,255,0.3)]">
+                                {workflow.name}
+                            </h1>
+                            <p className="text-slate-400 text-sm leading-relaxed max-w-2xl font-light border-l-2 border-slate-700 pl-4">
+                                {workflow.description || "System description unavailable."}
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Configuration Matrix: Verifiable Metadata V3 */}
+                    <div>
+                        <div className="flex items-center justify-between mb-4">
+                             <h3 className="text-xs font-bold text-cyan-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                                <FiCpu className="animate-pulse" />
+                                System Configuration
+                            </h3>
+                            <div className="h-px flex-1 bg-gradient-to-r from-cyan-900/50 to-transparent ml-4" />
+                        </div>
+                        
+                        <div className="bg-black/40 border border-white/10 rounded-none relative">
+                            {/* Decor corners */}
+                            <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-cyan-500"/>
+                            <div className="absolute top-0 right-0 w-2 h-2 border-t border-r border-cyan-500"/>
+                            <div className="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-cyan-500"/>
+                            <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-cyan-500"/>
+
+                            <div className="grid grid-cols-2 divide-x divide-white/5">
+                                {/* Row 1 */}
+                                <div className="p-4 border-b border-white/5 flex justify-between items-center group hover:bg-white/5 transition-colors cursor-crosshair">
+                                    <span className="text-[10px] uppercase tracking-widest text-slate-500 font-mono">Trigger Protocol</span>
+                                    <span className="text-xs font-bold font-mono text-cyan-400 uppercase">{workflow.default_trigger || 'MANUAL_OVERRIDE'}</span>
+                                </div>
+                                <div className="p-4 border-b border-white/5 flex justify-between items-center group hover:bg-white/5 transition-colors cursor-crosshair">
+                                    <span className="text-[10px] uppercase tracking-widest text-slate-500 font-mono">Integrations</span>
+                                    <span className="text-xs font-bold font-mono text-white">SLACK // HTTP // DB</span>
+                                </div>
+
+                                {/* Row 2 */}
+                                <div className="p-4 border-b border-white/5 flex justify-between items-center group hover:bg-white/5 transition-colors cursor-crosshair">
+                                    <span className="text-[10px] uppercase tracking-widest text-slate-500 font-mono">Engine Version</span>
+                                    <span className="text-xs font-bold font-mono text-emerald-400">V{workflow.version}.0.0</span>
+                                </div>
+                                <div className="p-4 border-b border-white/5 flex justify-between items-center group hover:bg-white/5 transition-colors cursor-crosshair">
+                                    <span className="text-[10px] uppercase tracking-widest text-slate-500 font-mono">System Owner</span>
+                                    <span className="text-xs font-bold font-mono text-white">ADMIN_ID_{workflow.owner_user_id || '00'}</span>
+                                </div>
+
+                                {/* Row 3 */}
+                                <div className="p-4 flex justify-between items-center group hover:bg-white/5 transition-colors cursor-crosshair">
+                                    <span className="text-[10px] uppercase tracking-widest text-slate-500 font-mono">Last Config</span>
+                                    <span className="text-xs font-bold font-mono text-purple-400 uppercase">{new Date(workflow.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                </div>
+                                <div className="p-4 flex justify-between items-center group hover:bg-white/5 transition-colors cursor-crosshair">
+                                    <span className="text-[10px] uppercase tracking-widest text-slate-500 font-mono">Complexity</span>
+                                    <span className="text-xs font-bold font-mono text-white">LEVEL 2 (STANDARD)</span>
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 relative z-10">
-                        {/* LEFT COLUMN: Stats */}
-                        <div>
-                            <div className="bg-white/5 rounded-xl p-4 border border-white/5 shadow-inner">
-                                <div className="flex items-center justify-between mb-4">
-                                    <h3 className="text-[10px] font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
-                                        <FiActivity className="text-cyan-400"/> Performance
-                                    </h3>
-                                    <span className="text-[9px] text-slate-500 bg-black/20 px-1.5 py-0.5 rounded">30 Days</span>
-                                </div>
-                                
-                                <div className="grid grid-cols-2 gap-y-5 gap-x-4">
-                                    <div>
-                                        <div className="text-[9px] text-slate-400 mb-0.5 uppercase tracking-wide">Runs</div>
-                                        <div className="text-xl font-bold text-white">150</div>
-                                    </div>
-                                    <div>
-                                        <div className="text-[9px] text-slate-400 mb-0.5 uppercase tracking-wide">Success</div>
-                                        <div className="text-xl font-bold text-emerald-400">98%</div>
-                                    </div>
-                                     <div>
-                                        <div className="text-[9px] text-slate-400 mb-0.5 uppercase tracking-wide">Avg Time</div>
-                                        <div className="text-xl font-bold text-white">1.2s</div>
-                                    </div>
-                                     <div>
-                                        <div className="text-[9px] text-slate-400 mb-0.5 uppercase tracking-wide">Last Run</div>
-                                        <div className="text-xl font-bold text-white">Today</div>
-                                    </div>
-                                </div>
-                                
-                                <div className="mt-5 pt-3 border-t border-white/5">
-                                    <div className="flex items-center gap-2 text-xs text-slate-300">
-                                        <FiClock className="text-purple-400 w-3 h-3" />
-                                        <span className="text-[10px]">Runs daily at 9:00 AM UTC</span>
-                                    </div>
-                                </div>
-                            </div>
+                    {/* Recent Executions: Log Stream */}
+                    <div>
+                         <div className="flex items-center justify-between mb-4">
+                             <h3 className="text-xs font-bold text-slate-500 uppercase tracking-[0.2em]">Execution Stream</h3>
+                             <div className="h-px flex-1 bg-gradient-to-r from-slate-800 to-transparent ml-4" />
                         </div>
-
-                        {/* RIGHT COLUMN: Recent Executions */}
-                        <div className="h-full">
-                             <div className="bg-white/5 rounded-xl p-4 border border-white/5 h-full">
-                                <div className="mb-2">
-                                     <RecentExecutions workflowId={workflow.id} />
-                                </div>
-                             </div>
-                        </div>
+                         <div className="bg-black/40 border border-white/5 rounded-none">
+                             <RecentExecutions workflowId={workflow.id} />
+                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* 4. Footer Actions */}
-            <div className="px-5 py-3 bg-navy-950/90 backdrop-blur border-t border-white/5 z-20">
-                <div className="max-w-4xl flex gap-3"> 
+            {/* Footer Actions: HUD Controls */}
+            <div className="p-6 bg-[#020408]/90 backdrop-blur-md border-t border-white/5 z-20 flex items-center justify-end gap-6">
+                <div className="flex gap-4 flex-1 justify-end w-full">
+                     <button
+                        onClick={() => onDelete(workflow)}
+                        className="py-4 px-6 bg-red-950/10 hover:bg-red-950/30 text-red-800 hover:text-red-500 border border-red-900/30 hover:border-red-500/50 font-mono text-sm uppercase tracking-widest flex items-center justify-center gap-3 transition-all clip-path-polygon group"
+                        style={{ clipPath: 'polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px)' }}
+                    >
+                        <FiTrash2 className="group-hover:animate-pulse" /> Delete
+                    </button>
                     <button
                         onClick={() => onRun(workflow)}
-                        className="flex-1 px-3 py-2 bg-gradient-to-b from-white/10 to-white/5 hover:from-white/15 hover:to-white/10 text-white border border-white/10 rounded-lg font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-[0_4px_20px_rgba(0,0,0,0.2)] backdrop-blur-md group"
+                        className="flex-1 py-4 bg-white/5 hover:bg-cyan-950/30 text-cyan-400 hover:text-cyan-300 border border-white/10 hover:border-cyan-500/50 font-mono text-sm uppercase tracking-widest flex items-center justify-center gap-3 transition-all clip-path-polygon group"
+                        style={{ clipPath: 'polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px)' }}
                     >
-                        <FiPlay className="text-emerald-400 group-hover:scale-110 transition-transform" /> <span className="text-shadow-sm">Run</span>
+                        <FiPlay className="group-hover:drop-shadow-[0_0_5px_rgba(6,182,212,0.8)]" /> Execute
                     </button>
                     <button
                         onClick={() => navigate(`/workflows/${workflow.id}/builder`)}
-                        className="flex-1 px-3 py-2 bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 hover:brightness-110 text-white rounded-lg font-bold text-xs shadow-[0_0_20px_rgba(59,130,246,0.5)] border border-white/20 flex items-center justify-center gap-2 transition-all transform hover:scale-[1.01]"
+                        className="flex-1 py-4 bg-cyan-600 hover:bg-cyan-500 text-black font-bold font-mono text-sm uppercase tracking-widest flex items-center justify-center gap-3 transition-all shadow-[0_0_20px_rgba(6,182,212,0.4)] hover:shadow-[0_0_30px_rgba(6,182,212,0.6)] clip-path-polygon"
+                        style={{ clipPath: 'polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px)' }}
                     >
-                        <FiSettings className="text-white animate-spin-slow" /> Builder
+                         <FiSettings className="animate-spin-slow" /> Config // Builder
                     </button>
                 </div>
             </div>

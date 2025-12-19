@@ -406,6 +406,15 @@ export async function fetchWorkflowGraph(
 }
 
 // POST /api/workflows/:id/nodes
+export async function deleteWorkflow(id: number): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/workflows/${id}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to delete workflow: ${res.statusText}`);
+  }
+}
+
 export async function createWorkflowNode(
   workflowId: number,
   payload: CreateWorkflowNodePayload

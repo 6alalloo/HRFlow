@@ -605,3 +605,10 @@ export async function createWorkflowNode(workflowId: number, dto: WorkflowNodeDT
     posY: node.pos_y,
   };
 }
+
+// Deletes a workflow and all its nodes/edges (cascade delete usually handled by DB, but we can be explicit if needed)
+export async function deleteWorkflow(id: number): Promise<void> {
+  await prisma.workflows.delete({
+    where: { id },
+  });
+}

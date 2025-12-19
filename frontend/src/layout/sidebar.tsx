@@ -65,7 +65,7 @@ const Sidebar: React.FC = () => {
             <Logo style={{ width: '100px', height: 'auto' }} />
             <div>
                 <div className="fw-bold text-white tracking-tight leading-4 text-xl">HRFlow</div>
-                <div className="text-slate-500 font-medium text-[10px] tracking-[0.2em] mt-1 whitespace-nowrap">WORKFLOW AUTOMATION</div>
+                <div className="text-cyan-500 font-medium text-[10px] tracking-[0.2em] mt-1 whitespace-nowrap drop-shadow-[0_0_5px_rgba(6,182,212,0.5)]">WORKFLOW AUTOMATION</div>
             </div>
         </div>
       </div>
@@ -77,14 +77,14 @@ const Sidebar: React.FC = () => {
           to="/workflows"
           style={{ textDecoration: 'none' }}
           className={({ isActive }) =>
-            "flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group !no-underline " +
+            "flex items-center gap-3 px-3 py-3 rounded-lg transition-all duration-300 group !no-underline border-l-2 " +
             (isActive && !isBuilderActive 
-                ? "bg-blue-600 !text-white shadow-lg shadow-blue-900/20 font-bold" 
-                : "!text-slate-300 hover:!text-white hover:bg-white/5 font-bold")
+                ? "bg-gradient-to-r from-cyan-950/30 to-transparent border-cyan-400 !text-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.1)] font-bold" 
+                : "border-transparent !text-slate-400 hover:!text-cyan-200 hover:bg-white/5 font-medium")
           }
         >
           <FiGitBranch size={20} className="shrink-0" />
-          <span className="text-base">Workflows</span>
+          <span className="text-base tracking-wide">Workflows</span>
         </NavLink>
 
         {/* Builder */}
@@ -93,14 +93,14 @@ const Sidebar: React.FC = () => {
           onClick={handleBuilderClick}
           style={{ textDecoration: 'none' }}
           className={
-            "flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 cursor-pointer group !no-underline " +
+            "flex items-center gap-3 px-3 py-3 rounded-lg transition-all duration-300 cursor-pointer group !no-underline border-l-2 " +
             (isBuilderActive 
-                ? "bg-blue-600 !text-white shadow-lg shadow-blue-900/20 font-bold" 
-                : "!text-slate-300 hover:!text-white hover:bg-white/5 font-bold")
+                ? "bg-gradient-to-r from-cyan-950/30 to-transparent border-cyan-400 !text-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.1)] font-bold" 
+                : "border-transparent !text-slate-400 hover:!text-cyan-200 hover:bg-white/5 font-medium")
           }
         >
           <FiZap size={20} className="shrink-0" />
-          <span className="text-base">{isCreating ? "Loading..." : "Builder"}</span>
+          <span className="text-base tracking-wide">{isCreating ? "Loading..." : "Builder"}</span>
         </a>
 
         {/* Executions list */}
@@ -108,14 +108,14 @@ const Sidebar: React.FC = () => {
           to="/executions"
           style={{ textDecoration: 'none' }}
           className={({ isActive }) =>
-            "flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group !no-underline " +
+            "flex items-center gap-3 px-3 py-3 rounded-lg transition-all duration-300 group !no-underline border-l-2 " +
             (isActive 
-                ? "bg-blue-600 !text-white shadow-lg shadow-blue-900/20 font-bold" 
-                : "!text-slate-300 hover:!text-white hover:bg-white/5 font-bold")
+                ? "bg-gradient-to-r from-cyan-950/30 to-transparent border-cyan-400 !text-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.1)] font-bold" 
+                : "border-transparent !text-slate-400 hover:!text-cyan-200 hover:bg-white/5 font-medium")
           }
         >
           <FiActivity size={20} className="shrink-0" />
-          <span className="text-base">Executions</span>
+          <span className="text-base tracking-wide">Executions</span>
         </NavLink>
 
         {/* Admin - Audit Logs (only show for Admin users) */}
@@ -124,14 +124,14 @@ const Sidebar: React.FC = () => {
             to="/admin/audit-logs"
             style={{ textDecoration: 'none' }}
             className={({ isActive }) =>
-              "flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group !no-underline " +
+              "flex items-center gap-3 px-3 py-3 rounded-lg transition-all duration-300 group !no-underline border-l-2 " +
               (isActive 
-                  ? "bg-blue-600 !text-white shadow-lg shadow-blue-900/20 font-bold" 
-                  : "!text-slate-300 hover:!text-white hover:bg-white/5 font-bold")
+                  ? "bg-gradient-to-r from-cyan-950/30 to-transparent border-cyan-400 !text-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.1)] font-bold" 
+                  : "border-transparent !text-slate-400 hover:!text-cyan-200 hover:bg-white/5 font-medium")
             }
           >
             <FiShield size={20} className="shrink-0" />
-            <span className="text-base">Audit Logs</span>
+            <span className="text-base tracking-wide">Audit Logs</span>
           </NavLink>
         )}
       </div>
@@ -139,22 +139,22 @@ const Sidebar: React.FC = () => {
       {/* User Info & Logout - Fixed at Bottom */}
       <div className="p-4 shrink-0 border-t border-white/5 bg-[#020617]">
         {user && (
-          <div className="flex items-center gap-3 p-2 rounded-xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.04] transition-colors">
-              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shrink-0">
+          <div className="flex items-center gap-3 p-2 rounded-xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.04] transition-colors group">
+              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-cyan-600 to-blue-700 flex items-center justify-center text-white shadow-lg shadow-cyan-900/20 shrink-0 group-hover:scale-105 transition-transform">
                 <FiUser size={16} />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-white text-sm font-semibold truncate">
+                <div className="text-slate-200 text-sm font-semibold truncate group-hover:text-cyan-200 transition-colors">
                   {user.full_name}
                 </div>
-                <div className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">
+                <div className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">
                     {user.role.name}
                 </div>
               </div>
               
               <button
                 onClick={handleLogout}
-                className="w-8 h-8 flex items-center justify-center text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors shrink-0"
+                className="w-8 h-8 flex items-center justify-center text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors shrink-0"
                 title="Sign out"
               >
                 <FiLogOut size={16} />

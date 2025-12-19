@@ -10,6 +10,7 @@ type WorkflowSplitLayoutProps = {
     error: string | null;
     onCreate: () => void;
     onRun: (wf: WorkflowApi) => void;
+    onDelete: (wf: WorkflowApi) => void;
 };
 
 const WorkflowSplitLayout: React.FC<WorkflowSplitLayoutProps> = ({
@@ -18,7 +19,8 @@ const WorkflowSplitLayout: React.FC<WorkflowSplitLayoutProps> = ({
     isCreating,
     error,
     onCreate, 
-    onRun
+    onRun,
+    onDelete
 }) => {
     // UI State
     const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -83,6 +85,7 @@ const WorkflowSplitLayout: React.FC<WorkflowSplitLayoutProps> = ({
                 <WorkflowDetailPanel 
                     workflow={selectedWorkflow}
                     onRun={onRun}
+                    onDelete={onDelete}
                 />
             </div>
         </div>

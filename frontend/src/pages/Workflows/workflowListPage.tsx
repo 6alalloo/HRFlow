@@ -5,9 +5,11 @@ import {
   fetchWorkflows,
   executeWorkflow,
   createWorkflow,
+  deleteWorkflow,
 } from "../../api/workflows";
 import type { WorkflowApi } from "../../api/workflows";
 import WorkflowSplitLayout from "./WorkflowSplitLayout";
+import { FiTrash2, FiAlertTriangle } from "react-icons/fi";
 
 // Re-adding generic Modal for Run
 type RunModalProps = {
@@ -19,6 +21,50 @@ type RunModalProps = {
   onConfirmRun: () => void;
   isRunning: boolean;
   error: string | null;
+};
+
+// Custom Delete Modal
+type DeleteModalProps = {
+    workflow: WorkflowApi | null;
+    isOpen: boolean;
+    onClose: () => void;
+    onConfirm: () => void;
+    isDeleting: boolean;
+};
+
+const DeleteConfirmationModal: React.FC<DeleteModalProps> = ({ workflow, isOpen, onClose, onConfirm, isDeleting }) => {
+    if (!isOpen || !workflow) return null;
+
+    return (
+        <>
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[1060]" onClick={onClose} />
+            <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[1070] w-full max-w-sm">
+                <div className="bg-[#0f172a] border border-slate-800 rounded-xl shadow-2xl overflow-hidden p-6">
+                    <h3 className="text-lg font-bold text-white mb-2">Delete Workflow?</h3>
+                    <p className="text-slate-400 text-sm mb-6 leading-relaxed">
+                        Are you sure you want to delete <span className="text-white font-medium">{workflow.name}</span>? This action cannot be undone.
+                    </p>
+                        
+                    <div className="flex gap-3 justify-end">
+                            <button
+                            onClick={onClose}
+                            disabled={isDeleting}
+                            className="px-4 py-2 text-slate-300 hover:text-white text-sm font-medium transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={onConfirm}
+                            disabled={isDeleting}
+                            className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-sm font-bold rounded-lg shadow-lg shadow-red-900/20 flex items-center gap-2 transition-all"
+                        >
+                            {isDeleting ? "Deleting..." : "Delete Workflow"}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </>
+    );
 };
 
 const ExecuteWorkflowModal: React.FC<RunModalProps> = ({
@@ -123,6 +169,11 @@ const WorkflowsListPage: React.FC = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
 
+  // Delete Modal State
+  const [workflowToDelete, setWorkflowToDelete] = useState<WorkflowApi | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   // Create State
   const [isCreating, setIsCreating] = useState(false);
 
@@ -176,6 +227,28 @@ const WorkflowsListPage: React.FC = () => {
     }
   };
 
+  const handleDeleteRequest = (wf: WorkflowApi) => {
+      setWorkflowToDelete(wf);
+      setIsDeleteModalOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+      if (!workflowToDelete) return;
+      try {
+          setIsDeleting(true);
+          await deleteWorkflow(workflowToDelete.id);
+          // Remove from list
+          setWorkflows(prev => prev.filter(w => w.id !== workflowToDelete.id));
+          setIsDeleteModalOpen(false);
+          setWorkflowToDelete(null);
+      } catch (err) {
+          console.error("Failed to delete workflow", err);
+          alert("Failed to delete workflow");
+      } finally {
+          setIsDeleting(false);
+      }
+  };
+
   const handleConfirmRun = async () => {
     if (!selectedWorkflowForRun) return;
 
@@ -220,6 +293,7 @@ const WorkflowsListPage: React.FC = () => {
             error={loadError}
             onCreate={handleCreateWorkflow}
             onRun={handleOpenRunModal}
+            onDelete={handleDeleteRequest}
         />
 
         {/* Reusing existing Modal Logic */}
@@ -232,6 +306,14 @@ const WorkflowsListPage: React.FC = () => {
             onConfirmRun={handleConfirmRun}
             isRunning={isRunning}
             error={runError}
+        />
+
+        <DeleteConfirmationModal 
+            workflow={workflowToDelete}
+            isOpen={isDeleteModalOpen}
+            onClose={() => setIsDeleteModalOpen(false)}
+            onConfirm={handleConfirmDelete}
+            isDeleting={isDeleting}
         />
     </>
   );

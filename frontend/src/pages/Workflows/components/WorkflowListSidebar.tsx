@@ -43,47 +43,63 @@ const WorkflowListSidebar: React.FC<WorkflowListSidebarProps> = ({
     return (
         <div className="flex flex-col h-full bg-navy-950/80 backdrop-blur-xl border-r border-white/5 relative z-30">
             {/* Header / Toolbar */}
-            <div className="p-6 border-b border-white/5 flex flex-col gap-5">
-                <div className="flex items-center justify-between">
-                     <h2 className="text-lg font-bold text-white tracking-tight">Workflows</h2>
-                      <button 
-                        onClick={onCreate}
-                        disabled={isCreating}
-                        className="p-2 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-lg hover:shadow-lg hover:shadow-blue-500/20 transition-all disabled:opacity-50 hover:scale-105"
-                        title="Create New Workflow"
-                    >
-                        {isCreating ? <div className="animate-spin w-4 h-4 border-2 border-white/30 border-t-white rounded-full" /> : <FiPlus size={18} />}
-                    </button>
-                </div>
-
-                <div className="flex gap-3">
-                    {/* Search Bar */}
+            <div className="p-4 border-b border-white/5 space-y-4">
+                {/* Search & Filters Row */}
+                <div className="flex items-center gap-3">
+                    {/* Search Bar - Wide */}
                     <div className="relative flex-1 group">
-                        <FiSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-blue-400 transition-colors" />
+                        <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-cyan-700 group-focus-within:text-cyan-400 transition-colors" />
                         <input 
                             type="text" 
-                            placeholder="Search workflows..." 
+                            placeholder="SEARCH" 
                             value={searchQuery}
                             onChange={(e) => onSearchChange(e.target.value)}
-                            className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-xs font-medium text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-blue-500/50 focus:bg-white/10 focus:ring-1 focus:ring-blue-500/20 transition-all shadow-inner"
+                            className="w-full bg-black/40 border border-cyan-900/30 rounded-none pl-9 pr-3 py-2 text-xs font-mono text-cyan-100 placeholder:text-cyan-900/50 focus:outline-none focus:border-cyan-500/50 focus:bg-black/60 focus:ring-1 focus:ring-cyan-500/20 focus:shadow-[0_0_15px_rgba(6,182,212,0.15)] transition-all uppercase tracking-wider"
                         />
                     </div>
-
-                    {/* Filter Dropdown (Simplified as button for now to match look) */}
-                    <div className="flex bg-white/5 border border-white/10 rounded-xl p-1 gap-1">
-                        <button 
-                            onClick={() => onFilterChange('all')}
-                            className={`px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all ${filterStatus === 'all' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'}`}
+                    
+                    {/* Status Dropdown */}
+                    <div className="relative">
+                        <select 
+                            value={filterStatus}
+                            onChange={(e) => onFilterChange(e.target.value as 'all' | 'active' | 'inactive')}
+                            className="appearance-none bg-[#020617] border border-cyan-900/30 rounded-none px-4 py-2 text-xs font-mono text-cyan-400 focus:outline-none focus:border-cyan-500/50 cursor-pointer pr-8 hover:bg-cyan-950/20 transition-colors uppercase tracking-widest"
+                            style={{ colorScheme: 'dark' }} 
                         >
-                            All
-                        </button>
-                        <button 
-                            onClick={() => onFilterChange('active')}
-                            className={`px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all ${filterStatus === 'active' ? 'bg-emerald-500/20 text-emerald-400 shadow-sm border border-emerald-500/10' : 'text-slate-500 hover:text-emerald-400 hover:bg-white/5'}`}
-                        >
-                            Active
-                        </button>
+                            <option value="all" className="bg-[#020617] text-cyan-400">ALL STATUS</option>
+                            <option value="active" className="bg-[#020617] text-cyan-400">ONLINE</option>
+                            <option value="inactive" className="bg-[#020617] text-cyan-400">OFFLINE</option>
+                        </select>
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-cyan-700">
+                           <svg width="10" height="6" viewBox="0 0 10 6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 1L5 5L9 1"/></svg>
+                        </div>
                     </div>
+
+                     {/* Time Range (Functional Select) */}
+                     <div className="relative hidden xl:block">
+                        <select 
+                            className="appearance-none bg-[#020617] border border-cyan-900/30 rounded-none px-4 py-2 text-xs font-mono text-cyan-400 focus:outline-none focus:border-cyan-500/50 cursor-pointer pr-8 hover:bg-cyan-950/20 transition-colors uppercase tracking-widest"
+                            style={{ colorScheme: 'dark' }}
+                        >
+                            <option value="24h" className="bg-[#020617] text-cyan-400">24H RANGE</option>
+                            <option value="7d" className="bg-[#020617] text-cyan-400">7 DAYS</option>
+                            <option value="30d" className="bg-[#020617] text-cyan-400">30 DAYS</option>
+                        </select>
+                         <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-cyan-700">
+                             <svg width="10" height="6" viewBox="0 0 10 6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 1L5 5L9 1"/></svg>
+                        </div>
+                    </div>
+                    
+                    {/* Create Button (Futuristic) */}
+                    <button 
+                        onClick={onCreate}
+                        disabled={isCreating}
+                        className="w-10 h-full min-h-[34px] bg-cyan-600 hover:bg-cyan-400 text-black flex items-center justify-center transition-all disabled:opacity-50 hover:shadow-[0_0_15px_rgba(34,211,238,0.6)]"
+                        title="Create New Workflow"
+                        style={{ clipPath: 'polygon(10px 0, 100% 0, 100% 100%, 0 100%, 0 10px)' }}
+                    >
+                         {isCreating ? <div className="animate-spin w-4 h-4 border-2 border-black/30 border-t-black rounded-full" /> : <FiPlus size={20} className="stroke-[3px]" />}
+                    </button>
                 </div>
             </div>
 

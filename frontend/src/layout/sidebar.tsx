@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { NavLink, useNavigate, useLocation } from "react-router-dom";
-import { FiGitBranch, FiActivity, FiZap, FiLogOut, FiUser, FiShield } from "react-icons/fi";
+import { NavLink, useNavigate, useLocation, Link } from "react-router-dom";
+import { FiGitBranch, FiActivity, FiZap, FiLogOut, FiUser, FiShield, FiBarChart2, FiHome } from "react-icons/fi";
 import { useAuth } from "../contexts/AuthContext";
 import { createWorkflow, fetchWorkflows } from "../api/workflows";
 import { Logo } from "../components/common/Logo";
@@ -61,17 +61,48 @@ const Sidebar: React.FC = () => {
     <aside className="w-[280px] h-full flex flex-col bg-[#020617] border-r border-white/5 shrink-0 z-30">
       {/* Brand */}
       <div className="p-6 shrink-0 border-b border-white/5">
-        <div className="d-flex align-items-center gap-3">
+        <Link to="/" className="d-flex align-items-center gap-3 no-underline group">
             <Logo style={{ width: '100px', height: 'auto' }} />
             <div>
-                <div className="fw-bold text-white tracking-tight leading-4 text-xl">HRFlow</div>
+                <div className="fw-bold text-white tracking-tight leading-4 text-xl group-hover:text-cyan-400 transition-colors">HRFlow</div>
                 <div className="text-cyan-500 font-medium text-[10px] tracking-[0.2em] mt-1 whitespace-nowrap drop-shadow-[0_0_5px_rgba(6,182,212,0.5)]">WORKFLOW AUTOMATION</div>
             </div>
-        </div>
+        </Link>
       </div>
 
       {/* Navigation - Scrollable Area */}
       <div className="flex-1 overflow-y-auto px-4 py-6 custom-scrollbar space-y-2">
+        {/* Home */}
+        <NavLink
+          to="/"
+          end
+          style={{ textDecoration: 'none' }}
+          className={({ isActive }) =>
+            "flex items-center gap-3 px-3 py-3 rounded-lg transition-all duration-300 group !no-underline border-l-2 " +
+            (isActive 
+                ? "bg-gradient-to-r from-cyan-950/30 to-transparent border-cyan-400 !text-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.1)] font-bold" 
+                : "border-transparent !text-slate-400 hover:!text-cyan-200 hover:bg-white/5 font-medium")
+          }
+        >
+          <FiHome size={20} className="shrink-0" />
+          <span className="text-base tracking-wide">Home</span>
+        </NavLink>
+
+        {/* Dashboard */}
+        <NavLink
+          to="/dashboard"
+          style={{ textDecoration: 'none' }}
+          className={({ isActive }) =>
+            "flex items-center gap-3 px-3 py-3 rounded-lg transition-all duration-300 group !no-underline border-l-2 " +
+            (isActive 
+                ? "bg-gradient-to-r from-cyan-950/30 to-transparent border-cyan-400 !text-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.1)] font-bold" 
+                : "border-transparent !text-slate-400 hover:!text-cyan-200 hover:bg-white/5 font-medium")
+          }
+        >
+          <FiBarChart2 size={20} className="shrink-0" />
+          <span className="text-base tracking-wide">Dashboard</span>
+        </NavLink>
+
         {/* Workflows */}
         <NavLink
           to="/workflows"

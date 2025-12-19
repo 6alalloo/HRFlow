@@ -9,7 +9,6 @@ import {
 } from "../../api/workflows";
 import type { WorkflowApi } from "../../api/workflows";
 import WorkflowSplitLayout from "./WorkflowSplitLayout";
-import { FiTrash2, FiAlertTriangle } from "react-icons/fi";
 
 // Re-adding generic Modal for Run
 type RunModalProps = {

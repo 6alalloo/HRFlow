@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useState, type FormEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 
-const LoginPage: React.FC = () => {
+const LoginPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -10,12 +10,8 @@ const LoginPage: React.FC = () => {
 
   const { login } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
 
-  // Get the redirect path from location state, or default to /workflows
-  const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/workflows';
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
@@ -25,7 +21,8 @@ const LoginPage: React.FC = () => {
     setIsLoading(false);
 
     if (result.success) {
-      navigate(from, { replace: true });
+      // Force redirect to Dashboard/Landing (/)
+      navigate('/', { replace: true });
     } else {
       setError(result.error || 'Login failed');
     }

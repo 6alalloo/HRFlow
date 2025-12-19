@@ -4,6 +4,8 @@ import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "./contexts/AuthContext";
 import AppLayout from "./layout/appLayout";
 import LoginPage from "./pages/Auth/LoginPage";
+import LandingPage from "./pages/Dashboard/LandingPage";
+import DashboardPage from "./pages/Dashboard/DashboardPage";
 import WorkflowsListPage from "./pages/Workflows/workflowListPage";
 import WorkflowDetailPage from "./pages/WorkflowDetail/workflowDetailPage";
 import ExecutionDetailPage from "./pages/Executions/executionDetailPage";
@@ -60,7 +62,7 @@ const App: React.FC = () => {
               </div>
             </div>
           ) : isAuthenticated ? (
-            <Navigate to="/workflows" replace />
+            <Navigate to="/" replace />
           ) : (
             <LoginPage />
           )
@@ -74,8 +76,9 @@ const App: React.FC = () => {
           <ProtectedRoute>
             <AppLayout>
               <Routes>
-                {/* Root redirect */}
-                <Route path="/" element={<Navigate to="/workflows" replace />} />
+                {/* Dashboard / Landing */}
+                <Route path="/" element={<LandingPage />} />
+                <Route path="/dashboard" element={<DashboardPage />} />
 
                 {/* Workflows */}
                 <Route path="/workflows" element={<WorkflowsListPage />} />

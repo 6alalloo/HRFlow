@@ -1,6 +1,11 @@
-import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+/* eslint-disable react-refresh/only-export-components */
+import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000/api';
+
+// Storage keys
+const TOKEN_KEY = 'hrflow_token';
+const USER_KEY = 'hrflow_user';
 
 // Types
 export interface AuthUser {
@@ -22,6 +27,23 @@ interface AuthContextType {
   logout: () => void;
 }
 
+// Helper to get initial state from localStorage
+function getInitialToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+function getInitialUser(): AuthUser | null {
+  const storedUser = localStorage.getItem(USER_KEY);
+  if (storedUser) {
+    try {
+      return JSON.parse(storedUser) as AuthUser;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 // Create context with default values
 const AuthContext = createContext<AuthContextType>({
   user: null,
@@ -32,43 +54,12 @@ const AuthContext = createContext<AuthContextType>({
   logout: () => {},
 });
 
-// Storage keys
-const TOKEN_KEY = 'hrflow_token';
-const USER_KEY = 'hrflow_user';
-
 // Provider component
-export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+export const AuthProvider = ({ children }: { children: ReactNode }) => {
+  // Use lazy initialization to avoid setState in useEffect
+  const [user, setUser] = useState<AuthUser | null>(getInitialUser);
+  const [token, setToken] = useState<string | null>(getInitialToken);
   const [isLoading, setIsLoading] = useState(true);
-
-  // Initialize auth state from localStorage on mount
-  useEffect(() => {
-    const storedToken = localStorage.getItem(TOKEN_KEY);
-    const storedUser = localStorage.getItem(USER_KEY);
-
-    if (storedToken && storedUser) {
-      try {
-        const parsedUser = JSON.parse(storedUser) as AuthUser;
-        setToken(storedToken);
-        setUser(parsedUser);
-
-        // Verify token is still valid
-        verifyToken(storedToken).then((isValid) => {
-          if (!isValid) {
-            // Token expired, clear state
-            clearAuth();
-          }
-          setIsLoading(false);
-        });
-      } catch {
-        clearAuth();
-        setIsLoading(false);
-      }
-    } else {
-      setIsLoading(false);
-    }
-  }, []);
 
   const clearAuth = () => {
     localStorage.removeItem(TOKEN_KEY);
@@ -77,18 +68,37 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setUser(null);
   };
 
-  const verifyToken = async (tokenToVerify: string): Promise<boolean> => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/auth/me`, {
-        headers: {
-          Authorization: `Bearer ${tokenToVerify}`,
-        },
-      });
-      return res.ok;
-    } catch {
-      return false;
-    }
-  };
+  // Verify token on mount
+  useEffect(() => {
+    const verifyStoredToken = async () => {
+      const currentToken = localStorage.getItem(TOKEN_KEY);
+
+      if (!currentToken) {
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API_BASE_URL}/auth/me`, {
+          headers: {
+            Authorization: `Bearer ${currentToken}`,
+          },
+        });
+
+        if (!res.ok) {
+          // Token expired, clear state
+          clearAuth();
+        }
+      } catch {
+        // Network error, keep current state but don't clear
+        // This allows offline usage with cached credentials
+      }
+
+      setIsLoading(false);
+    };
+
+    verifyStoredToken();
+  }, []);
 
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {

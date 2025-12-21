@@ -22,6 +22,7 @@ export type CreateWorkflowNodePayload = {
   name?: string;
   posX?: number;
   posY?: number;
+  config?: Record<string, unknown>;
 };
 
 export type ExecutionApi = {
@@ -767,6 +768,23 @@ export async function updateWorkflow(
   if (!res.ok) {
     console.error(`[updateWorkflow] HTTP error:`, res.status, res.statusText);
     throw new Error(`Failed to update workflow ${id} (status ${res.status})`);
+  }
+
+  const json = await res.json();
+  const data = "data" in json ? json.data : json;
+  return data as WorkflowApi;
+}
+
+// POST /api/workflows/:id/duplicate
+export async function duplicateWorkflow(id: number): Promise<WorkflowApi> {
+  const res = await fetch(`${API_BASE_URL}/workflows/${id}/duplicate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+
+  if (!res.ok) {
+    console.error(`[duplicateWorkflow] HTTP error:`, res.status, res.statusText);
+    throw new Error(`Failed to duplicate workflow ${id} (status ${res.status})`);
   }
 
   const json = await res.json();

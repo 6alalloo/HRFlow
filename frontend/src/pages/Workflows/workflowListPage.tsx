@@ -6,6 +6,7 @@ import {
   executeWorkflow,
   createWorkflow,
   deleteWorkflow,
+  duplicateWorkflow,
 } from "../../api/workflows";
 import type { WorkflowApi } from "../../api/workflows";
 import WorkflowSplitLayout from "./WorkflowSplitLayout";
@@ -176,6 +177,10 @@ const WorkflowsListPage: React.FC = () => {
   // Create State
   const [isCreating, setIsCreating] = useState(false);
 
+  // Duplicate State
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_isDuplicating, setIsDuplicating] = useState(false);
+
   // Load Workflows
   useEffect(() => {
     const load = async () => {
@@ -248,6 +253,21 @@ const WorkflowsListPage: React.FC = () => {
       }
   };
 
+  const handleDuplicate = async (wf: WorkflowApi) => {
+      try {
+          setIsDuplicating(true);
+          const duplicated = await duplicateWorkflow(wf.id);
+          // Add to list and navigate to builder
+          setWorkflows((prev) => [duplicated, ...prev]);
+          navigate(`/workflows/${duplicated.id}/builder`);
+      } catch (err) {
+          console.error("Failed to duplicate workflow", err);
+          alert("Failed to duplicate workflow. See console for details.");
+      } finally {
+          setIsDuplicating(false);
+      }
+  };
+
   const handleConfirmRun = async () => {
     if (!selectedWorkflowForRun) return;
 
@@ -285,7 +305,7 @@ const WorkflowsListPage: React.FC = () => {
 
   return (
     <>
-        <WorkflowSplitLayout 
+        <WorkflowSplitLayout
             workflows={workflows}
             isLoading={isLoading}
             isCreating={isCreating}
@@ -293,6 +313,7 @@ const WorkflowsListPage: React.FC = () => {
             onCreate={handleCreateWorkflow}
             onRun={handleOpenRunModal}
             onDelete={handleDeleteRequest}
+            onDuplicate={handleDuplicate}
         />
 
         {/* Reusing existing Modal Logic */}

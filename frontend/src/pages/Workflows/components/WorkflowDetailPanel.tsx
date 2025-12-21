@@ -1,5 +1,5 @@
 import React from 'react';
-import { FiLayers, FiSettings, FiPlay, FiCpu, FiTrash2 } from 'react-icons/fi';
+import { FiLayers, FiSettings, FiPlay, FiCpu, FiTrash2, FiCopy } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
 import type { WorkflowApi } from '../../../api/workflows';
 import RecentExecutions from './RecentExecutions';
@@ -8,9 +8,10 @@ type WorkflowDetailPanelProps = {
     workflow: WorkflowApi | null;
     onRun: (wf: WorkflowApi) => void;
     onDelete: (wf: WorkflowApi) => void;
+    onDuplicate?: (wf: WorkflowApi) => void;
 };
 
-const WorkflowDetailPanel: React.FC<WorkflowDetailPanelProps> = ({ workflow, onRun, onDelete }) => {
+const WorkflowDetailPanel: React.FC<WorkflowDetailPanelProps> = ({ workflow, onRun, onDelete, onDuplicate }) => {
     const navigate = useNavigate();
 
     if (!workflow) {
@@ -127,6 +128,15 @@ const WorkflowDetailPanel: React.FC<WorkflowDetailPanelProps> = ({ workflow, onR
                     >
                         <FiTrash2 className="group-hover:animate-pulse" /> Delete
                     </button>
+                    {onDuplicate && (
+                        <button
+                            onClick={() => onDuplicate(workflow)}
+                            className="py-4 px-6 bg-purple-950/10 hover:bg-purple-950/30 text-purple-400 hover:text-purple-300 border border-purple-900/30 hover:border-purple-500/50 font-mono text-sm uppercase tracking-widest flex items-center justify-center gap-3 transition-all clip-path-polygon group"
+                            style={{ clipPath: 'polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px)' }}
+                        >
+                            <FiCopy className="group-hover:animate-pulse" /> Duplicate
+                        </button>
+                    )}
                     <button
                         onClick={() => onRun(workflow)}
                         className="flex-1 py-4 bg-white/5 hover:bg-cyan-950/30 text-cyan-400 hover:text-cyan-300 border border-white/10 hover:border-cyan-500/50 font-mono text-sm uppercase tracking-widest flex items-center justify-center gap-3 transition-all clip-path-polygon group"

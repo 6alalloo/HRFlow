@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import * as dagre from 'dagre';
-import { FiPlay, FiCheck } from 'react-icons/fi';
+import { FiPlay, FiCheck, FiCopy, FiLink } from 'react-icons/fi';
+import { LuLayoutTemplate, LuChevronDown, LuUsers, LuServer, LuTriangleAlert } from 'react-icons/lu';
 
 import {
   fetchWorkflowGraph,
@@ -38,6 +39,7 @@ import GhostNode from '../../components/builder/GhostNode';
 import Sidebar from '../../layout/sidebar'; // Import Sidebar
 import ConfigPanel from '../../components/builder/ConfigPanel';
 import NodePicker from '../../components/builder/NodePicker';
+import { templates, type WorkflowTemplate } from '../../data/templates';
 
 // ... existing types ...
 
@@ -177,8 +179,15 @@ const WorkflowBuilderContent: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState<boolean>(false);
+  const [showRunConfirmation, setShowRunConfirmation] = useState<boolean>(false);
+  const [copiedWebhook, setCopiedWebhook] = useState<boolean>(false);
 
   const [selectedNodeId, setSelectedNodeId] = useState<number | null>(null);
+
+  // Template dropdown state
+  const [isTemplateDropdownOpen, setIsTemplateDropdownOpen] = useState(false);
+  const [showTemplateConfirm, setShowTemplateConfirm] = useState<WorkflowTemplate | null>(null);
+  const [isApplyingTemplate, setIsApplyingTemplate] = useState(false);
 
   // autosave tracking
   const [pendingSaves, setPendingSaves] = useState(0);
@@ -371,8 +380,8 @@ const WorkflowBuilderContent: React.FC = () => {
         });
         
         refreshRef.current(graph.nodes, graph.edges);
-      } catch (e: any) {
-         if(!cancelled) setError(e.message);
+      } catch (e) {
+         if(!cancelled) setError(e instanceof Error ? e.message : "Failed to load workflow");
       } finally {
          if(!cancelled) setLoading(false);
       }
@@ -436,11 +445,32 @@ const WorkflowBuilderContent: React.FC = () => {
     return { employee: input };
   }, [state.nodes]);
 
-  const handleRunClick = async () => {
+  const handleRunClick = () => {
+    if (!state.workflowId || isRunning) return;
+    setShowRunConfirmation(true);
+  };
+
+  const webhookUrl = state.workflowId
+    ? `${window.location.origin}/webhook/hrflow/${state.workflowId}/execute`
+    : null;
+
+  const handleCopyWebhook = async () => {
+    if (!webhookUrl) return;
+    try {
+      await navigator.clipboard.writeText(webhookUrl);
+      setCopiedWebhook(true);
+      setTimeout(() => setCopiedWebhook(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy webhook URL:', err);
+    }
+  };
+
+  const handleConfirmRun = async () => {
     if (!state.workflowId || isRunning) return;
 
     try {
       setIsRunning(true);
+      setShowRunConfirmation(false);
 
       const input = getRunInputFromTriggerNode();
 
@@ -453,6 +483,73 @@ const WorkflowBuilderContent: React.FC = () => {
       alert("Failed to run workflow. Check console for details.");
     } finally {
       setIsRunning(false);
+    }
+  };
+
+  // Handler for applying template to current workflow
+  const handleApplyTemplate = async (template: WorkflowTemplate) => {
+    if (!state.workflowId || isApplyingTemplate) return;
+
+    try {
+      setIsApplyingTemplate(true);
+      setShowTemplateConfirm(null);
+      setIsTemplateDropdownOpen(false);
+
+      // Delete all existing nodes (this also deletes edges due to cascade)
+      for (const node of state.nodes) {
+        await fetch(`${import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000/api"}/workflows/${state.workflowId}/nodes/${node.id}`, {
+          method: 'DELETE',
+        });
+      }
+
+      // Create a mapping of template node IDs to actual node IDs
+      const nodeIdMap: Record<string, number> = {};
+
+      // Add nodes from template
+      for (const templateNode of template.nodes) {
+        const nodeResponse = await createWorkflowNode(state.workflowId, {
+          kind: templateNode.kind,
+          name: templateNode.name,
+          posX: templateNode.pos_x,
+          posY: templateNode.pos_y,
+          config: templateNode.config,
+        });
+        nodeIdMap[templateNode.id] = nodeResponse.id;
+      }
+
+      // Add edges from template
+      for (const templateEdge of template.edges) {
+        const fromNodeId = nodeIdMap[templateEdge.from];
+        const toNodeId = nodeIdMap[templateEdge.to];
+
+        if (fromNodeId && toNodeId) {
+          await createWorkflowEdge(state.workflowId, {
+            fromNodeId,
+            toNodeId,
+            label: templateEdge.label || undefined,
+            condition: templateEdge.condition || undefined,
+          });
+        }
+      }
+
+      // Update workflow name to template name
+      await updateWorkflow(state.workflowId, { name: template.name });
+
+      // Refresh the graph
+      const graph = await fetchWorkflowGraph(state.workflowId);
+      setState(prev => ({
+        ...prev,
+        workflowMeta: graph.workflow,
+        nodes: graph.nodes,
+        edges: graph.edges,
+      }));
+      refreshRef.current(graph.nodes, graph.edges);
+
+    } catch (e) {
+      console.error("Failed to apply template:", e);
+      alert("Failed to apply template. Check console for details.");
+    } finally {
+      setIsApplyingTemplate(false);
     }
   };
 
@@ -681,11 +778,123 @@ const WorkflowBuilderContent: React.FC = () => {
                         )}
                     </div>
                 </div>
+                
+                {/* Template Dropdown */}
+                <div className="relative">
+                    <button 
+                        onClick={() => setIsTemplateDropdownOpen(!isTemplateDropdownOpen)}
+                        disabled={isApplyingTemplate}
+                        className="bg-purple-600/90 hover:bg-purple-500 transition shadow-lg px-3 py-2 rounded-xl text-white font-medium flex items-center gap-2 text-sm disabled:opacity-50"
+                    >
+                        {isApplyingTemplate ? (
+                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        ) : (
+                            <LuLayoutTemplate className="w-4 h-4" />
+                        )}
+                        Templates
+                        <LuChevronDown className={`w-3 h-3 transition-transform ${isTemplateDropdownOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    
+                    {/* Dropdown Menu */}
+                    {isTemplateDropdownOpen && (
+                        <div className="absolute top-full mt-2 left-0 bg-navy-900 border border-white/10 rounded-xl shadow-2xl overflow-hidden min-w-[280px] z-50">
+                            <div className="p-2 border-b border-white/10 bg-white/5">
+                                <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">Apply Template</span>
+                            </div>
+                            {templates.map((template) => {
+                                const CategoryIcon = template.category === 'hr' ? LuUsers : LuServer;
+                                return (
+                                    <button
+                                        key={template.id}
+                                        onClick={() => setShowTemplateConfirm(template)}
+                                        className="w-full px-4 py-3 text-left hover:bg-white/5 transition-colors flex items-center gap-3 border-b border-white/5 last:border-b-0"
+                                    >
+                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                                            template.category === 'hr' ? 'bg-blue-400/10 text-blue-400' : 'bg-green-400/10 text-green-400'
+                                        }`}>
+                                            <CategoryIcon className="w-4 h-4" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="text-sm font-medium text-white">{template.name}</div>
+                                            <div className="text-xs text-slate-500 truncate">{template.nodes.length} nodes</div>
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+                
                 {/* Run Button */}
                 <button onClick={handleRunClick} className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:scale-105 transition shadow-lg px-4 py-2 rounded-xl text-white font-bold flex items-center gap-2 text-sm">
                     <FiPlay /> Run
                 </button>
             </div>
+
+            {/* Template Confirmation Modal */}
+            {showTemplateConfirm && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowTemplateConfirm(null)}>
+                    <div className="bg-navy-900 border border-white/10 rounded-2xl p-6 max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center">
+                                <LuTriangleAlert className="w-5 h-5 text-amber-400" />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-white">Apply Template?</h3>
+                                <p className="text-sm text-slate-400">This will replace all existing nodes</p>
+                            </div>
+                        </div>
+                        <p className="text-sm text-slate-300 mb-6">
+                            Applying "<span className="font-medium text-white">{showTemplateConfirm.name}</span>" will remove all current nodes and replace them with the template's {showTemplateConfirm.nodes.length} nodes.
+                        </p>
+                        <div className="flex gap-3 justify-end">
+                            <button
+                                onClick={() => setShowTemplateConfirm(null)}
+                                className="px-4 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => handleApplyTemplate(showTemplateConfirm)}
+                                className="px-4 py-2 rounded-lg text-sm font-bold bg-purple-600 hover:bg-purple-500 text-white transition-colors"
+                            >
+                                Apply Template
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Webhook URL Display */}
+            {webhookUrl && (
+                <div className="absolute top-4 right-4 z-40">
+                    <div className="bg-navy-900/90 backdrop-blur border border-white/10 rounded-xl px-3 py-2 flex items-center gap-2 shadow-xl max-w-md">
+                        <FiLink className="text-cyan-400 flex-shrink-0" />
+                        <div className="flex flex-col min-w-0">
+                            <span className="text-[10px] uppercase tracking-wider text-slate-500 font-mono">Webhook URL</span>
+                            <span className="text-xs text-slate-300 font-mono truncate" title={webhookUrl}>
+                                {webhookUrl}
+                            </span>
+                        </div>
+                        <button
+                            onClick={handleCopyWebhook}
+                            className={`ml-2 p-2 rounded-lg transition-all flex-shrink-0 ${
+                                copiedWebhook
+                                    ? 'bg-emerald-500/20 text-emerald-400'
+                                    : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white'
+                            }`}
+                            title={copiedWebhook ? 'Copied!' : 'Copy webhook URL'}
+                        >
+                            {copiedWebhook ? <FiCheck className="w-4 h-4" /> : <FiCopy className="w-4 h-4" />}
+                        </button>
+                    </div>
+                    {copiedWebhook && (
+                        <div className="absolute top-full mt-2 right-0 bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg shadow-lg animate-fade-in">
+                            Copied to clipboard!
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Canvas */}
             <div className="flex-1 w-full h-full" ref={flowWrapperRef}>
@@ -723,25 +932,34 @@ const WorkflowBuilderContent: React.FC = () => {
                 position={pickerPosition}
             />
             
-            <ConfigPanel 
+            <ConfigPanel
                 isOpen={!!selectedNodeId}
-                node={state.nodes.find(n => n.id === selectedNodeId) || null}
-                onUpdate={async (nodeId, updates) => {
+                node={(() => {
+                    const found = state.nodes.find(n => n.id === selectedNodeId);
+                    if (!found) return null;
+                    return {
+                        id: found.id,
+                        name: found.name || '',
+                        kind: found.kind as 'trigger' | 'http' | 'email' | 'database' | 'condition' | 'cv_parser' | 'wait' | 'logger' | 'datetime' | 'variable',
+                        config: found.config || {}
+                    };
+                })()}
+                onUpdate={async (nodeId, updates: { config?: Record<string, unknown>; name?: string }) => {
                      // Optimistic
                      const newNodes = state.nodes.map((n: WorkflowGraphNode) => n.id === nodeId ? { ...n, ...updates } : n);
                      setState((prev: BuilderState) => ({ ...prev, nodes: newNodes }));
-                     
+
                      // Backend
                      try {
                          beginSave();
-                         await updateWorkflowNode(state.workflowId!, nodeId, updates as any);
+                         await updateWorkflowNode(state.workflowId!, nodeId, updates);
                      } finally {
                          endSave();
                      }
                 }}
                 onDelete={async (nodeId) => {
                      if (!state.workflowId) return;
-                     
+
                      // 1. Optimistic Backend State Update
                      const newNodes = state.nodes.filter(n => n.id !== nodeId);
                      const newEdges = state.edges.filter(e => e.from_node_id !== nodeId && e.to_node_id !== nodeId);
@@ -755,13 +973,13 @@ const WorkflowBuilderContent: React.FC = () => {
                      // 2. Optimistic Visual Update (Crucial fix for "node still visible")
                      setRfNodes(prev => prev.filter(n => n.id !== String(nodeId)));
                      setRfEdges(prev => prev.filter(e => e.source !== String(nodeId) && e.target !== String(nodeId)));
-                     
+
                      try {
                          beginSave();
                          // 3. Backend Call
                          await import('../../api/workflows').then(api => api.deleteWorkflowNode(state.workflowId!, nodeId));
-                         /* 
-                            Values are already updated optimistically. 
+                         /*
+                            Values are already updated optimistically.
                             If we want to be safe, we could re-fetch, but that causes a flicker.
                             Optimistic is better for UX.
                          */
@@ -775,6 +993,43 @@ const WorkflowBuilderContent: React.FC = () => {
                 }}
                 onClose={() => setSelectedNodeId(null)}
             />
+
+            {/* Run Confirmation Modal */}
+            {showRunConfirmation && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                    <div className="bg-navy-900 border border-white/10 rounded-2xl p-6 w-[400px] shadow-2xl">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-10 h-10 rounded-full bg-cyan-500/10 flex items-center justify-center">
+                                <FiPlay className="w-5 h-5 text-cyan-400" />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-white">Run Workflow?</h3>
+                                <p className="text-xs text-slate-400">This will execute the workflow immediately</p>
+                            </div>
+                        </div>
+                        <p className="text-sm text-slate-300 mb-6">
+                            You are about to run <strong className="text-white">{state.workflowMeta?.name || 'this workflow'}</strong>.
+                            The workflow will use the trigger node configuration as input.
+                        </p>
+                        <div className="flex gap-3 justify-end">
+                            <button
+                                onClick={() => setShowRunConfirmation(false)}
+                                className="px-4 py-2 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleConfirmRun}
+                                disabled={isRunning}
+                                className="px-4 py-2 rounded-lg text-sm font-bold bg-gradient-to-r from-blue-600 to-cyan-600 text-white hover:from-blue-500 hover:to-cyan-500 transition-all shadow-lg flex items-center gap-2 disabled:opacity-50"
+                            >
+                                <FiPlay className="w-4 h-4" />
+                                {isRunning ? 'Running...' : 'Confirm Run'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     </div>
   );

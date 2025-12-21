@@ -12,6 +12,9 @@ router.use(adminOnly);
 // GET /api/audit - Get all audit logs with filtering
 router.get("/", auditController.getAuditLogs);
 
+// DELETE /api/audit/purge - Purge old audit logs (>90 days)
+router.delete("/purge", auditController.purgeOldAuditLogs);
+
 // GET /api/audit/workflow/:workflowId - Get audit logs for a workflow
 router.get("/workflow/:workflowId", auditController.getWorkflowAuditLogs);
 

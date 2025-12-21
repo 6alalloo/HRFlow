@@ -1,5 +1,7 @@
 // backend/src/services/n8nCompiler.ts
 import type { WorkflowNodeKind } from "./workflowService";
+import * as allowListService from "./allowListService";
+import * as auditService from "./auditService";
 
 import {
   N8N_POSTGRES_CREDENTIAL_ID,
@@ -33,12 +35,81 @@ type CompileInput = {
   webhookPath: string;
   nodes: HRFlowNode[];
   edges: HRFlowEdge[];
+  // Optional user ID for audit logging
+  userId?: number;
 };
 
 type N8nCompiled = {
   nodes: any[];
   connections: Record<string, any>;
 };
+
+type UrlValidationError = {
+  nodeId: number;
+  nodeName: string;
+  url: string;
+  reason: string;
+};
+
+/**
+ * Validate all URLs in the workflow against the allow-list
+ * Returns an array of validation errors (empty if all URLs are allowed)
+ */
+async function validateWorkflowUrls(
+  nodes: HRFlowNode[],
+  workflowId: number,
+  userId?: number
+): Promise<UrlValidationError[]> {
+  const errors: UrlValidationError[] = [];
+  const urls = allowListService.extractUrlsFromWorkflow(nodes);
+
+  for (const url of urls) {
+    const result = await allowListService.isUrlAllowed(url);
+
+    if (!result.allowed) {
+      // Find which node(s) contain this URL
+      for (const node of nodes) {
+        const cfg = node.config || {};
+        const nodeUrls: string[] = [];
+
+        if (node.kind === "http" && typeof cfg.url === "string") {
+          nodeUrls.push(cfg.url);
+        }
+        if (node.kind === "cv_parse" && cfg.inputType === "url" && typeof cfg.cvUrl === "string") {
+          nodeUrls.push(cfg.cvUrl);
+        }
+
+        if (nodeUrls.includes(url)) {
+          errors.push({
+            nodeId: node.id,
+            nodeName: node.name || node.kind,
+            url,
+            reason: result.reason || "Domain not in allow-list",
+          });
+
+          // Log the blocked request
+          if (userId) {
+            await auditService.logAuditEvent({
+              eventType: "http_domain_blocked",
+              userId,
+              targetType: "workflow",
+              targetId: workflowId,
+              details: {
+                nodeId: node.id,
+                nodeName: node.name,
+                blockedUrl: url,
+                reason: result.reason,
+              },
+            });
+          }
+        }
+      }
+    }
+  }
+
+  return errors;
+}
+
 
 function normalizeName(s: string) {
   return s.replace(/\s+/g, " ").trim();
@@ -493,7 +564,6 @@ case "email": {
     case "cv_parse": {
       const inputType = safeString(cfg.inputType, "file");
       const cvUrl = safeString(cfg.cvUrl, "");
-      const fileField = safeString(cfg.fileField, "resume_file");
 
       return {
         id: `hrflow_node_${n.id}`,
@@ -626,7 +696,23 @@ case "email": {
   }
 }
 
-export function compileToN8n(input: CompileInput): N8nCompiled {
+export async function compileToN8n(input: CompileInput): Promise<N8nCompiled> {
+  // Validate URLs against allow-list before compilation
+  const urlErrors = await validateWorkflowUrls(
+    input.nodes,
+    input.hrflowWorkflowId,
+    input.userId
+  );
+
+  if (urlErrors.length > 0) {
+    const errorMessages = urlErrors.map(
+      (e) => `Node "${e.nodeName}" (ID: ${e.nodeId}): URL "${e.url}" blocked - ${e.reason}`
+    );
+    throw new Error(
+      `Workflow compilation blocked due to non-whitelisted domains:\n${errorMessages.join("\n")}`
+    );
+  }
+
   const ordered = buildReachableOrder(input.nodes, input.edges);
   const byId = new Map(input.nodes.map((n) => [n.id, n] as const));
   const outgoing = groupOutgoing(input.edges);
@@ -700,3 +786,4 @@ export function compileToN8n(input: CompileInput): N8nCompiled {
 
   return { nodes: compiledNodes, connections };
 }
+

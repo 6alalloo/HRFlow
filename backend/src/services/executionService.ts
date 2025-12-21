@@ -247,10 +247,11 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
 
   try {
     // 1) Compile HRFlow graph -> n8n workflow JSON
-    const compiled = compileToN8n({
+    const compiled = await compileToN8n({
       hrflowWorkflowId: workflowId,
       workflowName: workflow.name,
       webhookPath,
+      userId: workflow.owner_user_id || undefined,
       nodes: nodesRaw.map((n) => ({
         id: n.id,
         kind: n.kind,

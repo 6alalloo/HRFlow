@@ -1,8 +1,12 @@
 import { Router } from "express";
 import * as workflowController from "../controllers/workflowController";
 import * as executionController from "../controllers/executionController";
+import { authenticate } from "../middleware/authMiddleware";
 
 const router = Router();
+
+// All workflow routes require authentication
+router.use(authenticate);
 
 // List all workflows
 router.get("/", workflowController.getAllWorkflows);
@@ -21,6 +25,9 @@ router.get("/:id", workflowController.getWorkflowById);
 
 // Delete workflow
 router.delete("/:id", workflowController.deleteWorkflow);
+
+// Duplicate workflow
+router.post("/:id/duplicate", workflowController.duplicateWorkflow);
 
 // Get workflow nodes
 router.get("/:id/nodes", workflowController.getWorkflowNodes);

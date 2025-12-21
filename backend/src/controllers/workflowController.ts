@@ -565,3 +565,51 @@ export async function deleteWorkflow(req: Request, res: Response) {
     });
   }
 }
+
+/**
+ * POST /api/workflows/:id/duplicate
+ * Duplicate a workflow with all its nodes and edges.
+ */
+export async function duplicateWorkflow(req: Request, res: Response) {
+  const { id } = req.params;
+
+  const numericId = Number(id);
+  if (Number.isNaN(numericId)) {
+    return res.status(400).json({
+      message: "Invalid workflow ID",
+    });
+  }
+
+  try {
+    const duplicated = await workflowService.duplicateWorkflow(numericId);
+
+    if (!duplicated) {
+      return res.status(404).json({
+        message: "Workflow not found",
+      });
+    }
+
+    // Audit log
+    const userId = (req as any).user?.id || 1;
+    await auditService.logAuditEvent({
+      eventType: "workflow_created",
+      userId,
+      targetType: "workflow",
+      targetId: duplicated.id,
+      details: {
+        action: "duplicated",
+        originalWorkflowId: numericId,
+        name: duplicated.name,
+      },
+      ipAddress: req.ip,
+      userAgent: req.get("user-agent"),
+    });
+
+    return res.status(201).json({ data: duplicated });
+  } catch (error) {
+    console.error("[WorkflowController] Error duplicating workflow:", error);
+    return res.status(500).json({
+      message: "Internal server error",
+    });
+  }
+}

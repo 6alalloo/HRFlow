@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../../contexts/AuthContext";
-import { apiGet } from "../../api/apiClient";
+import { apiGet, apiDelete } from "../../api/apiClient";
 import { 
     FiShield, 
     FiActivity, 
@@ -15,7 +15,10 @@ import {
     FiChevronRight,
     FiChevronLeft,
     FiDatabase,
-    FiCpu
+    FiCpu,
+    FiDownload,
+    FiAlertTriangle,
+    FiLoader
 } from "react-icons/fi";
 
 interface AuditLog {
@@ -51,6 +54,9 @@ export default function AuditLogPage() {
     targetType: "",
   });
   const [expandedLogs, setExpandedLogs] = useState<number[]>([]);
+  const [showPurgeModal, setShowPurgeModal] = useState(false);
+  const [isPurging, setIsPurging] = useState(false);
+  const [purgeSuccess, setPurgeSuccess] = useState<string | null>(null);
 
   const fetchAuditLogs = useCallback(async () => {
     setLoading(true);
@@ -81,6 +87,61 @@ export default function AuditLogPage() {
     setExpandedLogs(prev => 
       prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]
     );
+  };
+
+  // Export logs as CSV
+  const handleExportCSV = () => {
+    if (logs.length === 0) return;
+    
+    const headers = ['ID', 'Action', 'User', 'Entity Type', 'Entity ID', 'Timestamp'];
+    const rows = logs.map(log => [
+      log.id,
+      log.action,
+      log.users?.email || `User #${log.actor_user_id}`,
+      log.entity_type || '',
+      log.entity_id || '',
+      new Date(log.created_at).toISOString()
+    ]);
+    
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `audit-logs-${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+  };
+
+  // Export logs as JSON
+  const handleExportJSON = () => {
+    if (logs.length === 0) return;
+    
+    const jsonContent = JSON.stringify(logs, null, 2);
+    const blob = new Blob([jsonContent], { type: 'application/json' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `audit-logs-${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+  };
+
+  // Purge old logs (>90 days)
+  const handlePurgeLogs = async () => {
+    setIsPurging(true);
+    try {
+      const response = await apiDelete<{ deleted: number }>('/audit/purge?days=90');
+      setPurgeSuccess(`Successfully purged ${response.deleted || 0} records older than 90 days.`);
+      setShowPurgeModal(false);
+      fetchAuditLogs(); // Refresh the list
+      setTimeout(() => setPurgeSuccess(null), 5000);
+    } catch (error) {
+      console.error('Failed to purge logs:', error);
+      setPurgeSuccess('Failed to purge logs. Please try again.');
+    } finally {
+      setIsPurging(false);
+    }
   };
 
   const getActionIcon = (action: string) => {
@@ -114,9 +175,9 @@ export default function AuditLogPage() {
       .join(' ');
   };
 
-  const formatValue = (value: any): React.ReactNode => {
+  const formatValue = (value: unknown): React.ReactNode => {
     if (value === null || value === undefined) return <span className="text-slate-600 font-mono">-</span>;
-    
+
     if (typeof value === 'boolean') {
       return value ? (
         <span className="inline-flex items-center px-2 py-0.5 text-[9px] font-bold font-mono uppercase tracking-widest bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
@@ -129,10 +190,11 @@ export default function AuditLogPage() {
       );
     }
 
-    if (typeof value === 'object') {
+    if (typeof value === 'object' && !Array.isArray(value)) {
+        const obj = value as Record<string, unknown>;
         return (
              <div className="flex flex-col gap-1 border-l border-white/10 pl-2">
-                {Object.entries(value).map(([k, v]) => (
+                {Object.entries(obj).map(([k, v]) => (
                     <div key={k} className="flex gap-2 text-[10px] font-mono">
                         <span className="text-cyan-700">{formatKey(k)}:</span>
                         <span className="text-cyan-100">{formatValue(v)}</span>
@@ -145,7 +207,9 @@ export default function AuditLogPage() {
     if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value)) {
         try {
             return new Date(value).toLocaleString();
-        } catch {}
+        } catch {
+            // Invalid date format, fall through to string display
+        }
     }
 
     return String(value);
@@ -163,12 +227,12 @@ export default function AuditLogPage() {
       }
 
       const bannedKeys = [
-          'ipaddress', 'useragent', 'ip_address', 'user_agent', 
+          'ipaddress', 'useragent', 'ip_address', 'user_agent',
           'node_id', 'nodeid', 'id', 'workflow_id', 'execution_id', 'org_id',
-          'nodetype', 'node_type', 'kind' 
+          'nodetype', 'node_type', 'kind'
       ];
-      
-      const clean: Record<string, any> = {};
+
+      const clean: Record<string, unknown> = {};
       
       const actorName = log.users?.email || `User #${log.actor_user_id}`;
       clean["Performed By"] = actorName;
@@ -276,9 +340,93 @@ export default function AuditLogPage() {
                             <FiChevronRight className="rotate-90" size={12}/>
                         </div>
                     </div>
+
+                    {/* Actions */}
+                    <div className="flex gap-2 ml-auto">
+                        <div className="relative group">
+                            <button 
+                                onClick={handleExportCSV}
+                                disabled={logs.length === 0}
+                                className="px-3 py-2 bg-[#050b14]/80 border border-cyan-900/30 text-xs font-mono text-cyan-300 hover:bg-cyan-950/20 hover:border-cyan-500/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+                            >
+                                <FiDownload size={12} />
+                                CSV
+                            </button>
+                        </div>
+                        <button 
+                            onClick={handleExportJSON}
+                            disabled={logs.length === 0}
+                            className="px-3 py-2 bg-[#050b14]/80 border border-cyan-900/30 text-xs font-mono text-cyan-300 hover:bg-cyan-950/20 hover:border-cyan-500/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+                        >
+                            <FiDownload size={12} />
+                            JSON
+                        </button>
+                        <button 
+                            onClick={() => setShowPurgeModal(true)}
+                            className="px-3 py-2 bg-rose-950/30 border border-rose-500/30 text-xs font-mono text-rose-400 hover:bg-rose-950/50 hover:border-rose-500/50 transition-colors flex items-center gap-2"
+                        >
+                            <FiTrash2 size={12} />
+                            Purge Old
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
+
+        {/* Success Banner */}
+        {purgeSuccess && (
+            <div className="mx-8 mt-4 p-3 bg-emerald-950/30 border border-emerald-500/30 rounded-lg flex items-center gap-2 animate-in slide-in-from-top-2 z-10">
+                <FiShield className="text-emerald-400" />
+                <span className="text-sm text-emerald-300">{purgeSuccess}</span>
+            </div>
+        )}
+
+        {/* Purge Confirmation Modal */}
+        {showPurgeModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                <div className="bg-[#0a0e1a] border border-rose-500/30 rounded-xl p-6 w-[450px] shadow-2xl space-y-4">
+                    <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 flex items-center justify-center bg-rose-500/10 border border-rose-500/30 rounded-lg">
+                            <FiAlertTriangle className="text-rose-400 text-xl" />
+                        </div>
+                        <div>
+                            <h3 className="text-lg font-bold text-white">Purge Old Logs?</h3>
+                            <p className="text-xs text-slate-400">This action cannot be undone</p>
+                        </div>
+                    </div>
+                    <p className="text-sm text-slate-300 leading-relaxed">
+                        This will permanently delete all audit log records older than <strong className="text-rose-400">90 days</strong>. 
+                        The purge action itself will be logged for compliance.
+                    </p>
+                    <div className="flex gap-3 justify-end pt-2">
+                        <button 
+                            onClick={() => setShowPurgeModal(false)}
+                            disabled={isPurging}
+                            className="px-4 py-2 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-colors disabled:opacity-50"
+                        >
+                            Cancel
+                        </button>
+                        <button 
+                            onClick={handlePurgeLogs}
+                            disabled={isPurging}
+                            className="px-4 py-2 rounded-lg text-sm font-bold bg-rose-500 text-white hover:bg-rose-600 transition-colors shadow-lg flex items-center gap-2 disabled:opacity-50"
+                        >
+                            {isPurging ? (
+                                <>
+                                    <FiLoader className="animate-spin" />
+                                    Purging...
+                                </>
+                            ) : (
+                                <>
+                                    <FiTrash2 />
+                                    Confirm Purge
+                                </>
+                            )}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
 
       {/* Logs Feed */}
       <div className="flex-1 overflow-y-auto px-8 py-6 custom-scrollbar z-10 space-y-2">

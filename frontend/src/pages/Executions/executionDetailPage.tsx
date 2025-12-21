@@ -14,7 +14,8 @@ const ExecutionDetailPage: React.FC = () => {
 
   const [data, setData] = useState<ExecutionDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_error, setError] = useState<string | null>(null);
   const [selectedStep, setSelectedStep] = useState<ExecutionStep | null>(null);
   const [rerunning, setRerunning] = useState(false);
 
@@ -31,8 +32,8 @@ const ExecutionDetailPage: React.FC = () => {
           const failedStep = result.steps.find(s => s.status === 'failed');
           setSelectedStep(failedStep || result.steps[0]);
       }
-    } catch (err: any) {
-      setError(err.message || "Failed to load");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load");
     } finally {
       setLoading(false);
     }
@@ -125,7 +126,7 @@ const ExecutionDetailPage: React.FC = () => {
                       {/* Vertical Line */}
                       <div className="absolute left-[24px] top-3 bottom-3 w-px bg-white/5 z-0" />
 
-                      {steps.map((step, idx) => {
+                      {steps.map((step) => {
                           const isSelected = selectedStep?.id === step.id;
                           const isStepSuccess = step.status === 'completed';
                           const isStepFailed = step.status === 'failed';

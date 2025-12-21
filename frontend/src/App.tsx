@@ -12,6 +12,7 @@ import ExecutionDetailPage from "./pages/Executions/executionDetailPage";
 import WorkflowBuilderPage from "./pages/Workflows/workflowBuilderPage";
 import ExecutionsListPage from "./pages/Executions/executionListPage";
 import AuditLogPage from "./pages/Admin/AuditLogPage";
+import SecurityPage from "./pages/Admin/SecurityPage";
 
 // Protected route wrapper component
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -90,6 +91,7 @@ const App: React.FC = () => {
 
                 {/* Admin */}
                 <Route path="/admin/audit-logs" element={<AuditLogPage />} />
+                <Route path="/admin/security" element={<SecurityPage />} />
 
                 {/* Fallback 404 */}
                 <Route

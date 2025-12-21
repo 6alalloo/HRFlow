@@ -1,7 +1,7 @@
 // src/pages/Executions/executionsListPage.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FiSearch, FiActivity, FiUser, FiZap, FiClock, FiCheck, FiX, FiRefreshCw, FiChevronRight, FiFilter } from "react-icons/fi";
+import { FiSearch, FiActivity, FiUser, FiZap, FiClock, FiRefreshCw, FiChevronRight } from "react-icons/fi";
 import {
   fetchExecutions,
   type ExecutionSummary,
@@ -18,11 +18,12 @@ const ExecutionsListPage: React.FC = () => {
   const [executions, setExecutions] = useState<ExecutionSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_error, setError] = useState<string | null>(null);
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [search, setSearch] = useState("");
-  const [workflowIdFilterText, setWorkflowIdFilterText] = useState("");
+  const [workflowIdFilterText] = useState("");
 
   const pollTimerRef = useRef<number | null>(null);
   const isFetchingRef = useRef(false);
@@ -50,9 +51,9 @@ const ExecutionsListPage: React.FC = () => {
 
       const data = await fetchExecutions();
       setExecutions(data);
-    } catch (err: any) {
+    } catch (err) {
       console.error("[ExecutionsListPage] Failed to load executions:", err);
-      setError(err.message || "Failed to load");
+      setError(err instanceof Error ? err.message : "Failed to load");
     } finally {
       if (silent) setRefreshing(false);
       else setLoading(false);

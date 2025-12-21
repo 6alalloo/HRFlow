@@ -1,6 +1,7 @@
 // backend/src/services/allowListService.ts
-// Simplified version without database dependency
-// TODO: Add url_allow_list table to schema if strict URL validation is needed
+// Full implementation using allowed_domains table
+
+import prisma from "../lib/prisma";
 
 export interface DomainValidationResult {
   allowed: boolean;
@@ -8,10 +9,21 @@ export interface DomainValidationResult {
   matchedRule?: string;
 }
 
+export interface AllowedDomain {
+  id: number;
+  domain: string;
+  created_by: number | null;
+  created_at: Date;
+  user?: {
+    id: number;
+    email: string;
+  } | null;
+}
+
 /**
  * Check if a URL is allowed based on the allowlist
- * Currently in OPEN mode - allows all valid URLs
- * To enable strict validation, add url_allow_list table to Prisma schema
+ * If no domains are configured, defaults to ALLOW ALL (open mode)
+ * If domains are configured, only those domains are allowed
  */
 export async function isUrlAllowed(url: string): Promise<DomainValidationResult> {
   try {
@@ -19,11 +31,36 @@ export async function isUrlAllowed(url: string): Promise<DomainValidationResult>
     const urlObj = new URL(url);
     const hostname = urlObj.hostname.toLowerCase();
 
-    // In open mode - allow all valid URLs
+    // Get all allowed domains
+    const allowedDomains = await prisma.allowed_domains.findMany();
+
+    // If no domains configured, allow everything (open mode)
+    if (allowedDomains.length === 0) {
+      return {
+        allowed: true,
+        reason: "Open mode - no allowlist configured",
+        matchedRule: hostname,
+      };
+    }
+
+    // Check if hostname matches any allowed domain
+    const match = allowedDomains.find((d) => {
+      const allowedDomain = d.domain.toLowerCase();
+      // Exact match or subdomain match
+      return hostname === allowedDomain || hostname.endsWith("." + allowedDomain);
+    });
+
+    if (match) {
+      return {
+        allowed: true,
+        reason: "Domain is in allowlist",
+        matchedRule: match.domain,
+      };
+    }
+
     return {
-      allowed: true,
-      reason: "Open mode - no allowlist configured",
-      matchedRule: hostname,
+      allowed: false,
+      reason: `Domain "${hostname}" is not in the allow-list`,
     };
   } catch (error) {
     // Invalid URL
@@ -36,51 +73,73 @@ export async function isUrlAllowed(url: string): Promise<DomainValidationResult>
 
 /**
  * Add a domain to the allowlist
- * NOTE: Requires url_allow_list table in database
  */
 export async function addDomainToAllowList(
   domain: string,
-  description?: string,
-  addedByUserId?: number
-) {
-  console.warn("addDomainToAllowList called but url_allow_list table not implemented");
-  return null;
+  createdByUserId?: number
+): Promise<AllowedDomain> {
+  const normalizedDomain = domain.toLowerCase().trim();
+
+  const created = await prisma.allowed_domains.create({
+    data: {
+      domain: normalizedDomain,
+      created_by: createdByUserId || null,
+    },
+    include: {
+      user: {
+        select: {
+          id: true,
+          email: true,
+        },
+      },
+    },
+  });
+
+  return created;
 }
 
 /**
- * Remove a domain from the allowlist
- * NOTE: Requires url_allow_list table in database
+ * Remove a domain from the allowlist by ID
  */
-export async function removeDomainFromAllowList(domain: string) {
-  console.warn("removeDomainFromAllowList called but url_allow_list table not implemented");
-  return false;
-}
-
-/**
- * Deactivate a domain in the allowlist (soft delete)
- * NOTE: Requires url_allow_list table in database
- */
-export async function deactivateDomain(domain: string) {
-  console.warn("deactivateDomain called but url_allow_list table not implemented");
-  return false;
-}
-
-/**
- * Activate a domain in the allowlist
- * NOTE: Requires url_allow_list table in database
- */
-export async function activateDomain(domain: string) {
-  console.warn("activateDomain called but url_allow_list table not implemented");
-  return false;
+export async function removeDomainFromAllowList(domainId: number): Promise<boolean> {
+  try {
+    await prisma.allowed_domains.delete({
+      where: { id: domainId },
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
  * Get all domains in the allowlist
- * NOTE: Requires url_allow_list table in database
  */
-export async function getAllowList(includeInactive = false) {
-  console.warn("getAllowList called but url_allow_list table not implemented");
-  return [];
+export async function getAllowList(): Promise<AllowedDomain[]> {
+  const domains = await prisma.allowed_domains.findMany({
+    include: {
+      user: {
+        select: {
+          id: true,
+          email: true,
+        },
+      },
+    },
+    orderBy: { created_at: "desc" },
+  });
+
+  return domains;
+}
+
+/**
+ * Check if a domain already exists in the allowlist
+ */
+export async function domainExists(domain: string): Promise<boolean> {
+  const normalizedDomain = domain.toLowerCase().trim();
+  const existing = await prisma.allowed_domains.findUnique({
+    where: { domain: normalizedDomain },
+  });
+  return existing !== null;
 }
 
 /**
@@ -100,19 +159,19 @@ export async function validateUrls(urls: string[]): Promise<Map<string, DomainVa
 /**
  * Extract all URLs from workflow configuration
  */
-export function extractUrlsFromWorkflow(nodes: any[]): string[] {
+export function extractUrlsFromWorkflow(nodes: { kind: string; config?: Record<string, unknown> }[]): string[] {
   const urls: string[] = [];
 
   for (const node of nodes) {
     const config = node.config || {};
 
     // HTTP node URLs
-    if (node.kind === "http" && config.url) {
+    if (node.kind === "http" && typeof config.url === "string") {
       urls.push(config.url);
     }
 
     // CV parse node URLs
-    if (node.kind === "cv_parse" && config.inputType === "url" && config.cvUrl) {
+    if (node.kind === "cv_parse" && config.inputType === "url" && typeof config.cvUrl === "string") {
       urls.push(config.cvUrl);
     }
 

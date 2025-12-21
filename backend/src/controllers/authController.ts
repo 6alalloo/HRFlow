@@ -1,23 +1,43 @@
 import { Request, Response } from 'express';
 import { login, getUserById, verifyToken } from '../services/authService';
+import { isRateLimited, getRemainingAttempts, getTimeUntilReset, resetRateLimit } from '../middleware/rateLimiter';
 
 /**
  * POST /api/auth/login
  * Body: { email: string, password: string }
  * Response: { user: AuthUser, token: string }
+ * Rate limited: 5 attempts per minute per IP/email
  */
 export async function loginHandler(req: Request, res: Response) {
   try {
     const { email, password } = req.body;
+    const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
 
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
+    // Check rate limit
+    if (isRateLimited(clientIp, email)) {
+      const retryAfter = getTimeUntilReset(clientIp, email);
+      return res.status(429).json({
+        error: 'Too many login attempts. Please try again later.',
+        retryAfter: retryAfter,
+        message: `Rate limit exceeded. Try again in ${retryAfter} seconds.`
+      });
+    }
+
     const result = await login(email, password);
     if (!result) {
-      return res.status(401).json({ error: 'Invalid email or password' });
+      const remaining = getRemainingAttempts(clientIp, email);
+      return res.status(401).json({
+        error: 'Invalid email or password',
+        remainingAttempts: remaining
+      });
     }
+
+    // Reset rate limit on successful login
+    resetRateLimit(clientIp, email);
 
     return res.json({
       message: 'Login successful',

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { 
-    LuMail, LuGlobe, LuSplit, LuDatabase, LuClock, LuCode, LuX, LuFileText, LuZap, LuInfo, LuTerminal
+import {
+    LuMail, LuGlobe, LuSplit, LuDatabase, LuClock, LuX, LuFileText, LuZap, LuInfo, LuTerminal, LuCalendar, LuBox
 } from 'react-icons/lu';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -18,8 +18,9 @@ const NODE_TYPES = [
     { kind: 'http', label: 'HTTP Request', icon: LuGlobe, color: 'text-green-400', description: "Makes an external API call (GET, POST, etc)." },
     { kind: 'condition', label: 'Condition', icon: LuSplit, color: 'text-purple-400', description: "Branches flow based on logic (If/Else)." },
     { kind: 'database', label: 'Database', icon: LuDatabase, color: 'text-rose-400', description: "Updates or creates a record in the database." },
+    { kind: 'variable', label: 'Set Variable', icon: LuBox, color: 'text-teal-400', description: "Store and manipulate data for use in later steps." },
     { kind: 'wait', label: 'Delay / Wait', icon: LuClock, color: 'text-amber-400', description: "Pauses the workflow for a set duration." },
-    { kind: 'script', label: 'Run Script', icon: LuCode, color: 'text-cyan-400', description: "Executes custom JavaScript / TypeScript code." },
+    { kind: 'datetime', label: 'Date / Time', icon: LuCalendar, color: 'text-orange-400', description: "Format, calculate, or get current date/time." },
     { kind: 'logger', label: 'Logger', icon: LuTerminal, color: 'text-slate-300', description: "Logs data to the console for debugging." },
 ];
 

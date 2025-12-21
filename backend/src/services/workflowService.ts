@@ -612,3 +612,94 @@ export async function deleteWorkflow(id: number): Promise<void> {
     where: { id },
   });
 }
+
+/**
+ * Duplicate a workflow with all its nodes and edges.
+ * Creates a new workflow with " (Copy)" suffix and duplicates all nodes/edges with new IDs.
+ */
+export async function duplicateWorkflow(id: number) {
+  // 1) Get the original workflow
+  const original = await prisma.workflows.findUnique({
+    where: { id },
+  });
+
+  if (!original) {
+    return null;
+  }
+
+  // 2) Get all nodes and edges
+  const [nodes, edges] = await Promise.all([
+    prisma.workflow_nodes.findMany({
+      where: { workflow_id: id },
+      orderBy: { id: "asc" },
+    }),
+    prisma.workflow_edges.findMany({
+      where: { workflow_id: id },
+      orderBy: { id: "asc" },
+    }),
+  ]);
+
+  // 3) Create the new workflow with " (Copy)" suffix
+  const newWorkflow = await prisma.workflows.create({
+    data: {
+      name: `${original.name} (Copy)`,
+      description: original.description,
+      is_active: original.is_active,
+      owner_user_id: original.owner_user_id,
+      default_trigger: original.default_trigger,
+    },
+  });
+
+  // 4) Create a mapping of old node IDs to new node IDs
+  const nodeIdMap: Record<number, number> = {};
+
+  // 5) Duplicate all nodes
+  for (const node of nodes) {
+    const newNode = await prisma.workflow_nodes.create({
+      data: {
+        workflow_id: newWorkflow.id,
+        kind: node.kind,
+        name: node.name,
+        config_json: node.config_json,
+        pos_x: node.pos_x,
+        pos_y: node.pos_y,
+      },
+    });
+    nodeIdMap[node.id] = newNode.id;
+  }
+
+  // 6) Duplicate all edges with updated node IDs
+  for (const edge of edges) {
+    const newFromNodeId = nodeIdMap[edge.from_node_id];
+    const newToNodeId = nodeIdMap[edge.to_node_id];
+
+    if (newFromNodeId && newToNodeId) {
+      await prisma.workflow_edges.create({
+        data: {
+          workflow_id: newWorkflow.id,
+          from_node_id: newFromNodeId,
+          to_node_id: newToNodeId,
+          label: edge.label,
+          priority: edge.priority,
+          condition_json: edge.condition_json,
+        },
+      });
+    }
+  }
+
+  // 7) Return the new workflow with full details
+  return {
+    id: newWorkflow.id,
+    name: newWorkflow.name,
+    description: newWorkflow.description,
+    is_active: newWorkflow.is_active,
+    version: newWorkflow.version,
+    default_trigger: newWorkflow.default_trigger,
+    owner_user_id: newWorkflow.owner_user_id,
+    archived_at: newWorkflow.archived_at,
+    created_at: newWorkflow.created_at,
+    updated_at: newWorkflow.updated_at,
+    nodeCount: nodes.length,
+    edgeCount: edges.length,
+  };
+}

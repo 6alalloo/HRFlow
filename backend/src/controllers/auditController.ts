@@ -12,6 +12,7 @@ export async function getAuditLogs(req: Request, res: Response) {
       limit,
       offset,
       eventType,
+      action, // Alias for eventType (more intuitive)
       userId,
       targetType,
       targetId,
@@ -23,7 +24,8 @@ export async function getAuditLogs(req: Request, res: Response) {
 
     if (limit) params.limit = parseInt(limit as string, 10);
     if (offset) params.offset = parseInt(offset as string, 10);
-    if (eventType) params.eventType = eventType as string;
+    // Support both 'action' and 'eventType' query params
+    if (action || eventType) params.eventType = (action || eventType) as string;
     if (userId) params.userId = parseInt(userId as string, 10);
     if (targetType) params.targetType = targetType as string;
     if (targetId) params.targetId = parseInt(targetId as string, 10);
@@ -127,6 +129,45 @@ export async function getUserAuditLogs(req: Request, res: Response) {
     });
   } catch (error) {
     console.error("[AuditController] Error getting user audit logs:", error);
+    return res.status(500).json({
+      message: "Internal server error",
+    });
+  }
+}
+
+/**
+ * DELETE /api/audit/purge
+ * Purge audit logs older than specified days (default 90)
+ */
+export async function purgeOldAuditLogs(req: Request, res: Response) {
+  try {
+    const days = parseInt(req.query.days as string, 10) || 90;
+
+    if (days < 30) {
+      return res.status(400).json({
+        message: "Cannot purge logs less than 30 days old",
+      });
+    }
+
+    // Log the purge action first (before deleting)
+    const userId = (req as any).user?.userId;
+    if (userId) {
+      await auditService.logAuditEvent({
+        eventType: "audit_logs_purged",
+        userId: userId,
+        targetType: "audit",
+        details: { daysThreshold: days },
+      });
+    }
+
+    const deletedCount = await auditService.deleteOldAuditLogs(days);
+
+    return res.status(200).json({
+      deleted: deletedCount,
+      message: `Successfully purged ${deletedCount} audit log records older than ${days} days`,
+    });
+  } catch (error) {
+    console.error("[AuditController] Error purging audit logs:", error);
     return res.status(500).json({
       message: "Internal server error",
     });

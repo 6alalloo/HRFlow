@@ -151,19 +151,34 @@ const Sidebar: React.FC = () => {
 
         {/* Admin - Audit Logs (only show for Admin users) */}
         {user?.role?.name === "Admin" && (
-          <NavLink
-            to="/admin/audit-logs"
-            style={{ textDecoration: 'none' }}
-            className={({ isActive }) =>
-              "flex items-center gap-3 px-3 py-3 rounded-lg transition-all duration-300 group !no-underline border-l-2 " +
-              (isActive 
-                  ? "bg-gradient-to-r from-cyan-950/30 to-transparent border-cyan-400 !text-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.1)] font-bold" 
-                  : "border-transparent !text-slate-400 hover:!text-cyan-200 hover:bg-white/5 font-medium")
-            }
-          >
-            <FiShield size={20} className="shrink-0" />
-            <span className="text-base tracking-wide">Audit Logs</span>
-          </NavLink>
+          <>
+            <NavLink
+              to="/admin/audit-logs"
+              style={{ textDecoration: 'none' }}
+              className={({ isActive }) =>
+                "flex items-center gap-3 px-3 py-3 rounded-lg transition-all duration-300 group !no-underline border-l-2 " +
+                (isActive 
+                    ? "bg-gradient-to-r from-cyan-950/30 to-transparent border-cyan-400 !text-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.1)] font-bold" 
+                    : "border-transparent !text-slate-400 hover:!text-cyan-200 hover:bg-white/5 font-medium")
+              }
+            >
+              <FiShield size={20} className="shrink-0" />
+              <span className="text-base tracking-wide">Audit Logs</span>
+            </NavLink>
+            <NavLink
+              to="/admin/security"
+              style={{ textDecoration: 'none' }}
+              className={({ isActive }) =>
+                "flex items-center gap-3 px-3 py-3 rounded-lg transition-all duration-300 group !no-underline border-l-2 " +
+                (isActive 
+                    ? "bg-gradient-to-r from-green-950/30 to-transparent border-green-400 !text-green-400 shadow-[0_0_20px_rgba(34,197,94,0.1)] font-bold" 
+                    : "border-transparent !text-slate-400 hover:!text-green-200 hover:bg-white/5 font-medium")
+              }
+            >
+              <FiShield size={20} className="shrink-0" />
+              <span className="text-base tracking-wide">Security</span>
+            </NavLink>
+          </>
         )}
       </div>
 

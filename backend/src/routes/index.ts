@@ -7,6 +7,7 @@ import executionRoutes from "./executionRoutes";
 import authRoutes from "./authRoutes";
 import auditRoutes from "./auditRoutes";
 import dashboardRoutes from "./dashboardRoutes";
+import settingsRoutes from "./settingsRoutes";
 
 const router = Router();
 
@@ -31,5 +32,9 @@ router.use("/audit", auditRoutes);
 // /api/dashboard/... (Dashboard statistics)
 router.use("/dashboard", dashboardRoutes);
 
+// /api/settings/... (Admin-only settings)
+router.use("/settings", settingsRoutes);
+
 
 export default router;
+

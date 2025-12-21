@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
-import { createWorkflow } from "../../api/workflows";
+import { createWorkflow, createWorkflowNode, createWorkflowEdge } from "../../api/workflows";
 import { apiGet } from "../../api/apiClient";
 import { fetchDashboardStats, fetchDashboardCharts, type DashboardStats, type ChartData } from "../../api/dashboard";
 import StatCard from "../../components/Dashboard/DashboardStatCard";
 import { ActivityChart, StatusChart, VolumeChart } from "../../components/Dashboard/DashboardCharts";
+import TemplatePreviewModal from "../../components/TemplatePreviewModal";
+import { templates, type WorkflowTemplate } from "../../data/templates";
 import {
     FiPlusCircle,
     FiActivity,
@@ -17,7 +19,9 @@ import {
     FiLayers,
     FiCheckCircle,
     FiXCircle,
-    FiBarChart2
+    FiBarChart2,
+    FiFileText,
+    FiArrowRight
 } from "react-icons/fi";
 
 interface RecentActivity {
@@ -88,6 +92,12 @@ export default function DashboardPage() {
     const [activities, setActivities] = useState<RecentActivity[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
+    // Template modal state
+    const [selectedTemplate, setSelectedTemplate] = useState<WorkflowTemplate | null>(null);
+    const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const [_isCreatingFromTemplate, setIsCreatingFromTemplate] = useState(false);
+
     // Stats State
     const [stats, setStats] = useState<DashboardStats>({
         totalUsers: 0,
@@ -116,6 +126,57 @@ export default function DashboardPage() {
             navigate(`/workflows/${newWorkflow.id}/builder`);
         } catch (error) {
             console.error("Failed to create workflow", error);
+        }
+    };
+
+    const handlePreviewTemplate = (template: WorkflowTemplate) => {
+        setSelectedTemplate(template);
+        setIsTemplateModalOpen(true);
+    };
+
+    const handleUseTemplate = async (template: WorkflowTemplate) => {
+        try {
+            setIsCreatingFromTemplate(true);
+
+            // Create new workflow with template name
+            const newWorkflow = await createWorkflow({ name: template.name });
+            const workflowId = newWorkflow.id;
+
+            // Create a mapping of template node IDs to actual node IDs
+            const nodeIdMap: Record<string, number> = {};
+
+            // Add nodes from template
+            for (const templateNode of template.nodes) {
+                const nodeResponse = await createWorkflowNode(workflowId, {
+                    kind: templateNode.kind,
+                    name: templateNode.name,
+                    posX: templateNode.pos_x,
+                    posY: templateNode.pos_y,
+                });
+                nodeIdMap[templateNode.id] = nodeResponse.id;
+            }
+
+            // Add edges from template
+            for (const templateEdge of template.edges) {
+                const fromNodeId = nodeIdMap[templateEdge.from];
+                const toNodeId = nodeIdMap[templateEdge.to];
+
+                if (fromNodeId && toNodeId) {
+                    await createWorkflowEdge(workflowId, {
+                        fromNodeId: fromNodeId,
+                        toNodeId: toNodeId,
+                        label: templateEdge.label,
+                        condition: templateEdge.condition,
+                    });
+                }
+            }
+
+            setIsTemplateModalOpen(false);
+            navigate(`/workflows/${workflowId}/builder`);
+        } catch (error) {
+            console.error("Failed to create workflow from template", error);
+        } finally {
+            setIsCreatingFromTemplate(false);
         }
     };
 
@@ -175,6 +236,13 @@ export default function DashboardPage() {
 
         if (user) {
             fetchData();
+            
+            // Auto-refresh every 5 minutes (300000ms) per requirement N14
+            const refreshInterval = setInterval(() => {
+                fetchData();
+            }, 300000); // 5 minutes
+
+            return () => clearInterval(refreshInterval);
         }
     }, [user, isAdmin]);
 
@@ -425,7 +493,96 @@ export default function DashboardPage() {
                     </div>
                 )}
 
-                 {/* Footer Deco */}
+                 {/* 5. Quick Start Templates Section */}
+                <div className="max-w-7xl mx-auto mt-8">
+                    <div className="flex items-center justify-between mb-6">
+                        <div>
+                            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                                <FiFileText className="text-cyan-500" />
+                                Quick Start Templates
+                            </h2>
+                            <p className="text-xs text-slate-500 mt-1">
+                                Start with a pre-built workflow and customize it for your needs
+                            </p>
+                        </div>
+                        <Link
+                            to="/workflows"
+                            className="text-xs text-cyan-500 hover:text-cyan-400 font-mono uppercase flex items-center gap-1"
+                        >
+                            All Workflows <FiArrowRight className="w-3 h-3" />
+                        </Link>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {templates.map((template) => (
+                            <div
+                                key={template.id}
+                                className="group bg-[#050b14] border border-white/5 rounded-xl p-5 hover:border-cyan-500/30 hover:bg-cyan-950/5 transition-all cursor-pointer"
+                                onClick={() => handlePreviewTemplate(template)}
+                            >
+                                <div className="flex items-start justify-between mb-3">
+                                    <span
+                                        className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
+                                            template.category === 'hr'
+                                                ? 'bg-blue-500/10 text-blue-400'
+                                                : template.category === 'it'
+                                                ? 'bg-green-500/10 text-green-400'
+                                                : 'bg-slate-500/10 text-slate-400'
+                                        }`}
+                                    >
+                                        {template.category}
+                                    </span>
+                                    <span className="text-[10px] text-slate-600 font-mono">
+                                        {template.nodes.length} steps
+                                    </span>
+                                </div>
+                                <h3 className="text-white font-semibold mb-2 group-hover:text-cyan-400 transition-colors">
+                                    {template.name}
+                                </h3>
+                                <p className="text-xs text-slate-400 line-clamp-2 mb-4">
+                                    {template.description}
+                                </p>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex -space-x-1">
+                                        {template.nodes.slice(0, 4).map((node) => (
+                                            <div
+                                                key={node.id}
+                                                className="w-6 h-6 rounded-full bg-navy-900 border border-white/10 flex items-center justify-center text-[10px] text-slate-400"
+                                                title={node.kind}
+                                            >
+                                                {node.kind.charAt(0).toUpperCase()}
+                                            </div>
+                                        ))}
+                                        {template.nodes.length > 4 && (
+                                            <div className="w-6 h-6 rounded-full bg-navy-900 border border-white/10 flex items-center justify-center text-[10px] text-slate-400">
+                                                +{template.nodes.length - 4}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <button className="text-xs text-cyan-500 hover:text-cyan-400 font-medium flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        Preview <FiArrowRight className="w-3 h-3" />
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+
+                        {/* Create Blank Workflow Card */}
+                        <div
+                            className="group bg-[#050b14] border border-dashed border-white/10 rounded-xl p-5 hover:border-cyan-500/30 hover:bg-cyan-950/5 transition-all cursor-pointer flex flex-col items-center justify-center min-h-[180px]"
+                            onClick={handleCreateWorkflow}
+                        >
+                            <FiPlusCircle className="text-3xl text-slate-600 group-hover:text-cyan-500 transition-colors mb-3" />
+                            <h3 className="text-white font-semibold mb-1 group-hover:text-cyan-400 transition-colors">
+                                Blank Workflow
+                            </h3>
+                            <p className="text-xs text-slate-500 text-center">
+                                Start from scratch with an empty canvas
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Footer Deco */}
                 <div className="mt-12 text-center opacity-30">
                     <p className="text-[9px] text-cyan-900 font-mono uppercase tracking-[0.5em]">
                         HRFlow Automation Systems v2.4.0
@@ -433,6 +590,14 @@ export default function DashboardPage() {
                 </div>
 
             </div>
+
+            {/* Template Preview Modal */}
+            <TemplatePreviewModal
+                isOpen={isTemplateModalOpen}
+                template={selectedTemplate}
+                onClose={() => setIsTemplateModalOpen(false)}
+                onUseTemplate={handleUseTemplate}
+            />
         </div>
     );
 }

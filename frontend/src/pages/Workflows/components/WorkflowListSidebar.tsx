@@ -1,5 +1,6 @@
 import React from 'react';
 import { FiSearch, FiPlus } from 'react-icons/fi';
+import { LuLayoutTemplate } from 'react-icons/lu';
 import type { WorkflowApi } from '../../../api/workflows';
 import WorkflowCard from './WorkflowCard';
 
@@ -8,6 +9,7 @@ type WorkflowListSidebarProps = {
     activeWorkflowId: number | null;
     onSelect: (id: number) => void;
     onCreate: () => void;
+    onOpenTemplates: () => void;
     isCreating: boolean;
     searchQuery: string;
     onSearchChange: (q: string) => void;
@@ -20,6 +22,7 @@ const WorkflowListSidebar: React.FC<WorkflowListSidebarProps> = ({
     activeWorkflowId,
     onSelect,
     onCreate,
+    onOpenTemplates,
     isCreating,
     searchQuery,
     onSearchChange,
@@ -89,6 +92,16 @@ const WorkflowListSidebar: React.FC<WorkflowListSidebarProps> = ({
                              <svg width="10" height="6" viewBox="0 0 10 6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 1L5 5L9 1"/></svg>
                         </div>
                     </div>
+                    
+                    {/* Template Button */}
+                    <button 
+                        onClick={onOpenTemplates}
+                        className="w-10 h-full min-h-[34px] bg-purple-600 hover:bg-purple-400 text-white flex items-center justify-center transition-all hover:shadow-[0_0_15px_rgba(168,85,247,0.6)]"
+                        title="Use Template"
+                        style={{ clipPath: 'polygon(10px 0, 100% 0, 100% 100%, 0 100%, 0 10px)' }}
+                    >
+                        <LuLayoutTemplate size={18} />
+                    </button>
                     
                     {/* Create Button (Futuristic) */}
                     <button 

@@ -546,7 +546,8 @@ const WorkflowBuilderContent: React.FC = () => {
 
     } catch (e) {
       console.error("Failed to apply template:", e);
-      alert("Failed to apply template. Check console for details.");
+      const message = e instanceof Error ? e.message : "Failed to apply template.";
+      alert(message);
     } finally {
       setIsApplyingTemplate(false);
     }

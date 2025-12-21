@@ -23,6 +23,19 @@ import {
     FiFileText,
     FiArrowRight
 } from "react-icons/fi";
+import {
+    LuZap,
+    LuFileText,
+    LuMail,
+    LuGlobe,
+    LuSplit,
+    LuDatabase,
+    LuClock,
+    LuCalendar,
+    LuTerminal,
+    LuBox,
+} from "react-icons/lu";
+import type { IconType } from "react-icons";
 
 interface RecentActivity {
     id: number;
@@ -83,6 +96,19 @@ function formatDurationFromMs(ms: number): string {
     const remainingSeconds = seconds % 60;
     return `${minutes}m ${remainingSeconds}s`;
 }
+
+const nodeIconMap: Record<string, { icon: IconType; color: string }> = {
+    trigger: { icon: LuZap, color: 'text-yellow-400' },
+    cv_parser: { icon: LuFileText, color: 'text-indigo-400' },
+    email: { icon: LuMail, color: 'text-blue-400' },
+    http: { icon: LuGlobe, color: 'text-green-400' },
+    condition: { icon: LuSplit, color: 'text-purple-400' },
+    database: { icon: LuDatabase, color: 'text-rose-400' },
+    variable: { icon: LuBox, color: 'text-teal-400' },
+    wait: { icon: LuClock, color: 'text-amber-400' },
+    datetime: { icon: LuCalendar, color: 'text-orange-400' },
+    logger: { icon: LuTerminal, color: 'text-slate-300' },
+};
 
 export default function DashboardPage() {
     const { user } = useAuth();
@@ -544,15 +570,19 @@ export default function DashboardPage() {
                                 </p>
                                 <div className="flex items-center justify-between">
                                     <div className="flex -space-x-1">
-                                        {template.nodes.slice(0, 4).map((node) => (
-                                            <div
-                                                key={node.id}
-                                                className="w-6 h-6 rounded-full bg-navy-900 border border-white/10 flex items-center justify-center text-[10px] text-slate-400"
-                                                title={node.kind}
-                                            >
-                                                {node.kind.charAt(0).toUpperCase()}
-                                            </div>
-                                        ))}
+                                        {template.nodes.slice(0, 4).map((node) => {
+                                            const nodeConfig = nodeIconMap[node.kind] ?? { icon: LuBox, color: 'text-slate-400' };
+                                            const NodeIcon = nodeConfig.icon;
+                                            return (
+                                                <div
+                                                    key={node.id}
+                                                    className="w-6 h-6 rounded-full bg-navy-900 border border-white/10 flex items-center justify-center"
+                                                    title={node.name}
+                                                >
+                                                    <NodeIcon className={`w-3.5 h-3.5 ${nodeConfig.color}`} />
+                                                </div>
+                                            );
+                                        })}
                                         {template.nodes.length > 4 && (
                                             <div className="w-6 h-6 rounded-full bg-navy-900 border border-white/10 flex items-center justify-center text-[10px] text-slate-400">
                                                 +{template.nodes.length - 4}

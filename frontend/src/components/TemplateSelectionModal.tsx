@@ -86,10 +86,10 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
                                         key={template.id}
                                         whileHover={{ scale: 1.02 }}
                                         whileTap={{ scale: 0.98 }}
-                                        className={`relative p-5 rounded-xl border cursor-pointer transition-all duration-300 group ${
+                                        className={`relative p-5 rounded-xl border cursor-pointer transition-all duration-300 group shadow-sm ${
                                             isSelected
                                                 ? 'border-cyan-400 bg-cyan-400/10 shadow-[0_0_30px_rgba(34,211,238,0.2)]'
-                                                : `border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10`
+                                                : `border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10 hover:shadow-[0_0_24px_rgba(15,23,42,0.6)] hover:-translate-y-0.5`
                                         }`}
                                         onClick={() => !isCreating && handleSelect(template)}
                                     >

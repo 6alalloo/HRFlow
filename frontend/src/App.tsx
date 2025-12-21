@@ -7,7 +7,6 @@ import LoginPage from "./pages/Auth/LoginPage";
 import LandingPage from "./pages/Dashboard/LandingPage";
 import DashboardPage from "./pages/Dashboard/DashboardPage";
 import WorkflowsListPage from "./pages/Workflows/workflowListPage";
-import WorkflowDetailPage from "./pages/WorkflowDetail/workflowDetailPage";
 import ExecutionDetailPage from "./pages/Executions/executionDetailPage";
 import WorkflowBuilderPage from "./pages/Workflows/workflowBuilderPage";
 import ExecutionsListPage from "./pages/Executions/executionListPage";
@@ -83,7 +82,6 @@ const App: React.FC = () => {
 
                 {/* Workflows */}
                 <Route path="/workflows" element={<WorkflowsListPage />} />
-                <Route path="/workflows/:id" element={<WorkflowDetailPage />} />
 
                 {/* Executions */}
                 <Route path="/executions/:id" element={<ExecutionDetailPage />} />

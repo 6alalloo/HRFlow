@@ -29,6 +29,11 @@ export type WorkflowApi = {
   archived_at: string | null;
   created_at: string;
   updated_at: string;
+  users?: {
+    id: number;
+    full_name: string;
+    email: string;
+  } | null;
 };
 
 export type CreateWorkflowNodePayload = {
@@ -442,13 +447,27 @@ export async function createWorkflowNode(
   });
 
   if (!res.ok) {
+    let serverMessage = "";
+    try {
+      const text = await res.text();
+      if (text) {
+        try {
+          const parsed = JSON.parse(text) as { message?: string; error?: string };
+          serverMessage = parsed.message || parsed.error || text;
+        } catch {
+          serverMessage = text;
+        }
+      }
+    } catch {
+      serverMessage = "";
+    }
     console.error(
       "[createWorkflowNode] HTTP error:",
       res.status,
       res.statusText
     );
     throw new Error(
-      `Failed to create node for workflow ${workflowId} (status ${res.status})`
+      `Failed to create node for workflow ${workflowId} (status ${res.status})${serverMessage ? `: ${serverMessage}` : ""}`
     );
   }
 

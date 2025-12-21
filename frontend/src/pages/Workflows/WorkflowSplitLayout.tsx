@@ -101,6 +101,8 @@ const WorkflowSplitLayout: React.FC<WorkflowSplitLayoutProps> = ({
             navigate(`/workflows/${workflowId}/builder`);
         } catch (error) {
             console.error("Failed to create workflow from template", error);
+            const message = error instanceof Error ? error.message : "Failed to create workflow from template";
+            alert(message);
         } finally {
             setIsCreatingFromTemplate(false);
         }

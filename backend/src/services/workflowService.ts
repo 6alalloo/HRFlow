@@ -1,5 +1,6 @@
 // src/services/workflowService.ts
 import prisma from "../lib/prisma";
+import { Prisma } from "@prisma/client";
 
 type WorkflowFilters = {
   isActive?: boolean;
@@ -83,6 +84,13 @@ export async function createWorkflow(dto: CreateWorkflowDTO) {
       updated_at: true,
       n8n_workflow_id: true,
       n8n_webhook_path: true,
+      users: {
+        select: {
+          id: true,
+          full_name: true,
+          email: true,
+        },
+      },
     },
   });
 
@@ -192,6 +200,53 @@ export async function getWorkflowById(id: number) {
   });
 
   return workflow;
+}
+
+/**
+ * Update workflow metadata (name, description, is_active, default_trigger).
+ */
+export async function updateWorkflow(
+  id: number,
+  dto: {
+    name?: string;
+    description?: string;
+    isActive?: boolean;
+    defaultTrigger?: string | null;
+  }
+) {
+  const existing = await prisma.workflows.findUnique({
+    where: { id },
+  });
+
+  if (!existing) {
+    return null;
+  }
+
+  const updated = await prisma.workflows.update({
+    where: { id },
+    data: {
+      name: dto.name ?? existing.name,
+      description: dto.description !== undefined ? dto.description : existing.description,
+      is_active: dto.isActive !== undefined ? dto.isActive : existing.is_active,
+      default_trigger: dto.defaultTrigger !== undefined ? dto.defaultTrigger : existing.default_trigger,
+    },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      is_active: true,
+      version: true,
+      default_trigger: true,
+      owner_user_id: true,
+      archived_at: true,
+      created_at: true,
+      updated_at: true,
+      n8n_workflow_id: true,
+      n8n_webhook_path: true,
+    },
+  });
+
+  return updated;
 }
 
 /**
@@ -584,16 +639,43 @@ export async function createWorkflowNode(workflowId: number, dto: WorkflowNodeDT
     posY = 80 + row * 160; // 80, 240, 400,...
   }
 
-  const node = await prisma.workflow_nodes.create({
-    data: {
-      workflow_id: workflowId,
-      kind: dto.kind,
-      name: dto.name ?? null,
-      config_json: JSON.stringify(dto.config ?? {}),
-      pos_x: Math.round(posX),
-      pos_y: Math.round(posY),
-    },
-  });
+  const createNode = () =>
+    prisma.workflow_nodes.create({
+      data: {
+        workflow_id: workflowId,
+        kind: dto.kind,
+        name: dto.name ?? null,
+        config_json: JSON.stringify(dto.config ?? {}),
+        pos_x: Math.round(posX),
+        pos_y: Math.round(posY),
+      },
+    });
+
+  let node;
+  try {
+    node = await createNode();
+  } catch (error) {
+    const isDuplicateId =
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002" &&
+      Array.isArray((error.meta as { target?: string[] } | undefined)?.target) &&
+      (error.meta as { target?: string[] } | undefined)?.target?.includes("id");
+
+    if (!isDuplicateId) {
+      throw error;
+    }
+
+    // Sequence drift can happen after manual inserts or restores.
+    await prisma.$executeRaw`
+      SELECT setval(
+        pg_get_serial_sequence('workflow_nodes','id'),
+        (SELECT COALESCE(MAX(id), 0) FROM workflow_nodes),
+        true
+      );
+    `;
+
+    node = await createNode();
+  }
 
   return {
     id: node.id,
@@ -617,7 +699,7 @@ export async function deleteWorkflow(id: number): Promise<void> {
  * Duplicate a workflow with all its nodes and edges.
  * Creates a new workflow with " (Copy)" suffix and duplicates all nodes/edges with new IDs.
  */
-export async function duplicateWorkflow(id: number) {
+export async function duplicateWorkflow(id: number, ownerUserId?: number | null) {
   // 1) Get the original workflow
   const original = await prisma.workflows.findUnique({
     where: { id },
@@ -645,8 +727,28 @@ export async function duplicateWorkflow(id: number) {
       name: `${original.name} (Copy)`,
       description: original.description,
       is_active: original.is_active,
-      owner_user_id: original.owner_user_id,
+      owner_user_id:
+        typeof ownerUserId === "number" ? ownerUserId : original.owner_user_id,
       default_trigger: original.default_trigger,
+    },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      is_active: true,
+      version: true,
+      default_trigger: true,
+      owner_user_id: true,
+      archived_at: true,
+      created_at: true,
+      updated_at: true,
+      users: {
+        select: {
+          id: true,
+          full_name: true,
+          email: true,
+        },
+      },
     },
   });
 
@@ -699,6 +801,7 @@ export async function duplicateWorkflow(id: number) {
     archived_at: newWorkflow.archived_at,
     created_at: newWorkflow.created_at,
     updated_at: newWorkflow.updated_at,
+    users: newWorkflow.users,
     nodeCount: nodes.length,
     edgeCount: edges.length,
   };

@@ -5,7 +5,7 @@ import { getAuthToken } from '../../../contexts/AuthContext';
 
 type ExecutionSummary = {
     id: number;
-    status: 'completed' | 'failed' | 'running';
+    status: 'completed' | 'failed' | 'running' | 'engine_error';
     trigger_type: string;
     started_at: string;
     duration_ms: number | null;
@@ -26,17 +26,18 @@ const RecentExecutions: React.FC<{ workflowId: number }> = ({ workflowId }) => {
                 if (token) {
                     headers['Authorization'] = `Bearer ${token}`;
                 }
-                const res = await fetch(`http://localhost:4000/api/workflows/${workflowId}/executions?limit=6`, { headers });
+                const res = await fetch(`http://localhost:4000/api/workflows/${workflowId}/executions?limit=3`, { headers });
                 if (res.ok) {
                     const json = await res.json();
-                    const data = json.data || json; 
-                    if (active) setExecutions(Array.isArray(data) ? data : []);
+                    const data = json.data || json;
+                    const list = Array.isArray(data) ? data : [];
+                    if (active) setExecutions(list.slice(0, 3));
                 } else {
-                     if(active) setExecutions([]); 
+                    if (active) setExecutions([]);
                 }
             } catch (e) {
                 console.error("Failed to load executions", e);
-                if(active) setExecutions([]);
+                if (active) setExecutions([]);
             } finally {
                 if (active) setLoading(false);
             }
@@ -44,16 +45,6 @@ const RecentExecutions: React.FC<{ workflowId: number }> = ({ workflowId }) => {
         load();
         return () => { active = false; };
     }, [workflowId]);
-
-    // MOCK DATA for visual verification if empty
-    const displayExecutions = executions.length > 0 ? executions : [
-        { id: 101, status: 'completed', trigger_type: 'manual', started_at: new Date().toISOString(), duration_ms: 1200 },
-        { id: 102, status: 'completed', trigger_type: 'schedule', started_at: new Date(Date.now() - 3600000).toISOString(), duration_ms: 850 },
-        { id: 103, status: 'failed', trigger_type: 'webhook', started_at: new Date(Date.now() - 86400000).toISOString(), duration_ms: 45000 },
-        { id: 104, status: 'completed', trigger_type: 'manual', started_at: new Date(Date.now() - 90000000).toISOString(), duration_ms: 1100 },
-        { id: 105, status: 'completed', trigger_type: 'schedule', started_at: new Date(Date.now() - 172800000).toISOString(), duration_ms: 920 },
-        { id: 106, status: 'completed', trigger_type: 'webhook', started_at: new Date(Date.now() - 250000000).toISOString(), duration_ms: 1540 },
-    ] as ExecutionSummary[];
 
     if (loading) return <div className="text-slate-500 text-xs animate-pulse">Loading runs...</div>;
 
@@ -88,7 +79,11 @@ const RecentExecutions: React.FC<{ workflowId: number }> = ({ workflowId }) => {
             </div>
             
             <div className="space-y-1">
-                {displayExecutions.slice(0, 6).map((ex) => (
+                {executions.length === 0 ? (
+                    <div className="py-6 text-center text-slate-500 text-xs uppercase tracking-widest">
+                        No executions yet
+                    </div>
+                ) : executions.map((ex) => (
                     <div 
                         key={ex.id}
                         onClick={() => navigate(`/executions/${ex.id}`)}
@@ -99,11 +94,11 @@ const RecentExecutions: React.FC<{ workflowId: number }> = ({ workflowId }) => {
                             <div className={`
                                 w-6 h-6 rounded-full flex items-center justify-center border shadow-sm
                                 ${ex.status === 'completed' ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400' : ''}
-                                ${ex.status === 'failed' ? 'bg-rose-500/20 border-rose-500/30 text-rose-400' : ''}
+                                ${ex.status === 'failed' || ex.status === 'engine_error' ? 'bg-rose-500/20 border-rose-500/30 text-rose-400' : ''}
                                 ${ex.status === 'running' ? 'bg-amber-500/20 border-amber-500/30 text-amber-400 animate-pulse' : ''}
                             `}>
                                 {ex.status === 'completed' && <FiCheck size={12} />}
-                                {ex.status === 'failed' && <FiX size={12} />}
+                                {(ex.status === 'failed' || ex.status === 'engine_error') && <FiX size={12} />}
                                 {ex.status === 'running' && <div className="w-1.5 h-1.5 bg-current rounded-full" />}
                             </div>
                             

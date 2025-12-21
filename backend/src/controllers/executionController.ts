@@ -1,6 +1,7 @@
 // src/controllers/executionController.ts
 import { Request, Response } from "express";
 import * as executionService from "../services/executionService";
+import * as auditService from "../services/auditService";
 
 /**
  * GET /api/executions
@@ -204,6 +205,53 @@ export async function executeWorkflow(req: Request, res: Response) {
       });
     }
 
+    return res.status(500).json({
+      message: "Internal server error",
+    });
+  }
+}
+
+/**
+ * DELETE /api/executions/:id
+ * Deletes an execution and its steps.
+ */
+export async function deleteExecution(req: Request, res: Response) {
+  const { id } = req.params;
+
+  const executionId = Number(id);
+  if (Number.isNaN(executionId)) {
+    return res.status(400).json({
+      message: "Invalid execution ID",
+    });
+  }
+
+  try {
+    const deleted = await executionService.deleteExecution(executionId);
+
+    if (!deleted) {
+      return res.status(404).json({
+        message: "Execution not found",
+      });
+    }
+
+    const userId = (req as any).user?.userId || 1;
+    await auditService.logAuditEvent({
+      eventType: "execution_deleted",
+      userId,
+      targetType: "execution",
+      targetId: executionId,
+      details: {
+        workflowId: deleted.workflow_id,
+        triggerType: deleted.trigger_type,
+        status: deleted.status,
+      },
+      ipAddress: req.ip,
+      userAgent: req.get("user-agent"),
+    });
+
+    return res.status(204).send();
+  } catch (error) {
+    console.error("[ExecutionController] Error deleting execution:", error);
     return res.status(500).json({
       message: "Internal server error",
     });

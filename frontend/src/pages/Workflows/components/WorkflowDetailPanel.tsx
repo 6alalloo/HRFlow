@@ -1,7 +1,7 @@
-import React from 'react';
+﻿import React, { useEffect, useMemo, useState } from 'react';
 import { FiLayers, FiSettings, FiPlay, FiCpu, FiTrash2, FiCopy } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
-import type { WorkflowApi } from '../../../api/workflows';
+import { fetchWorkflowGraph, type WorkflowApi } from '../../../api/workflows';
 import RecentExecutions from './RecentExecutions';
 
 type WorkflowDetailPanelProps = {
@@ -11,8 +11,96 @@ type WorkflowDetailPanelProps = {
     onDuplicate?: (wf: WorkflowApi) => void;
 };
 
+const normalizeLabel = (value: string) =>
+    value.replace(/_/g, ' ').toUpperCase();
+
+const getTriggerProtocol = (config: Record<string, unknown>, fallback?: string | null) => {
+    const candidates = [
+        config.triggerType,
+        (config as Record<string, unknown>).trigger_type,
+        config.protocol,
+        fallback,
+    ];
+    const found = candidates.find((entry) => typeof entry === 'string' && entry.trim().length > 0) as string | undefined;
+    return found ? normalizeLabel(found) : 'MANUAL';
+};
+
+const formatLastConfig = (updatedAt?: string | null) => {
+    if (!updatedAt) return 'UNKNOWN';
+    const parsed = new Date(updatedAt);
+    if (Number.isNaN(parsed.getTime())) return 'UNKNOWN';
+    return parsed.toLocaleString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+};
+
 const WorkflowDetailPanel: React.FC<WorkflowDetailPanelProps> = ({ workflow, onRun, onDelete, onDuplicate }) => {
     const navigate = useNavigate();
+    const [nodeKinds, setNodeKinds] = useState<string[]>([]);
+    const [nodeCount, setNodeCount] = useState(0);
+    const [triggerProtocol, setTriggerProtocol] = useState('MANUAL');
+
+    useEffect(() => {
+        let active = true;
+
+        const loadGraph = async () => {
+            if (!workflow) {
+                setNodeKinds([]);
+                setNodeCount(0);
+                setTriggerProtocol('MANUAL');
+                return;
+            }
+
+            try {
+                const graph = await fetchWorkflowGraph(workflow.id);
+                if (!active) return;
+
+                const kinds = graph.nodes.map((node) => node.kind);
+                const uniqueKinds = Array.from(new Set(kinds));
+                const triggerNode = graph.nodes.find((node) => node.kind === 'trigger');
+                const triggerConfig =
+                    (triggerNode?.config as Record<string, unknown> | undefined) ?? {};
+
+                setNodeKinds(uniqueKinds);
+                setNodeCount(graph.nodes.length);
+                setTriggerProtocol(getTriggerProtocol(triggerConfig, workflow.default_trigger));
+            } catch (err) {
+                if (!active) return;
+                console.error('Failed to load workflow graph:', err);
+                setNodeKinds([]);
+                setNodeCount(0);
+                setTriggerProtocol(workflow?.default_trigger ? normalizeLabel(workflow.default_trigger) : 'MANUAL');
+            }
+        };
+
+        void loadGraph();
+
+        return () => {
+            active = false;
+        };
+    }, [workflow]);
+
+    const integrationsLabel = useMemo(() => {
+        if (nodeKinds.length === 0) return 'NONE';
+        const filtered = nodeKinds.filter((kind) => kind !== 'trigger');
+        const list = filtered.length > 0 ? filtered : nodeKinds;
+        return list.map(normalizeLabel).join(' // ');
+    }, [nodeKinds]);
+
+    const ownerLabel = useMemo(() => {
+        if (!workflow) return 'UNASSIGNED';
+        if (workflow.users?.full_name) return workflow.users.full_name.toUpperCase();
+        if (workflow.users?.email) return workflow.users.email.toUpperCase();
+        if (workflow.owner_user_id) return `USER #${workflow.owner_user_id}`;
+        return 'UNASSIGNED';
+    }, [workflow]);
+
+    const nodeCountLabel = useMemo(() => `${nodeCount} NODES`, [nodeCount]);
+    const lastConfigLabel = useMemo(() => formatLastConfig(workflow?.updated_at), [workflow?.updated_at]);
 
     if (!workflow) {
         return (
@@ -43,7 +131,7 @@ const WorkflowDetailPanel: React.FC<WorkflowDetailPanelProps> = ({ workflow, onR
                         <div className="pt-1">
                             <div className="flex items-center gap-3 mb-2">
                                 <span className="text-[10px] font-mono text-cyan-500 border border-cyan-500/30 px-1.5 py-0.5 rounded tracking-widest bg-cyan-950/30">ID: {workflow.id.toString().padStart(4, '0')}</span>
-                                <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Ver. 2.4.0</span>
+                                <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Ver. {workflow.version}.0</span>
                             </div>
                             <h1 className="text-4xl font-bold text-white tracking-tight mb-3 uppercase text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400 drop-shadow-[0_0_10px_rgba(255,255,255,0.3)]">
                                 {workflow.name}
@@ -73,33 +161,33 @@ const WorkflowDetailPanel: React.FC<WorkflowDetailPanelProps> = ({ workflow, onR
 
                             <div className="grid grid-cols-2 divide-x divide-white/5">
                                 {/* Row 1 */}
-                                <div className="p-4 border-b border-white/5 flex justify-between items-center group hover:bg-white/5 transition-colors cursor-crosshair">
+                                <div className="p-4 border-b border-white/5 flex justify-between items-center group hover:bg-white/[0.02] transition-colors cursor-default">
                                     <span className="text-[10px] uppercase tracking-widest text-slate-500 font-mono">Trigger Protocol</span>
-                                    <span className="text-xs font-bold font-mono text-cyan-400 uppercase">{workflow.default_trigger || 'MANUAL_OVERRIDE'}</span>
+                                    <span className="text-xs font-bold font-mono text-cyan-400 uppercase">{triggerProtocol}</span>
                                 </div>
-                                <div className="p-4 border-b border-white/5 flex justify-between items-center group hover:bg-white/5 transition-colors cursor-crosshair">
+                                <div className="p-4 border-b border-white/5 flex justify-between items-center group hover:bg-white/[0.02] transition-colors cursor-default">
                                     <span className="text-[10px] uppercase tracking-widest text-slate-500 font-mono">Integrations</span>
-                                    <span className="text-xs font-bold font-mono text-white">SLACK // HTTP // DB</span>
+                                    <span className="text-xs font-bold font-mono text-white">{integrationsLabel}</span>
                                 </div>
 
                                 {/* Row 2 */}
-                                <div className="p-4 border-b border-white/5 flex justify-between items-center group hover:bg-white/5 transition-colors cursor-crosshair">
+                                <div className="p-4 border-b border-white/5 flex justify-between items-center group hover:bg-white/[0.02] transition-colors cursor-default">
                                     <span className="text-[10px] uppercase tracking-widest text-slate-500 font-mono">Engine Version</span>
                                     <span className="text-xs font-bold font-mono text-emerald-400">V{workflow.version}.0.0</span>
                                 </div>
-                                <div className="p-4 border-b border-white/5 flex justify-between items-center group hover:bg-white/5 transition-colors cursor-crosshair">
+                                <div className="p-4 border-b border-white/5 flex justify-between items-center group hover:bg-white/[0.02] transition-colors cursor-default">
                                     <span className="text-[10px] uppercase tracking-widest text-slate-500 font-mono">System Owner</span>
-                                    <span className="text-xs font-bold font-mono text-white">ADMIN_ID_{workflow.owner_user_id || '00'}</span>
+                                    <span className="text-xs font-bold font-mono text-white">{ownerLabel}</span>
                                 </div>
 
                                 {/* Row 3 */}
-                                <div className="p-4 flex justify-between items-center group hover:bg-white/5 transition-colors cursor-crosshair">
+                                <div className="p-4 flex justify-between items-center group hover:bg-white/[0.02] transition-colors cursor-default">
                                     <span className="text-[10px] uppercase tracking-widest text-slate-500 font-mono">Last Config</span>
-                                    <span className="text-xs font-bold font-mono text-purple-400 uppercase">{new Date(workflow.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                    <span className="text-xs font-bold font-mono text-purple-400 uppercase">{lastConfigLabel}</span>
                                 </div>
-                                <div className="p-4 flex justify-between items-center group hover:bg-white/5 transition-colors cursor-crosshair">
+                                <div className="p-4 flex justify-between items-center group hover:bg-white/[0.02] transition-colors cursor-default">
                                     <span className="text-[10px] uppercase tracking-widest text-slate-500 font-mono">Complexity</span>
-                                    <span className="text-xs font-bold font-mono text-white">LEVEL 2 (STANDARD)</span>
+                                    <span className="text-xs font-bold font-mono text-white">{nodeCountLabel}</span>
                                 </div>
                             </div>
                         </div>

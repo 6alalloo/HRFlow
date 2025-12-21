@@ -268,7 +268,7 @@ export default function SecurityPage() {
                                     ) : (
                                         <button
                                             onClick={() => setDeleteConfirm(domain.id)}
-                                            className="p-2 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                                            className="p-2 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
                                             title="Remove domain"
                                         >
                                             <FiTrash2 size={16} />

@@ -23,6 +23,9 @@ router.patch(
 // Get one workflow by id
 router.get("/:id", workflowController.getWorkflowById);
 
+// Update workflow metadata
+router.patch("/:id", workflowController.updateWorkflow);
+
 // Delete workflow
 router.delete("/:id", workflowController.deleteWorkflow);
 

@@ -237,6 +237,19 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
     },
   });
 
+  // Audit log execution start
+  await auditService.logAuditEvent({
+    eventType: "execution_started",
+    userId: workflow.owner_user_id || 1,
+    targetType: "execution",
+    targetId: execution.id,
+    details: {
+      workflowId,
+      workflowName: workflow.name,
+      triggerType: triggerType ?? "manual",
+    },
+  });
+
   let n8nResult: unknown | null = null;
   let finalStatus: ExecutionFinalStatus = "failed";
   let errorMessage: string | null = null;
@@ -394,4 +407,24 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
     steps,
     n8nResult,
   };
+}
+
+export async function deleteExecution(id: number) {
+  const existing = await prisma.executions.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      workflow_id: true,
+      trigger_type: true,
+      status: true,
+    },
+  });
+
+  if (!existing) return null;
+
+  await prisma.executions.delete({
+    where: { id },
+  });
+
+  return existing;
 }

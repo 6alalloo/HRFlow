@@ -84,6 +84,59 @@ export async function getWorkflowById(req: Request, res: Response) {
 }
 
 /**
+ * PATCH /api/workflows/:id
+ * Update workflow metadata (name, description, is_active, default_trigger).
+ */
+export async function updateWorkflow(req: Request, res: Response) {
+  const { id } = req.params;
+
+  const numericId = Number(id);
+  if (Number.isNaN(numericId)) {
+    return res.status(400).json({
+      message: "Invalid workflow ID",
+    });
+  }
+
+  try {
+    const { name, description, is_active, default_trigger } = req.body;
+
+    const updated = await workflowService.updateWorkflow(numericId, {
+      name,
+      description,
+      isActive: is_active,
+      defaultTrigger: default_trigger,
+    });
+
+    if (!updated) {
+      return res.status(404).json({
+        message: "Workflow not found",
+      });
+    }
+
+    // Audit log
+    const userId = (req as any).user?.userId || 1;
+    await auditService.logAuditEvent({
+      eventType: "workflow_updated",
+      userId,
+      targetType: "workflow",
+      targetId: numericId,
+      details: { action: "metadata_updated", name: updated.name },
+      ipAddress: req.ip,
+      userAgent: req.get("user-agent"),
+    });
+
+    return res.status(200).json({
+      data: updated,
+    });
+  } catch (error) {
+    console.error("[WorkflowController] Error updating workflow:", error);
+    return res.status(500).json({
+      message: "Internal server error",
+    });
+  }
+}
+
+/**
  * GET /api/workflows/:id/nodes
  * Get all nodes for a workflow.
  */
@@ -217,7 +270,7 @@ export async function updateWorkflowNode(req: Request, res: Response) {
     }
 
     // Audit log
-    const userId = (req as any).user?.id || 1;
+    const userId = (req as any).user?.userId || 1;
     await auditService.logAuditEvent({
       eventType: "workflow_updated",
       userId,
@@ -265,7 +318,7 @@ export async function deleteWorkflowNode(req: Request, res: Response) {
     }
 
     // Audit log
-    const userId = (req as any).user?.id || 1;
+    const userId = (req as any).user?.userId || 1;
     await auditService.logAuditEvent({
       eventType: "workflow_updated",
       userId,
@@ -433,13 +486,17 @@ export async function createWorkflowNode(req: Request, res: Response) {
 
     return res.status(201).json({ data: node });
   } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Internal server error while creating node";
     console.error(
       "[WorkflowController] Error creating workflow node:",
       error
     );
     return res
       .status(500)
-      .json({ message: "Internal server error while creating node" });
+      .json({ message });
   }
 }
 export async function updateWorkflowNodePosition(req: Request, res: Response) {
@@ -495,6 +552,13 @@ export async function createWorkflow(req: Request, res: Response) {
   try {
     const { name, description, isActive, ownerUserId, defaultTrigger } =
       req.body ?? {};
+    const authUserId = (req as any).user?.userId;
+    const resolvedOwnerUserId =
+      typeof authUserId === "number"
+        ? authUserId
+        : typeof ownerUserId === "number"
+          ? ownerUserId
+          : null;
 
     if (typeof name !== "string" || name.trim().length === 0) {
       return res.status(400).json({ message: "Workflow name is required" });
@@ -507,7 +571,7 @@ export async function createWorkflow(req: Request, res: Response) {
           ? description.trim()
           : null,
       isActive: typeof isActive === "boolean" ? isActive : undefined,
-      ownerUserId: typeof ownerUserId === "number" ? ownerUserId : null,
+      ownerUserId: resolvedOwnerUserId,
       defaultTrigger:
         typeof defaultTrigger === "string" && defaultTrigger.trim().length > 0
           ? defaultTrigger.trim()
@@ -515,7 +579,12 @@ export async function createWorkflow(req: Request, res: Response) {
     });
 
     // Audit log
-    const userId = (req as any).user?.id || ownerUserId || 1;
+    const userId =
+      typeof authUserId === "number"
+        ? authUserId
+        : typeof resolvedOwnerUserId === "number"
+          ? resolvedOwnerUserId
+          : 1;
     await auditService.logAuditEvent({
       eventType: "workflow_created",
       userId,
@@ -557,6 +626,18 @@ export async function deleteWorkflow(req: Request, res: Response) {
 
     await workflowService.deleteWorkflow(numericId);
 
+    // Audit log
+    const userId = (req as any).user?.userId || workflow.owner_user_id || 1;
+    await auditService.logAuditEvent({
+      eventType: "workflow_deleted",
+      userId,
+      targetType: "workflow",
+      targetId: numericId,
+      details: { name: workflow.name },
+      ipAddress: req.ip,
+      userAgent: req.get("user-agent"),
+    });
+
     return res.status(204).send();
   } catch (error) {
     console.error("[WorkflowController] Error deleting workflow:", error);
@@ -581,7 +662,11 @@ export async function duplicateWorkflow(req: Request, res: Response) {
   }
 
   try {
-    const duplicated = await workflowService.duplicateWorkflow(numericId);
+    const authUserId = (req as any).user?.userId;
+    const duplicated = await workflowService.duplicateWorkflow(
+      numericId,
+      typeof authUserId === "number" ? authUserId : undefined
+    );
 
     if (!duplicated) {
       return res.status(404).json({
@@ -590,7 +675,7 @@ export async function duplicateWorkflow(req: Request, res: Response) {
     }
 
     // Audit log
-    const userId = (req as any).user?.id || 1;
+    const userId = (req as any).user?.userId || 1;
     await auditService.logAuditEvent({
       eventType: "workflow_created",
       userId,

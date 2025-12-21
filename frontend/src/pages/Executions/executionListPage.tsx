@@ -157,15 +157,15 @@ const ExecutionsListPage: React.FC = () => {
             </div>
 
             {/* Status Filters - Tech Tabs */}
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-2">
                 {(['all', 'running', 'completed', 'failed'] as const).map((s) => (
                     <button
                         key={s}
                         onClick={() => setStatusFilter(s)}
-                        className={`px-4 py-2 text-[10px] font-bold font-mono uppercase tracking-widest transition-all duration-300 border
+                        className={`px-3.5 py-1.5 rounded-full text-[10px] font-bold font-mono uppercase tracking-widest transition-all duration-300 border
                             ${statusFilter === s 
-                                ? 'bg-cyan-950/30 border-cyan-500/50 text-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.15)]' 
-                                : 'bg-[#050b14] border-transparent text-slate-600 hover:text-cyan-500 hover:border-cyan-900/30'}
+                                ? 'bg-cyan-500/10 border-cyan-400/60 text-cyan-300 shadow-[0_0_12px_rgba(6,182,212,0.2)]' 
+                                : 'bg-[#050b14] border-white/10 text-slate-500 hover:text-cyan-300 hover:border-cyan-500/40'}
                         `}
                     >
                         {s}

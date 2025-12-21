@@ -201,7 +201,7 @@ model workflow_edges {
   workflow_id                                                            Int
   from_node_id                                                           Int
   to_node_id                                                             Int
-  condition_json                                                         String         @default("{}") @db.VarChar
+  condition_json                                                         String         @default("{}") @db.Text
   label                                                                  String?        @db.VarChar
   priority                                                               Int?           @default(0)
   workflow_nodes_workflow_edges_workflow_id_from_node_idToworkflow_nodes workflow_nodes @relation("workflow_edges_workflow_id_from_node_idToworkflow_nodes", fields: [workflow_id, from_node_id], references: [workflow_id, id], onDelete: Cascade, onUpdate: NoAction, map: "fk_edge_from")
@@ -218,7 +218,7 @@ model workflow_nodes {
   workflow_id                                                            Int
   kind                                                                   String            @db.VarChar
   name                                                                   String?           @db.VarChar
-  config_json                                                            String            @default("{}") @db.VarChar
+  config_json                                                            String            @default("{}") @db.Text
   pos_x                                                                  Int               @default(0)
   pos_y                                                                  Int               @default(0)
   execution_steps                                                        execution_steps[]

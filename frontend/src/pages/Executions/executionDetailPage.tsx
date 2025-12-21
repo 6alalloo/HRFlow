@@ -60,6 +60,15 @@ const ExecutionDetailPage: React.FC = () => {
   const { execution, steps } = data;
   const isSuccess = execution.status === 'completed';
 
+  const formatJson = useCallback((value: string | null) => {
+    if (!value) return null;
+    try {
+      return JSON.stringify(JSON.parse(value), null, 2);
+    } catch {
+      return value;
+    }
+  }, []);
+
   return (
     <div className="h-full flex flex-col bg-navy-950 text-white overflow-hidden relative">
       {/* Background Ambience */}
@@ -177,6 +186,13 @@ const ExecutionDetailPage: React.FC = () => {
           <div className="flex-1 overflow-y-auto bg-navy-950/40 p-6 custom-scrollbar relative">
                {selectedStep ? (
                    <div className="max-w-4xl mx-auto space-y-5 animate-fade-in-up">
+                       {(() => {
+                         const inputText = formatJson(selectedStep.input_json);
+                         const outputText = formatJson(selectedStep.output_json);
+                         const hasErrorLog = selectedStep.status === 'failed' && selectedStep.logs;
+
+                         return (
+                           <>
                        <div className="flex items-center gap-3 mb-4">
                            <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center border border-white/10 text-lg">
                                <FiCpu className="text-blue-400" />
@@ -195,10 +211,16 @@ const ExecutionDetailPage: React.FC = () => {
                                </span>
                                <span className="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 text-[10px] font-mono border border-blue-500/20">JSON</span>
                            </div>
-                           <div className="p-0 overflow-x-auto">
-                               <pre className="text-[11px] font-mono text-slate-300 p-4 leading-relaxed">
-                                   {selectedStep.input_json ? JSON.stringify(JSON.parse(selectedStep.input_json), null, 2) : <span className="text-slate-600 italic">// No input data received</span>}
-                               </pre>
+                           <div className="p-0 overflow-x-auto max-h-[260px]">
+                               {inputText ? (
+                                 <pre className="text-[11px] font-mono text-slate-300 p-4 leading-relaxed whitespace-pre">
+                                   {inputText}
+                                 </pre>
+                               ) : (
+                                 <div className="text-[11px] font-mono text-slate-600 p-4 italic">
+                                   // No input data received
+                                 </div>
+                               )}
                            </div>
                        </div>
 
@@ -225,18 +247,27 @@ const ExecutionDetailPage: React.FC = () => {
                                    {selectedStep.status.toUpperCase()}
                                </span>
                            </div>
-                           <div className="p-0 overflow-x-auto">
-                               {selectedStep.logs && (
+                           <div className="p-0 overflow-x-auto max-h-[260px]">
+                               {hasErrorLog && (
                                    <div className="border-b border-white/5 bg-rose-950/10 p-4 text-[11px] font-mono text-rose-300">
                                        <b className="block mb-1 text-rose-400">Error Log:</b>
                                        {selectedStep.logs}
                                    </div>
                                )}
-                               <pre className="text-[11px] font-mono text-slate-300 p-4 leading-relaxed">
-                                   {selectedStep.output_json ? JSON.stringify(JSON.parse(selectedStep.output_json), null, 2) : <span className="text-slate-600 italic">// No output data produced</span>}
-                               </pre>
+                               {outputText ? (
+                                 <pre className="text-[11px] font-mono text-slate-300 p-4 leading-relaxed whitespace-pre">
+                                   {outputText}
+                                 </pre>
+                               ) : (
+                                 <div className="text-[11px] font-mono text-slate-600 p-4 italic">
+                                   // No output data produced
+                                 </div>
+                               )}
                            </div>
                        </div>
+                       </>
+                         );
+                       })()}
                    </div>
                ) : (
                    <div className="flex flex-col items-center justify-center h-full text-slate-600">

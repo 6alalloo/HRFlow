@@ -9,6 +9,13 @@ type WorkflowCardProps = {
     onClick: () => void;
 };
 
+const formatTime = (value?: string | null) => {
+    if (!value) return "--:--";
+    const dt = new Date(value);
+    if (Number.isNaN(dt.getTime())) return "--:--";
+    return dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+};
+
 const WorkflowCard: React.FC<WorkflowCardProps> = ({ workflow, isActive, onClick }) => {
     return (
         <motion.div
@@ -46,7 +53,7 @@ const WorkflowCard: React.FC<WorkflowCardProps> = ({ workflow, isActive, onClick
                         {workflow.name}
                     </h3>
                      <span className={`text-[10px] font-mono text-cyan-500/80 flex-shrink-0 ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 transition-opacity'}`}>
-                        &lt;10:00:00&gt;
+                        &lt;{formatTime(workflow.updated_at)}&gt;
                     </span>
                  </div>
                  

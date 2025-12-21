@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { login, getUserById, verifyToken } from '../services/authService';
+import * as auditService from '../services/auditService';
 import { isRateLimited, getRemainingAttempts, getTimeUntilReset, resetRateLimit } from '../middleware/rateLimiter';
 
 /**
@@ -38,6 +39,17 @@ export async function loginHandler(req: Request, res: Response) {
 
     // Reset rate limit on successful login
     resetRateLimit(clientIp, email);
+
+    // Audit log successful login
+    await auditService.logAuditEvent({
+      eventType: 'login',
+      userId: result.user.id,
+      targetType: 'user',
+      targetId: result.user.id,
+      details: { email: result.user.email },
+      ipAddress: clientIp,
+      userAgent: req.get('user-agent'),
+    });
 
     return res.json({
       message: 'Login successful',

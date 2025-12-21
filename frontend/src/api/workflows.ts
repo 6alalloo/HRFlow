@@ -1,4 +1,18 @@
+import { getAuthToken } from "../contexts/AuthContext";
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000/api";
+
+// Helper to get auth headers for API calls
+function getAuthHeaders(): Record<string, string> {
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  return headers;
+}
 
 
 /* ---------- Core API types ---------- */
@@ -216,7 +230,9 @@ function safeParseJson<T>(value: string | null | undefined, fallback: T): T {
 
 // GET /api/workflows
 export async function fetchWorkflows(): Promise<WorkflowApi[]> {
-  const res = await fetch(`${API_BASE_URL}/workflows`);
+  const res = await fetch(`${API_BASE_URL}/workflows`, {
+    headers: getAuthHeaders(),
+  });
 
   if (!res.ok) {
     console.error(
@@ -260,9 +276,7 @@ export async function executeWorkflow(
 }> {
   const res = await fetch(`${API_BASE_URL}/workflows/${workflowId}/execute`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: getAuthHeaders(),
     body: JSON.stringify({
       triggerType: triggerType ?? "manual",
       input: input ?? {},
@@ -301,7 +315,7 @@ type WorkflowByIdResponse = WorkflowApi | { data: WorkflowApi };
 
 // GET /api/workflows/:id
 export async function fetchWorkflowById(id: number): Promise<WorkflowApi> {
-  const res = await fetch(`${API_BASE_URL}/workflows/${id}`);
+  const res = await fetch(`${API_BASE_URL}/workflows/${id}`, { headers: getAuthHeaders() });
 
   if (!res.ok) {
     console.error(
@@ -329,7 +343,7 @@ export async function fetchWorkflowGraph(
   nodes: WorkflowGraphNode[];
   edges: WorkflowGraphEdge[];
 }> {
-  const res = await fetch(`${API_BASE_URL}/workflows/${id}/graph`);
+  const res = await fetch(`${API_BASE_URL}/workflows/${id}/graph`, { headers: getAuthHeaders() });
 
   if (!res.ok) {
     console.error(
@@ -410,6 +424,7 @@ export async function fetchWorkflowGraph(
 export async function deleteWorkflow(id: number): Promise<void> {
   const res = await fetch(`${API_BASE_URL}/workflows/${id}`, {
     method: "DELETE",
+    headers: getAuthHeaders(),
   });
   if (!res.ok) {
     throw new Error(`Failed to delete workflow: ${res.statusText}`);
@@ -422,7 +437,7 @@ export async function createWorkflowNode(
 ): Promise<WorkflowGraphNode> {
   const res = await fetch(`${API_BASE_URL}/workflows/${workflowId}/nodes`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify(payload),
   });
 
@@ -455,9 +470,7 @@ export async function updateWorkflowNodePosition(
     `${API_BASE_URL}/workflows/${workflowId}/nodes/${nodeId}/position`,
     {
       method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ posX, posY }),
     }
   );
@@ -528,9 +541,7 @@ export async function updateWorkflowNode(
     `${API_BASE_URL}/workflows/${workflowId}/nodes/${nodeId}`,
     {
       method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: getAuthHeaders(),
       body: JSON.stringify(payload),
     }
   );
@@ -574,7 +585,7 @@ export async function createWorkflowEdge(
 ): Promise<WorkflowGraphEdge> {
   const res = await fetch(`${API_BASE_URL}/workflows/${workflowId}/edges`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify(payload),
   });
 
@@ -617,6 +628,7 @@ export async function deleteWorkflowEdge(
     `${API_BASE_URL}/workflows/${workflowId}/edges/${edgeId}`,
     {
       method: "DELETE",
+      headers: getAuthHeaders(),
     }
   );
 
@@ -642,6 +654,7 @@ export async function deleteWorkflowNode(
       `${API_BASE_URL}/workflows/${workflowId}/nodes/${nodeId}`,
       {
         method: "DELETE",
+        headers: getAuthHeaders(),
       }
     );
 
@@ -665,7 +678,7 @@ export async function deleteWorkflowNode(
 /* ---------- Executions ---------- */
 
 export async function fetchExecution(id: number): Promise<ExecutionApi> {
-  const res = await fetch(`${API_BASE_URL}/executions/${id}`);
+  const res = await fetch(`${API_BASE_URL}/executions/${id}`, { headers: getAuthHeaders() });
 
   if (!res.ok) {
     console.error(
@@ -689,7 +702,7 @@ export async function fetchExecution(id: number): Promise<ExecutionApi> {
 export async function fetchExecutionSteps(
   id: number
 ): Promise<ExecutionStepApi[]> {
-  const res = await fetch(`${API_BASE_URL}/executions/${id}/steps`);
+  const res = await fetch(`${API_BASE_URL}/executions/${id}/steps`, { headers: getAuthHeaders() });
 
   if (!res.ok) {
     console.error(
@@ -731,7 +744,7 @@ export async function createWorkflow(payload: {
 }): Promise<WorkflowApi> {
   const res = await fetch(`${API_BASE_URL}/workflows`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify(payload),
   });
 
@@ -761,7 +774,7 @@ export async function updateWorkflow(
 ): Promise<WorkflowApi> {
   const res = await fetch(`${API_BASE_URL}/workflows/${id}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify(payload),
   });
 
@@ -779,7 +792,7 @@ export async function updateWorkflow(
 export async function duplicateWorkflow(id: number): Promise<WorkflowApi> {
   const res = await fetch(`${API_BASE_URL}/workflows/${id}/duplicate`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
   });
 
   if (!res.ok) {

@@ -11,6 +11,7 @@ import {
   updateWorkflowNode,
   updateWorkflowNodePosition,
   deleteWorkflowEdge,
+  deleteWorkflowNode,
   updateWorkflow,
   type WorkflowGraphNode,
   type WorkflowGraphEdge,
@@ -497,9 +498,7 @@ const WorkflowBuilderContent: React.FC = () => {
 
       // Delete all existing nodes (this also deletes edges due to cascade)
       for (const node of state.nodes) {
-        await fetch(`${import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000/api"}/workflows/${state.workflowId}/nodes/${node.id}`, {
-          method: 'DELETE',
-        });
+        await deleteWorkflowNode(state.workflowId, node.id);
       }
 
       // Create a mapping of template node IDs to actual node IDs

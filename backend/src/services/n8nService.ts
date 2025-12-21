@@ -199,6 +199,112 @@ export async function deactivateN8nWorkflow(id: string): Promise<void> {
   await n8nApiFetch(`/workflows/${id}/deactivate`, { method: "POST" });
 }
 
+/**
+ * Fetch the most recent execution for a workflow from n8n
+ * Returns per-node execution data including outputs
+ */
+export async function getN8nExecutionForWorkflow(
+  n8nWorkflowId: string
+): Promise<N8nExecutionData | null> {
+  try {
+    console.log("[n8nService] Fetching executions for workflow:", n8nWorkflowId);
+
+    // Get executions for this workflow, sorted by most recent
+    const res = await n8nApiFetch(
+      `/executions?workflowId=${n8nWorkflowId}&limit=1`,
+      { method: "GET" }
+    );
+    const data = await res.json();
+
+    console.log("[n8nService] Executions API response keys:", Object.keys(data || {}));
+
+    // Handle both array and { data: [...] } response formats
+    const executions = Array.isArray(data) ? data : data?.data || [];
+
+    console.log("[n8nService] Found", executions.length, "executions");
+
+    if (executions.length === 0) {
+      return null;
+    }
+
+    const latestExecution = executions[0];
+    console.log("[n8nService] Latest execution ID:", latestExecution.id, "status:", latestExecution.status);
+
+    // Fetch full execution details with data
+    const detailRes = await n8nApiFetch(
+      `/executions/${latestExecution.id}?includeData=true`,
+      { method: "GET" }
+    );
+    const executionDetail = await detailRes.json();
+
+    console.log("[n8nService] Execution detail keys:", Object.keys(executionDetail || {}));
+    console.log("[n8nService] Has data.resultData.runData:", !!executionDetail?.data?.resultData?.runData);
+
+    return parseN8nExecutionData(executionDetail);
+  } catch (err) {
+    console.error("[n8nService] Failed to fetch execution details:", err);
+    return null;
+  }
+}
+
+type N8nNodeExecutionData = {
+  nodeName: string;
+  nodeType: string;
+  data: Record<string, unknown>;
+};
+
+type N8nExecutionData = {
+  id: string;
+  finished: boolean;
+  status: string;
+  nodeOutputs: Map<string, N8nNodeExecutionData>;
+};
+
+function parseN8nExecutionData(execution: any): N8nExecutionData {
+  const nodeOutputs = new Map<string, N8nNodeExecutionData>();
+
+  // n8n execution data structure: execution.data.resultData.runData
+  // runData is keyed by node name, each containing array of execution items
+  const runData = execution?.data?.resultData?.runData;
+
+  if (runData && typeof runData === "object") {
+    for (const [nodeName, nodeRuns] of Object.entries(runData)) {
+      if (!Array.isArray(nodeRuns) || nodeRuns.length === 0) continue;
+
+      // Get the last run for this node (in case of retries)
+      const lastRun = nodeRuns[nodeRuns.length - 1];
+
+      // Extract output data from the run
+      // Structure: lastRun.data.main[0] contains array of output items
+      let outputData: Record<string, unknown> = {};
+
+      if (lastRun?.data?.main) {
+        const mainOutput = lastRun.data.main[0]; // First output connection
+        if (Array.isArray(mainOutput) && mainOutput.length > 0) {
+          // Get the first output item's json data
+          const firstItem = mainOutput[0];
+          if (firstItem?.json) {
+            outputData = firstItem.json;
+          }
+        }
+      }
+
+      nodeOutputs.set(nodeName, {
+        nodeName,
+        nodeType: lastRun?.source?.[0]?.previousNode || "unknown",
+        data: outputData,
+      });
+    }
+  }
+
+  return {
+    id: execution?.id || "",
+    finished: execution?.finished ?? false,
+    status: execution?.status || "unknown",
+    nodeOutputs,
+  };
+}
+
 
 export async function callN8nExecute(payload: N8nExecutePayload): Promise<N8nExecuteResult>;
 export async function callN8nExecute(webhookUrl: string, body: unknown): Promise<N8nExecuteResult>;

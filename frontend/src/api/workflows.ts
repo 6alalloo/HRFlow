@@ -290,9 +290,17 @@ export async function executeWorkflow(
 
   if (!res.ok) {
     console.error("[executeWorkflow] HTTP error:", res.status, res.statusText);
-    throw new Error(
-      `Failed to execute workflow ${workflowId} (status ${res.status})`
-    );
+    // Try to extract error message from response body
+    let errorMessage = `Failed to execute workflow (status ${res.status})`;
+    try {
+      const errorBody = await res.json();
+      if (errorBody.message) {
+        errorMessage = errorBody.message;
+      }
+    } catch {
+      // Ignore JSON parse errors
+    }
+    throw new Error(errorMessage);
   }
 
   const json = (await res.json()) as
@@ -822,4 +830,40 @@ export async function duplicateWorkflow(id: number): Promise<WorkflowApi> {
   const json = await res.json();
   const data = "data" in json ? json.data : json;
   return data as WorkflowApi;
+}
+
+/* ---------- Settings API ---------- */
+
+export type DatabaseTable = {
+  name: string;
+  label: string;
+  description: string;
+};
+
+type DatabaseTablesResponse =
+  | { data: DatabaseTable[] }
+  | DatabaseTable[];
+
+// GET /api/settings/database-tables
+export async function fetchDatabaseTables(): Promise<DatabaseTable[]> {
+  const res = await fetch(`${API_BASE_URL}/settings/database-tables`, {
+    headers: getAuthHeaders(),
+  });
+
+  if (!res.ok) {
+    console.error("[fetchDatabaseTables] HTTP error:", res.status, res.statusText);
+    throw new Error(`Failed to fetch database tables (status ${res.status})`);
+  }
+
+  const json = (await res.json()) as DatabaseTablesResponse;
+
+  if (Array.isArray(json)) {
+    return json;
+  }
+
+  if ("data" in json) {
+    return json.data;
+  }
+
+  return [];
 }

@@ -355,10 +355,80 @@ function mapHrflowNodeToN8n(n: HRFlowNode, position: [number, number]) {
 
   switch (kind) {
 case "trigger": {
-  // HRFlow "trigger" is a canvas/config node.
-  // The real runtime trigger in n8n is the Webhook node we generate at the start.
-  // Keeping this as NoOp avoids Code-node jsCode persistence issues.
-  return makeNoOpNode(`hrflow_node_${n.id}`, name, position);
+  // HRFlow "trigger" passes through the webhook data with employee info exposed.
+  // Use Set node to make the data available for subsequent nodes.
+  const employeeName = safeString(cfg.name, "");
+  const employeeEmail = safeString(cfg.email, "");
+  const department = safeString(cfg.department, "");
+  const role = safeString(cfg.role, "");
+  const startDate = safeString(cfg.startDate, "");
+  const managerEmail = safeString(cfg.managerEmail, "");
+
+  return {
+    id: `hrflow_node_${n.id}`,
+    name,
+    type: "n8n-nodes-base.set",
+    typeVersion: 3.4,
+    position,
+    parameters: {
+      mode: "manual",
+      duplicateItem: false,
+      assignments: {
+        assignments: [
+          {
+            id: `trigger_name_${n.id}`,
+            name: "employee.name",
+            value: employeeName || "={{ $json.body?.employee?.name || $json.employee?.name || '' }}",
+            type: "string",
+          },
+          {
+            id: `trigger_email_${n.id}`,
+            name: "employee.email",
+            value: employeeEmail || "={{ $json.body?.employee?.email || $json.employee?.email || '' }}",
+            type: "string",
+          },
+          {
+            id: `trigger_dept_${n.id}`,
+            name: "employee.department",
+            value: department || "={{ $json.body?.employee?.department || $json.employee?.department || '' }}",
+            type: "string",
+          },
+          {
+            id: `trigger_role_${n.id}`,
+            name: "employee.role",
+            value: role || "={{ $json.body?.employee?.role || $json.employee?.role || '' }}",
+            type: "string",
+          },
+          {
+            id: `trigger_start_${n.id}`,
+            name: "employee.startDate",
+            value: startDate || "={{ $json.body?.employee?.startDate || $json.employee?.startDate || '' }}",
+            type: "string",
+          },
+          {
+            id: `trigger_manager_${n.id}`,
+            name: "employee.managerEmail",
+            value: managerEmail || "={{ $json.body?.employee?.managerEmail || $json.employee?.managerEmail || '' }}",
+            type: "string",
+          },
+          {
+            id: `trigger_ts_${n.id}`,
+            name: "_hrflow.triggeredAt",
+            value: "={{ $now.toISO() }}",
+            type: "string",
+          },
+          {
+            id: `trigger_type_${n.id}`,
+            name: "_hrflow.nodeType",
+            value: "trigger",
+            type: "string",
+          },
+        ],
+      },
+      includeOtherFields: true,
+      options: {},
+    },
+  };
 }
 
     case "http": {
@@ -400,29 +470,57 @@ case "trigger": {
     }
 
     case "logger": {
-      const message = safeString(cfg.message, `Logger node ${n.id}`);
+      // Use Set node to add logging metadata - data flows through with log info attached
+      const message = safeString(cfg.message, `Log from node ${n.id}`);
       const level = safeString(cfg.level, "info");
-      const includeInput = safeBool(cfg.includeInput, true);
 
-      const jsCode = [
-        "const items = $input.all();",
-        `const level = ${JSON.stringify(level)};`,
-        `const msg = ${JSON.stringify(message)};`,
-        `const includeInput = ${includeInput ? "true" : "false"};`,
-        "if (includeInput) {",
-        "  console.log('[HRFlow][logger]', level, msg, { payload: items[0]?.json });",
-        "} else {",
-        "  console.log('[HRFlow][logger]', level, msg);",
-        "}",
-        "return items;",
-      ].join("\n");
-
-      return makeCodeNode({
+      return {
         id: `hrflow_node_${n.id}`,
         name,
+        type: "n8n-nodes-base.set",
+        typeVersion: 3.4,
         position,
-        jsCode,
-      });
+        parameters: {
+          mode: "manual",
+          duplicateItem: false,
+          assignments: {
+            assignments: [
+              {
+                id: `log_msg_${n.id}`,
+                name: "_hrflow.log.message",
+                value: message,
+                type: "string",
+              },
+              {
+                id: `log_level_${n.id}`,
+                name: "_hrflow.log.level",
+                value: level,
+                type: "string",
+              },
+              {
+                id: `log_ts_${n.id}`,
+                name: "_hrflow.log.timestamp",
+                value: "={{ $now.toISO() }}",
+                type: "string",
+              },
+              {
+                id: `log_node_${n.id}`,
+                name: "_hrflow.log.nodeId",
+                value: String(n.id),
+                type: "string",
+              },
+              {
+                id: `log_type_${n.id}`,
+                name: "_hrflow.nodeType",
+                value: "logger",
+                type: "string",
+              },
+            ],
+          },
+          includeOtherFields: true,
+          options: {},
+        },
+      };
     }
 
     case "database": {
@@ -561,10 +659,11 @@ case "email": {
   };
 }
 
-    case "cv_parse": {
-      const inputType = safeString(cfg.inputType, "file");
+    case "cv_parse":
+    case "cv_parser": {
       const cvUrl = safeString(cfg.cvUrl, "");
 
+      // CV parser expects multipart form data with 'url' field
       return {
         id: `hrflow_node_${n.id}`,
         name,
@@ -575,108 +674,105 @@ case "email": {
           method: "POST",
           url: "http://cv-parser:8000/parse",
           sendBody: true,
-          bodyParametersUi: {
-            parameter: [
+          contentType: "multipart-form-data",
+          bodyParameters: {
+            parameters: [
               {
-                name: inputType === "file" ? "file" : "url",
-                value: inputType === "file"
-                  ? `={{ $node["${name}"].binary.file }}`
-                  : cvUrl,
+                name: "url",
+                value: cvUrl,
               },
             ],
           },
           options: {
             timeout: 30000,
-            response: {
-              response: {
-                fullResponse: false,
-                responseFormat: "json",
-              },
-            },
           },
         },
       };
     }
 
     case "variable": {
+      // NOTE: n8n API strips jsCode from Code nodes - use Set node instead
       const variableName = safeString(cfg.variableName, "myVariable");
       const value = safeString(cfg.value, "");
 
-      const jsCode = [
-        "const items = $input.all();",
-        `const variableName = ${JSON.stringify(variableName)};`,
-        `const value = ${JSON.stringify(value)};`,
-        "// Set the variable in the output",
-        "return items.map(item => ({",
-        "  json: {",
-        "    ...item.json,",
-        "    [variableName]: value",
-        "  }",
-        "}));",
-      ].join("\n");
-
-      return makeCodeNode({
+      return {
         id: `hrflow_node_${n.id}`,
         name,
+        type: "n8n-nodes-base.set",
+        typeVersion: 3.4,
         position,
-        jsCode,
-      });
+        parameters: {
+          mode: "manual",
+          duplicateItem: false,
+          assignments: {
+            assignments: [
+              {
+                id: `assignment_${n.id}`,
+                name: variableName,
+                value: value,
+                type: "string",
+              },
+            ],
+          },
+          includeOtherFields: true,
+          options: {},
+        },
+      };
     }
 
     case "datetime": {
-      const operation = safeString(cfg.operation, "format");
+      // Use Set node to add datetime output
+      const operation = safeString(cfg.operation, "now");
       const format = safeString(cfg.format, "YYYY-MM-DD");
-      const amount = typeof cfg.amount === "number" ? cfg.amount : 1;
+      const outputField = safeString(cfg.outputField, "calculatedDate");
+      const value = typeof cfg.value === "number" ? cfg.value : 0;
       const unit = safeString(cfg.unit, "days");
 
-      let jsCode = "";
-
-      if (operation === "format") {
-        jsCode = [
-          "const items = $input.all();",
-          "const moment = require('moment');",
-          `const format = ${JSON.stringify(format)};`,
-          "return items.map(item => ({",
-          "  json: {",
-          "    ...item.json,",
-          "    formatted_date: moment().format(format)",
-          "  }",
-          "}));",
-        ].join("\n");
-      } else if (operation === "add" || operation === "subtract") {
-        const op = operation === "add" ? "add" : "subtract";
-        jsCode = [
-          "const items = $input.all();",
-          "const moment = require('moment');",
-          `const amount = ${amount};`,
-          `const unit = ${JSON.stringify(unit)};`,
-          "return items.map(item => ({",
-          "  json: {",
-          "    ...item.json,",
-          `    modified_date: moment().${op}(amount, unit).toISOString()`,
-          "  }",
-          "}));",
-        ].join("\n");
-      } else {
-        // parse operation
-        jsCode = [
-          "const items = $input.all();",
-          "const moment = require('moment');",
-          "return items.map(item => ({",
-          "  json: {",
-          "    ...item.json,",
-          "    parsed_date: moment(item.json.date_string).toISOString()",
-          "  }",
-          "}));",
-        ].join("\n");
+      // Build the expression based on operation
+      let dateExpression = "={{ $now.toISO() }}";
+      if (operation === "add") {
+        dateExpression = `={{ $now.plus({ ${unit}: ${value} }).toISO() }}`;
+      } else if (operation === "subtract") {
+        dateExpression = `={{ $now.minus({ ${unit}: ${value} }).toISO() }}`;
+      } else if (operation === "format") {
+        dateExpression = `={{ $now.toFormat('${format}') }}`;
       }
 
-      return makeCodeNode({
+      return {
         id: `hrflow_node_${n.id}`,
         name,
+        type: "n8n-nodes-base.set",
+        typeVersion: 3.4,
         position,
-        jsCode,
-      });
+        parameters: {
+          mode: "manual",
+          duplicateItem: false,
+          assignments: {
+            assignments: [
+              {
+                id: `dt_result_${n.id}`,
+                name: outputField,
+                value: dateExpression,
+                type: "string",
+              },
+              {
+                id: `dt_op_${n.id}`,
+                name: "_hrflow.datetime.operation",
+                value: operation,
+                type: "string",
+              },
+              {
+                id: `dt_type_${n.id}`,
+                name: "_hrflow.nodeType",
+                value: "datetime",
+                type: "string",
+              },
+            ],
+          },
+          includeOtherFields: true,
+          options: {},
+        },
+      };
     }
 
 
@@ -686,12 +782,8 @@ case "email": {
 
 
     default: {
-      return makeCodeNode({
-        id: `hrflow_node_${n.id}`,
-        name,
-        position,
-        jsCode: ["const items = $input.all();", "return items;"].join("\n"),
-      });
+      // Use NoOp for unknown node types to avoid Code node issues
+      return makeNoOpNode(`hrflow_node_${n.id}`, name, position);
     }
   }
 }

@@ -5,8 +5,14 @@ import { authenticate, adminOnly } from "../middleware/authMiddleware";
 
 const router = Router();
 
-// All settings routes require authentication and admin role
+// All settings routes require authentication
 router.use(authenticate);
+
+// Public routes (available to all authenticated users)
+// GET /api/settings/database-tables - Get available database tables for builder
+router.get("/database-tables", settingsController.getDatabaseTables);
+
+// Admin-only routes below this point
 router.use(adminOnly);
 
 // GET /api/settings/allow-list - Get all allowed domains

@@ -4,6 +4,31 @@ import * as allowListService from "../services/allowListService";
 import * as auditService from "../services/auditService";
 
 /**
+ * GET /api/settings/database-tables
+ * Get available database tables for the workflow builder
+ * These are the HR-related tables that can be queried in workflows
+ */
+export async function getDatabaseTables(_req: Request, res: Response) {
+  try {
+    // Return the list of user-facing tables from the schema
+    // These are the tables that workflow users should be able to query
+    const tables = [
+      { name: 'employees', label: 'Employees', description: 'Employee records and details' },
+      { name: 'candidates', label: 'Candidates', description: 'Job applicants and candidates' },
+      { name: 'users', label: 'Users', description: 'System users' },
+      { name: 'jobs', label: 'Jobs', description: 'Job positions and openings' },
+      { name: 'applications', label: 'Applications', description: 'Job applications' },
+      { name: 'resumes', label: 'Resumes', description: 'Candidate resumes' },
+      { name: 'email_templates', label: 'Email Templates', description: 'Email template library' },
+    ];
+    res.json({ data: tables });
+  } catch (error) {
+    console.error("Error fetching database tables:", error);
+    res.status(500).json({ error: "Failed to fetch database tables" });
+  }
+}
+
+/**
  * GET /api/settings/allow-list
  * Get all allowed domains
  */

@@ -71,9 +71,19 @@ const PremiumNode = ({ data, selected }: NodeProps) => {
                 </div>
             </div>
 
-            {/* Hidden Handles for connectivity */}
-            <Handle type="target" position={Position.Left} className="opacity-0 w-2 h-2" />
-            <Handle type="source" position={Position.Right} className="opacity-0 w-2 h-2" />
+            {/* Connection Handles - visible on hover for manual edge creation */}
+            <Handle 
+                type="target" 
+                position={Position.Left} 
+                className="!w-3 !h-3 !bg-slate-600 !border-2 !border-slate-400 opacity-0 group-hover:opacity-100 transition-opacity !-left-1.5"
+                style={{ top: '50%' }}
+            />
+            <Handle 
+                type="source" 
+                position={Position.Right} 
+                className="!w-3 !h-3 !bg-cyan-500 !border-2 !border-cyan-400 opacity-0 group-hover:opacity-100 transition-opacity !-right-1.5"
+                style={{ top: '50%' }}
+            />
         </div>
     );
 };

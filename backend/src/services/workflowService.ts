@@ -28,7 +28,8 @@ export type WorkflowNodeKind =
   | "variable"
   | "logger"
   | "datetime"
-  | "cv_parse";
+  | "cv_parse"
+  | "cv_parser";
 
 // 3) DTOs for nodes and edges (these are service-level types, not Prisma models)
 export interface WorkflowNodeDTO {

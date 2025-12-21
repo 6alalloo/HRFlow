@@ -43,7 +43,7 @@ const NodePicker: React.FC<NodePickerProps> = ({ isOpen, onClose, onSelect, posi
             initial={{ opacity: 0, scale: 0.9, x: -10 }}
             animate={{ opacity: 1, scale: 1, x: 0 }}
             exit={{ opacity: 0, scale: 0.9, x: -10 }}
-            className="bg-navy-900 border border-white/10 rounded-2xl shadow-2xl w-[320px] relative z-50" 
+            className="bg-navy-900 border border-white/10 rounded-2xl shadow-2xl w-[460px] relative z-50" 
             onClick={e => e.stopPropagation()}
             style={position ? style : {}}
         >
@@ -54,9 +54,9 @@ const NodePicker: React.FC<NodePickerProps> = ({ isOpen, onClose, onSelect, posi
                 </button>
             </div>
             
-            <div className="p-2 grid grid-cols-1 gap-1 max-h-[400px] overflow-y-auto custom-scrollbar">
+            <div className="p-3 grid grid-cols-2 gap-2 max-h-[360px] overflow-y-auto custom-scrollbar">
                 {NODE_TYPES.map(t => (
-                    <div key={t.kind} className="group relative flex items-center p-2 rounded-lg hover:bg-white/5 transition-all w-full">
+                    <div key={t.kind} className="group relative flex items-center p-2.5 rounded-lg hover:bg-white/5 transition-all">
                         {/* Main Button Area */}
                         <button
                             onClick={() => onSelect(t.kind)}
@@ -65,12 +65,12 @@ const NodePicker: React.FC<NodePickerProps> = ({ isOpen, onClose, onSelect, posi
                             <div className={`p-2 rounded-lg bg-white/5 group-hover:bg-white/10 transition-colors ${t.color}`}>
                                 <t.icon className="w-5 h-5" />
                             </div>
-                            <span className="text-sm font-medium text-slate-200 group-hover:text-white">{t.label}</span>
+                            <span className="text-sm font-medium text-slate-200 group-hover:text-white truncate">{t.label}</span>
                         </button>
 
                         {/* Info Icon & Tooltip Trigger */}
                         <div 
-                            className="relative ml-2 p-1"
+                            className="relative ml-1.5 p-1"
                             onMouseEnter={(e) => {
                                 const rect = e.currentTarget.getBoundingClientRect();
                                 setHoveredInfo({
@@ -81,7 +81,7 @@ const NodePicker: React.FC<NodePickerProps> = ({ isOpen, onClose, onSelect, posi
                             }}
                             onMouseLeave={() => setHoveredInfo(null)}
                         >
-                             <LuInfo className="w-4 h-4 text-slate-500 hover:text-blue-400 cursor-help" />
+                             <LuInfo className="w-3.5 h-3.5 text-slate-500 hover:text-blue-400 cursor-help" />
                         </div>
                     </div>
                 ))}

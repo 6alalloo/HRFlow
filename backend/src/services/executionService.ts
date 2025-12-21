@@ -4,6 +4,7 @@ import {
   callN8nExecute,
   upsertN8nWorkflow,
   activateN8nWorkflow,
+  getN8nExecutionForWorkflow,
 } from "./n8nService";
 import { compileToN8n } from "./n8nCompiler";
 import * as auditService from "./auditService";
@@ -76,7 +77,6 @@ function normalizeObject(input: unknown): Record<string, unknown> | null {
 }
 
 function looksLikeEmployee(obj: Record<string, unknown>): boolean {
-  // loose heuristic for demo payload
   return (
     typeof obj.email === "string" ||
     typeof obj.name === "string" ||
@@ -88,19 +88,15 @@ function looksLikeEmployee(obj: Record<string, unknown>): boolean {
 function buildDemoExecuteBody(input: unknown, triggerConfigFallback: Record<string, unknown> | null) {
   const obj = normalizeObject(input);
 
-  // Best case: { employee: {...} }
   if (obj && typeof obj.employee === "object" && obj.employee && !Array.isArray(obj.employee)) {
     return { employee: obj.employee as Record<string, unknown> };
   }
 
-  // Next: input itself looks like employee -> wrap it
   if (obj && looksLikeEmployee(obj)) {
     return { employee: obj };
   }
 
-  // Fallback: trigger node config might contain demo employee data
   if (triggerConfigFallback) {
-    // If trigger config already has employee, use it; else treat whole config as employee-ish
     const tc = triggerConfigFallback;
     if (typeof tc.employee === "object" && tc.employee && !Array.isArray(tc.employee)) {
       return { employee: tc.employee as Record<string, unknown> };
@@ -110,15 +106,12 @@ function buildDemoExecuteBody(input: unknown, triggerConfigFallback: Record<stri
     }
   }
 
-  // Final fallback: empty employee (keeps compiled flow from crashing)
   return { employee: {} };
 }
 
 function getWebhookBaseUrl(): string {
   const fromEnv = process.env.N8N_WEBHOOK_BASE_URL;
   if (fromEnv && fromEnv.trim().length > 0) return fromEnv.trim();
-
-  // Sensible default for local demo if not set explicitly
   return "http://localhost:5678";
 }
 
@@ -186,11 +179,18 @@ export async function getExecutionStepsByExecutionId(executionId: number) {
 export async function executeWorkflow(params: ExecuteWorkflowInput) {
   const { workflowId, triggerType, input } = params;
 
-  const workflow = await prisma.workflows.findUnique({
+  let workflow = await prisma.workflows.findUnique({
     where: { id: workflowId },
   });
   if (!workflow) throw makeCodedError("Workflow not found", "WORKFLOW_NOT_FOUND");
-  if (!workflow.is_active) throw makeCodedError("Workflow is not active", "WORKFLOW_INACTIVE");
+  
+  // Auto-activate workflow if not active (better UX for builder testing)
+  if (!workflow.is_active) {
+    workflow = await prisma.workflows.update({
+      where: { id: workflowId },
+      data: { is_active: true },
+    });
+  }
 
   const [nodesRaw, edgesRaw] = await Promise.all([
     prisma.workflow_nodes.findMany({
@@ -254,7 +254,6 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
   let finalStatus: ExecutionFinalStatus = "failed";
   let errorMessage: string | null = null;
 
-  
   const webhookPath = `/webhook/hrflow-${workflowId}-execute`;
   const webhookUrl = `${getWebhookBaseUrl()}${webhookPath}`;
 
@@ -301,7 +300,7 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
       where: { id: workflowId },
       data: {
         n8n_workflow_id: upsert.id,
-        n8n_webhook_path: webhookPath, // ✅ store the real unique path
+        n8n_webhook_path: webhookPath,
       },
     });
 
@@ -318,7 +317,6 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
 
     n8nResult = await callN8nExecute(webhookUrl, body);
 
-    // If we got here without throwing, we treat it as completed for MVP.
     finalStatus = "completed";
   } catch (err: unknown) {
     console.error("[ExecutionService] Engine failure:", err);
@@ -367,19 +365,123 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
   // MVP steps behavior: mark completed if execution completed, else skipped
   const stepsStatus: StepStatus = finalStatus === "completed" ? "completed" : "skipped";
 
-  const stepsData = nodesRaw.map((node, index) => ({
-    execution_id: updatedExecution.id,
-    node_id: node.id,
-    status: stepsStatus,
-    input_json: "{}",
-    output_json: "{}",
-    logs:
-      finalStatus === "completed"
-        ? `Executed node ${node.name ?? node.kind} (order ${index + 1}) via n8n`
-        : `Skipped node ${node.name ?? node.kind} (order ${index + 1}) due to engine status "${finalStatus}"`,
-    started_at: startTime,
-    finished_at: finishedTime,
-  }));
+  // Parse n8n result to extract output data
+  // n8n webhook returns array of items, each with json data
+  let n8nOutputData: Record<string, unknown> = {};
+  let n8nOutputRaw: unknown[] = [];
+
+  if (n8nResult) {
+    if (Array.isArray(n8nResult)) {
+      n8nOutputRaw = n8nResult;
+      // Get the last item's json data as the final output
+      const lastItem = n8nResult[n8nResult.length - 1];
+      if (lastItem && typeof lastItem === "object") {
+        if ("json" in lastItem && typeof lastItem.json === "object") {
+          n8nOutputData = lastItem.json as Record<string, unknown>;
+        } else {
+          n8nOutputData = lastItem as Record<string, unknown>;
+        }
+      }
+    } else if (typeof n8nResult === "object") {
+      n8nOutputData = n8nResult as Record<string, unknown>;
+    }
+  }
+
+  // Fetch per-node execution data from n8n API for accurate outputs
+  let perNodeOutputs: Map<string, Record<string, unknown>> = new Map();
+  const n8nWorkflowId = runContextPayload.engine.n8nWorkflowId;
+
+  if (finalStatus === "completed" && n8nWorkflowId) {
+    try {
+      // Small delay to ensure n8n has processed the execution
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      console.log("[ExecutionService] Fetching per-node outputs for n8n workflow:", n8nWorkflowId);
+      const executionData = await getN8nExecutionForWorkflow(n8nWorkflowId);
+
+      if (executionData?.nodeOutputs) {
+        console.log("[ExecutionService] Got execution data with", executionData.nodeOutputs.size, "node outputs");
+        for (const [nodeName, nodeData] of executionData.nodeOutputs) {
+          console.log("[ExecutionService] Node output:", nodeName, "->", JSON.stringify(nodeData.data).slice(0, 200));
+          perNodeOutputs.set(nodeName, nodeData.data);
+        }
+      } else {
+        console.log("[ExecutionService] No node outputs in execution data:", executionData);
+      }
+    } catch (err) {
+      console.warn("[ExecutionService] Could not fetch per-node outputs:", err);
+      // Fall back to webhook response data
+    }
+  }
+
+  // Build input data from trigger config or execution input
+  const triggerNode = nodesRaw.find((n) => n.kind === "trigger");
+  const triggerConfig = triggerNode
+    ? safeParseJson<Record<string, unknown>>(triggerNode.config_json, {})
+    : {};
+  const inputData = buildDemoExecuteBody(input, triggerConfig);
+
+  // Helper to get stable node name (matches n8nCompiler naming)
+  const getStableNodeName = (node: { id: number; name: string | null; kind: string }) => {
+    const name = node.name ?? node.kind;
+    return `HRFlow ${node.id} ${name}`.replace(/\s+/g, " ").trim();
+  };
+
+  const stepsData = nodesRaw.map((node, index) => {
+    // First node gets the trigger input, subsequent nodes get previous output
+    const stepInput = index === 0 ? inputData : n8nOutputData;
+
+    // Try to get node-specific output from n8n execution data
+    const stableNodeName = getStableNodeName(node);
+    let stepOutput: Record<string, unknown> = perNodeOutputs.get(stableNodeName) || {};
+
+    // If no per-node data available, fall back to webhook response
+    if (Object.keys(stepOutput).length === 0) {
+      // If n8n returned multiple items, try to map to node order
+      if (n8nOutputRaw.length > index) {
+        const nodeResult = n8nOutputRaw[index];
+        if (nodeResult && typeof nodeResult === "object") {
+          if ("json" in nodeResult && typeof (nodeResult as Record<string, unknown>).json === "object") {
+            stepOutput = (nodeResult as Record<string, unknown>).json as Record<string, unknown>;
+          } else {
+            stepOutput = nodeResult as Record<string, unknown>;
+          }
+        }
+      } else {
+        stepOutput = n8nOutputData;
+      }
+    }
+
+    // Build meaningful log message
+    let logMessage: string;
+    if (finalStatus === "completed") {
+      const hrflowMeta = stepOutput._hrflow as Record<string, unknown> | undefined;
+      if (hrflowMeta?.log) {
+        const logData = hrflowMeta.log as Record<string, unknown>;
+        logMessage = `[${logData.level ?? "info"}] ${logData.message ?? "Logged"}`;
+      } else if (node.kind === "trigger") {
+        logMessage = `Trigger executed - Employee: ${(stepOutput.employee as Record<string, unknown>)?.name ?? "Unknown"}`;
+      } else if (node.kind === "cv_parse" || node.kind === "cv_parser") {
+        const name = stepOutput.name || stepOutput.full_name || "Unknown";
+        logMessage = `CV parsed - Candidate: ${name}`;
+      } else {
+        logMessage = `Executed node ${node.name ?? node.kind} (order ${index + 1}) via n8n`;
+      }
+    } else {
+      logMessage = `Skipped node ${node.name ?? node.kind} (order ${index + 1}) due to engine status "${finalStatus}"`;
+    }
+
+    return {
+      execution_id: updatedExecution.id,
+      node_id: node.id,
+      status: stepsStatus,
+      input_json: JSON.stringify(stepInput),
+      output_json: JSON.stringify(stepOutput),
+      logs: logMessage,
+      started_at: startTime,
+      finished_at: finishedTime,
+    };
+  });
 
   if (stepsData.length > 0) {
     await prisma.execution_steps.createMany({ data: stepsData });

@@ -1,8 +1,8 @@
 import path from "path";
 import dotenv from "dotenv";
 
-// always load backend/.env (even if process is started from repo root)
-dotenv.config({ path: path.resolve(__dirname, "../.env") });
+// Load .env from project root (two directories up from dist/)
+dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
 import app from "./app";
 

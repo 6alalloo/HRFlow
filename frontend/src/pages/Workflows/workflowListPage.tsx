@@ -11,17 +11,53 @@ import {
 import type { WorkflowApi } from "../../api/workflows";
 import WorkflowSplitLayout from "./WorkflowSplitLayout";
 
-// Re-adding generic Modal for Run
-type RunModalProps = {
-  workflow: WorkflowApi | null;
-  isOpen: boolean;
-  inputText: string;
-  onInputTextChange: (value: string) => void;
-  onClose: () => void;
-  onConfirmRun: () => void;
-  isRunning: boolean;
-  error: string | null;
+// Employee input form state type
+type EmployeeFormData = {
+  name: string;
+  email: string;
+  department: string;
+  role: string;
+  startDate: string;
+  managerEmail: string;
 };
+
+const EMPTY_FORM: EmployeeFormData = {
+  name: "",
+  email: "",
+  department: "",
+  role: "",
+  startDate: "",
+  managerEmail: "",
+};
+
+const SAMPLE_DATA: EmployeeFormData = {
+  name: "John Doe",
+  email: "john.doe@company.com",
+  department: "Engineering",
+  role: "Software Engineer",
+  startDate: new Date().toISOString().split('T')[0],
+  managerEmail: "manager@company.com",
+};
+
+// Input field component - defined OUTSIDE of render
+const FormInput: React.FC<{
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+  placeholder: string;
+}> = ({ label, value, onChange, type = "text", placeholder }) => (
+  <div>
+    <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1.5">{label}</label>
+    <input
+      type={type}
+      className="w-full bg-black/30 text-sm text-white border border-white/10 rounded-lg px-3 py-2 focus:border-cyan-500/50 focus:outline-none transition-all placeholder:text-slate-600"
+      placeholder={placeholder}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  </div>
+);
 
 // Custom Delete Modal
 type DeleteModalProps = {
@@ -46,7 +82,7 @@ const DeleteConfirmationModal: React.FC<DeleteModalProps> = ({ workflow, isOpen,
                     </p>
                         
                     <div className="flex gap-3 justify-end">
-                            <button
+                        <button
                             onClick={onClose}
                             disabled={isDeleting}
                             className="px-4 py-2 text-slate-300 hover:text-white text-sm font-medium transition-colors"
@@ -67,17 +103,37 @@ const DeleteConfirmationModal: React.FC<DeleteModalProps> = ({ workflow, isOpen,
     );
 };
 
+// Execute Modal
+type RunModalProps = {
+  workflow: WorkflowApi | null;
+  isOpen: boolean;
+  formData: EmployeeFormData;
+  onFormChange: (data: EmployeeFormData) => void;
+  onClose: () => void;
+  onConfirmRun: () => void;
+  isRunning: boolean;
+  error: string | null;
+};
+
 const ExecuteWorkflowModal: React.FC<RunModalProps> = ({
   workflow,
   isOpen,
-  inputText,
-  onInputTextChange,
+  formData,
+  onFormChange,
   onClose,
   onConfirmRun,
   isRunning,
   error,
 }) => {
   if (!isOpen || !workflow) return null;
+
+  const handleFieldChange = (field: keyof EmployeeFormData, value: string) => {
+    onFormChange({ ...formData, [field]: value });
+  };
+
+  const fillSampleData = () => {
+    onFormChange(SAMPLE_DATA);
+  };
 
   return (
     <>
@@ -86,10 +142,13 @@ const ExecuteWorkflowModal: React.FC<RunModalProps> = ({
         onClick={onClose}
       />
 
-      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[1050] w-full max-w-lg">
+      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[1050] w-full max-w-md">
         <div className="bg-navy-900 text-white border border-white/10 rounded-xl shadow-2xl overflow-hidden">
           <div className="flex justify-between items-center p-4 border-b border-white/5">
-            <h5 className="text-lg font-bold">Run Workflow</h5>
+            <div>
+              <h5 className="text-lg font-bold">Run Workflow</h5>
+              <p className="text-xs text-slate-500">{workflow.name}</p>
+            </div>
             <button
               type="button"
               className="text-slate-400 hover:text-white transition-colors"
@@ -99,35 +158,79 @@ const ExecuteWorkflowModal: React.FC<RunModalProps> = ({
                 ✕
             </button>
           </div>
-          <div className="p-6">
-            <p className="mb-2 text-sm text-slate-300">
-              You are about to run the workflow: <br/>
-              <strong className="text-white text-base">{workflow.name}</strong>
-            </p>
-            <p className="text-xs text-slate-500 mb-4 font-mono">
-              ID: {workflow.id}
-            </p>
 
+          <div className="p-5 space-y-4">
             {error && (
-              <div className="mb-4 p-3 bg-rose-500/10 border border-rose-500/20 rounded text-rose-400 text-sm">
+              <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg text-rose-400 text-sm">
                 {error}
               </div>
             )}
 
-            <div className="mb-3">
-              <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Run input (JSON)</label>
-              <textarea
-                className="w-full bg-black/30 text-sm text-white border border-white/10 rounded-lg p-3 font-mono focus:border-cyan-500/50 focus:outline-none transition-all"
-                rows={7}
-                placeholder={`{\n  "name": "Sara Ali",\n  "email": "sara@company.com"\n}`}
-                value={inputText}
-                onChange={(e) => onInputTextChange(e.target.value)}
-              />
-              <div className="mt-1 text-[10px] text-slate-500">
-                This JSON is sent to the backend as the execution input.
+            {/* Quick Action */}
+            <div className="flex items-center justify-between bg-gradient-to-r from-cyan-500/10 to-blue-500/10 border border-cyan-500/20 rounded-lg p-3">
+              <div>
+                <p className="text-sm font-medium text-white">Use Sample Data</p>
+                <p className="text-[10px] text-slate-500">Fill with test employee info</p>
+              </div>
+              <button
+                type="button"
+                onClick={fillSampleData}
+                className="px-3 py-1.5 text-xs font-bold text-cyan-400 border border-cyan-500/30 rounded-lg hover:bg-cyan-500/10 transition-colors"
+              >
+                Fill Sample
+              </button>
+            </div>
+
+            {/* Employee Form */}
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <FormInput 
+                  label="Employee Name" 
+                  value={formData.name}
+                  onChange={(v) => handleFieldChange('name', v)}
+                  placeholder="John Doe" 
+                />
+                <FormInput 
+                  label="Email" 
+                  value={formData.email}
+                  onChange={(v) => handleFieldChange('email', v)}
+                  type="email" 
+                  placeholder="john@company.com" 
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <FormInput 
+                  label="Department" 
+                  value={formData.department}
+                  onChange={(v) => handleFieldChange('department', v)}
+                  placeholder="Engineering" 
+                />
+                <FormInput 
+                  label="Role / Title" 
+                  value={formData.role}
+                  onChange={(v) => handleFieldChange('role', v)}
+                  placeholder="Software Engineer" 
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <FormInput 
+                  label="Start Date" 
+                  value={formData.startDate}
+                  onChange={(v) => handleFieldChange('startDate', v)}
+                  type="date" 
+                  placeholder="" 
+                />
+                <FormInput 
+                  label="Manager Email" 
+                  value={formData.managerEmail}
+                  onChange={(v) => handleFieldChange('managerEmail', v)}
+                  type="email" 
+                  placeholder="manager@company.com" 
+                />
               </div>
             </div>
           </div>
+
           <div className="p-4 bg-black/20 border-t border-white/5 flex justify-end gap-3">
             <button
               type="button"
@@ -139,7 +242,7 @@ const ExecuteWorkflowModal: React.FC<RunModalProps> = ({
             </button>
             <button
               type="button"
-              className="px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white text-sm font-bold rounded-lg shadow-lg shadow-cyan-900/20 flex items-center gap-2 transition-all disabled:opacity-50"
+              className="px-5 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white text-sm font-bold rounded-lg shadow-lg shadow-cyan-900/20 flex items-center gap-2 transition-all disabled:opacity-50"
               onClick={onConfirmRun}
               disabled={isRunning}
             >
@@ -162,10 +265,10 @@ const WorkflowsListPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Run Modal State
+  // Run Modal State - now uses form data instead of JSON text
   const [selectedWorkflowForRun, setSelectedWorkflowForRun] = useState<WorkflowApi | null>(null);
   const [isRunModalOpen, setIsRunModalOpen] = useState(false);
-  const [runInputText, setRunInputText] = useState("");
+  const [runFormData, setRunFormData] = useState<EmployeeFormData>(EMPTY_FORM);
   const [isRunning, setIsRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
 
@@ -202,7 +305,7 @@ const WorkflowsListPage: React.FC = () => {
   // Handlers
   const handleOpenRunModal = (wf: WorkflowApi) => {
     setSelectedWorkflowForRun(wf);
-    setRunInputText("");
+    setRunFormData(EMPTY_FORM);
     setRunError(null);
     setIsRunModalOpen(true);
   };
@@ -271,29 +374,14 @@ const WorkflowsListPage: React.FC = () => {
   const handleConfirmRun = async () => {
     if (!selectedWorkflowForRun) return;
 
-    let inputObj: Record<string, unknown> | null = null;
-    const trimmed = runInputText.trim();
-    if (trimmed.length > 0) {
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-          setRunError('Run input must be a JSON object.');
-          return;
-        }
-        inputObj = parsed;
-      } catch {
-        setRunError("Invalid JSON.");
-        return;
-      }
-    }
+    // Convert form data to the employee object format
+    const hasAnyData = Object.values(runFormData).some(v => v.trim() !== '');
+    const inputObj = hasAnyData ? { employee: runFormData } : null;
 
     try {
       setIsRunning(true);
       setRunError(null);
       await executeWorkflow(selectedWorkflowForRun.id, inputObj, "manual");
-      // We don't need to capture execution here anymore as we rely on the RecentExecutions list update
-      // But we might want to trigger a refresh or show a toast?
-      // For now, simple success.
       setIsRunModalOpen(false);
     } catch (err) {
       console.error("[Workflows] Failed to run workflow", err);
@@ -316,12 +404,12 @@ const WorkflowsListPage: React.FC = () => {
             onDuplicate={handleDuplicate}
         />
 
-        {/* Reusing existing Modal Logic */}
+        {/* Execute Modal - now with form instead of JSON */}
         <ExecuteWorkflowModal
-            workflow={selectedWorkflowForRun} // Type mismatch fix might be needed if mapped differently, but WorkflowApi should match
+            workflow={selectedWorkflowForRun}
             isOpen={isRunModalOpen}
-            inputText={runInputText}
-            onInputTextChange={setRunInputText}
+            formData={runFormData}
+            onFormChange={setRunFormData}
             onClose={handleCloseModal}
             onConfirmRun={handleConfirmRun}
             isRunning={isRunning}

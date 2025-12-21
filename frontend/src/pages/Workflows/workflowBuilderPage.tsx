@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import * as dagre from 'dagre';
-import { FiPlay, FiCheck, FiCopy, FiLink } from 'react-icons/fi';
+import { FiPlay, FiCheck, FiCopy, FiLink, FiAlertCircle } from 'react-icons/fi';
 import { LuLayoutTemplate, LuChevronDown, LuUsers, LuServer, LuTriangleAlert } from 'react-icons/lu';
 
 import {
@@ -82,6 +82,85 @@ const CustomEdge = ({
   );
 };
 
+// --- SUGGESTED EDGE (Dashed, clickable to create connection) ---
+const SuggestedEdge = ({
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  data,
+}: EdgeProps) => {
+  const [edgePath, labelX, labelY] = getBezierPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+  });
+
+  const handleClick = () => {
+    if (data?.onConnect) {
+      data.onConnect();
+    }
+  };
+
+  return (
+    <>
+      {/* Invisible wider path for easier clicking */}
+      <path
+        d={edgePath}
+        fill="none"
+        stroke="transparent"
+        strokeWidth={20}
+        style={{ cursor: 'pointer' }}
+        onClick={handleClick}
+      />
+      {/* Visible dashed path */}
+      <path
+        d={edgePath}
+        fill="none"
+        stroke="#475569"
+        strokeWidth={2}
+        strokeDasharray="8,4"
+        style={{ opacity: 0.6, pointerEvents: 'none' }}
+      />
+      {/* Plus button in the middle */}
+      <foreignObject
+        x={labelX - 12}
+        y={labelY - 12}
+        width={24}
+        height={24}
+        style={{ overflow: 'visible', cursor: 'pointer' }}
+        onClick={handleClick}
+      >
+        <div
+          style={{
+            width: 24,
+            height: 24,
+            borderRadius: '50%',
+            backgroundColor: '#1e293b',
+            border: '2px solid #475569',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#94a3b8',
+            fontSize: 16,
+            fontWeight: 'bold',
+            transition: 'all 0.2s',
+          }}
+          className="hover:bg-cyan-600 hover:border-cyan-500 hover:text-white"
+          title="Click to connect these nodes"
+        >
+          +
+        </div>
+      </foreignObject>
+    </>
+  );
+};
+
 const nodeTypesMap = {
   hrflow: PremiumNode,
   ghost: GhostNode,
@@ -89,6 +168,7 @@ const nodeTypesMap = {
 
 const edgeTypes = {
   custom: CustomEdge,
+  suggested: SuggestedEdge,
 };
 
 
@@ -181,6 +261,7 @@ const WorkflowBuilderContent: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [showRunConfirmation, setShowRunConfirmation] = useState<boolean>(false);
+  const [runError, setRunError] = useState<string | null>(null);
   const [copiedWebhook, setCopiedWebhook] = useState<boolean>(false);
 
   const [selectedNodeId, setSelectedNodeId] = useState<number | null>(null);
@@ -284,7 +365,16 @@ const WorkflowBuilderContent: React.FC = () => {
 
       // 2. Identify Leaves (Nodes with no outgoing edges)
       const sourceIds = new Set(backendEdges.map(e => getFromNodeId(e)));
+      const targetIds = new Set(backendEdges.map(e => getToNodeId(e)));
       const leafNodes = backendNodes.filter(n => !sourceIds.has(n.id));
+
+      // 2b. Identify orphaned nodes for suggested edges
+      // Orphan sources: nodes with no outgoing edges (INCLUDING trigger - it can be a source)
+      const orphanSources = backendNodes.filter(n => !sourceIds.has(n.id));
+      // Orphan targets: nodes with no incoming edges (EXCLUDING trigger - it shouldn't have incoming edges)
+      const orphanTargets = backendNodes.filter(n => 
+          !targetIds.has(n.id) && n.kind !== 'trigger'
+      );
 
       // 3. Create Ghost Nodes for Leaves
       const ghostNodes: RFNode<WorkflowNodeData>[] = leafNodes.map(leaf => ({
@@ -313,9 +403,69 @@ const WorkflowBuilderContent: React.FC = () => {
           style: { stroke: '#38bdf8', strokeDasharray: '5,5', opacity: 0.5 }, // Blue-ish for ghost connection
       }));
 
+      // 4b. Create Suggested Edges between orphan sources and targets
+      // Simple heuristic: if there's exactly one orphan source and one orphan target, suggest connection
+      // More complex: suggest based on Y-position proximity
+      const suggestedEdges: Edge[] = [];
+      
+      if (orphanSources.length > 0 && orphanTargets.length > 0) {
+          // For each orphan source, find the closest orphan target by Y position
+          for (const source of orphanSources) {
+              // Don't suggest if this source already has a ghost node that makes sense
+              // Find the closest target
+              let closestTarget: WorkflowGraphNode | null = null;
+              let closestDist = Infinity;
+              
+              for (const target of orphanTargets) {
+                  // Skip if it's the same node
+                  if (source.id === target.id) continue;
+                  
+                  // Calculate distance (prioritize Y proximity for horizontal flow)
+                  const dist = Math.abs((source.pos_y || 0) - (target.pos_y || 0)) + 
+                               Math.abs((source.pos_x || 0) - (target.pos_x || 0)) * 0.1;
+                  
+                  if (dist < closestDist) {
+                      closestDist = dist;
+                      closestTarget = target;
+                  }
+              }
+              
+              if (closestTarget && closestDist < 500) { // Only suggest if reasonably close
+                  const fromId = source.id;
+                  const toId = closestTarget.id;
+                  
+                  suggestedEdges.push({
+                      id: `suggested-${fromId}-${toId}`,
+                      source: String(fromId),
+                      target: String(toId),
+                      type: 'suggested',
+                      data: {
+                          onConnect: async () => {
+                              if (!state.workflowId) return;
+                              try {
+                                  beginSave();
+                                  await createWorkflowEdge(state.workflowId, {
+                                      fromNodeId: fromId,
+                                      toNodeId: toId,
+                                  });
+                                  const graph = await fetchWorkflowGraph(state.workflowId);
+                                  setState(prev => ({ ...prev, nodes: graph.nodes, edges: graph.edges }));
+                                  refreshRef.current(graph.nodes, graph.edges);
+                              } catch (err) {
+                                  console.error("Failed to create suggested edge:", err);
+                              } finally {
+                                  endSave();
+                              }
+                          }
+                      }
+                  });
+              }
+          }
+      }
+
       // 5. Run Layout (Only if needed)
       const allNodes = [...realNodes, ...ghostNodes];
-      const allEdges = [...realRfEdges, ...ghostEdges];
+      const allEdges = [...realRfEdges, ...ghostEdges, ...suggestedEdges];
 
       // Check if any real node has a non-zero position (meaning it's been moved/saved)
       const hasPositions = realNodes.some(n => n.position.x !== 0 || n.position.y !== 0);
@@ -345,7 +495,7 @@ const WorkflowBuilderContent: React.FC = () => {
           setRfNodes(allNodes);
           setRfEdges(allEdges);
       }
-  }, [setRfNodes, setRfEdges, mapToReactFlowEdge]);
+  }, [setRfNodes, setRfEdges, mapToReactFlowEdge, state.workflowId, beginSave, endSave]);
 
   // Keep the ref updated
   useEffect(() => {
@@ -472,6 +622,7 @@ const WorkflowBuilderContent: React.FC = () => {
     try {
       setIsRunning(true);
       setShowRunConfirmation(false);
+      setRunError(null);
 
       const input = getRunInputFromTriggerNode();
 
@@ -481,7 +632,8 @@ const WorkflowBuilderContent: React.FC = () => {
       }
     } catch (e: unknown) {
       console.error("[WorkflowBuilderPage] Failed to run workflow:", e);
-      alert("Failed to run workflow. Check console for details.");
+      const errorMessage = e instanceof Error ? e.message : "An unexpected error occurred";
+      setRunError(errorMessage);
     } finally {
       setIsRunning(false);
     }
@@ -658,7 +810,6 @@ const WorkflowBuilderContent: React.FC = () => {
       if (first.type === 'hrflow') {
         const idNum = Number(first.id);
         setSelectedNodeId(idNum);
-
       } else {
         setSelectedNodeId(null);
       }
@@ -670,6 +821,9 @@ const WorkflowBuilderContent: React.FC = () => {
   const handleNodeSelect = async (kind: string) => {
       setNodePickerOpen(false);
       if (!state.workflowId) return;
+
+      // Track if this is the first node being added
+      const isFirstNode = state.nodes.length === 0;
 
       try {
           beginSave();
@@ -689,6 +843,12 @@ const WorkflowBuilderContent: React.FC = () => {
                  posX = parent.pos_x + 300;
                  posY = parent.pos_y;
              }
+          }
+
+          // For the first node, place it at a more centered position
+          if (isFirstNode) {
+              posX = 200;
+              posY = 200;
           }
 
           // 1. Create Node (backend positions now used since we skip auto-layout often)
@@ -711,6 +871,13 @@ const WorkflowBuilderContent: React.FC = () => {
           const graph = await fetchWorkflowGraph(state.workflowId);
           setState(prev => ({ ...prev, nodes: graph.nodes, edges: graph.edges })); 
           refreshRef.current(graph.nodes, graph.edges);
+
+          // 4. If first node, center and zoom out to show proper context
+          if (isFirstNode) {
+              setTimeout(() => {
+                  fitView({ padding: 0.5, maxZoom: 0.85, duration: 400 });
+              }, 150);
+          }
 
       } catch (e) {
           console.error("Failed to add node", e);
@@ -960,33 +1127,31 @@ const WorkflowBuilderContent: React.FC = () => {
                 onDelete={async (nodeId) => {
                      if (!state.workflowId) return;
 
-                     // 1. Optimistic Backend State Update
+                     // 1. Calculate new state
                      const newNodes = state.nodes.filter(n => n.id !== nodeId);
                      const newEdges = state.edges.filter(e => e.from_node_id !== nodeId && e.to_node_id !== nodeId);
 
+                     // 2. Update backend state
                      setState(prev => ({
                         ...prev,
                         nodes: newNodes,
                         edges: newEdges
                      }));
 
-                     // 2. Optimistic Visual Update (Crucial fix for "node still visible")
-                     setRfNodes(prev => prev.filter(n => n.id !== String(nodeId)));
-                     setRfEdges(prev => prev.filter(e => e.source !== String(nodeId) && e.target !== String(nodeId)));
+                     // 3. Refresh visual graph to recalculate ghost nodes and suggested edges
+                     refreshRef.current(newNodes, newEdges);
 
                      try {
                          beginSave();
-                         // 3. Backend Call
+                         // 4. Backend Call
                          await import('../../api/workflows').then(api => api.deleteWorkflowNode(state.workflowId!, nodeId));
-                         /*
-                            Values are already updated optimistically.
-                            If we want to be safe, we could re-fetch, but that causes a flicker.
-                            Optimistic is better for UX.
-                         */
                      } catch(e) {
                          console.error("Delete failed", e);
                          alert("Failed to delete node");
-                         // Revert on failure (optional but good practice)
+                         // Revert on failure - refetch from server
+                         const graph = await fetchWorkflowGraph(state.workflowId!);
+                         setState(prev => ({ ...prev, nodes: graph.nodes, edges: graph.edges }));
+                         refreshRef.current(graph.nodes, graph.edges);
                      } finally {
                          endSave();
                      }
@@ -1025,6 +1190,89 @@ const WorkflowBuilderContent: React.FC = () => {
                             >
                                 <FiPlay className="w-4 h-4" />
                                 {isRunning ? 'Running...' : 'Confirm Run'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Execution Error Modal */}
+            {runError && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                    <div className="bg-navy-900 border border-red-500/30 rounded-2xl p-6 w-[450px] shadow-2xl">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
+                                <FiAlertCircle className="w-5 h-5 text-red-400" />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-white">Execution Failed</h3>
+                                <p className="text-xs text-slate-400">The workflow could not be executed</p>
+                            </div>
+                        </div>
+                        <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 mb-4">
+                            <p className="text-sm text-red-200 break-words">{runError}</p>
+                        </div>
+                        
+                        {/* Contextual Tips Based on Error Type */}
+                        {runError.includes('not active') && (
+                            <p className="text-xs text-slate-400 mb-4">
+                                <strong className="text-slate-300">Tip:</strong> Workflows are now auto-activated when run from the builder.
+                                If this error persists, check the workflow settings.
+                            </p>
+                        )}
+                        {runError.includes('no nodes') && (
+                            <p className="text-xs text-slate-400 mb-4">
+                                <strong className="text-slate-300">Tip:</strong> Add at least one node to your workflow before running.
+                            </p>
+                        )}
+                        {(runError.includes('n8n') || runError.includes('N8N') || runError.includes('engine')) && (
+                            <p className="text-xs text-slate-400 mb-4">
+                                <strong className="text-slate-300">Tip:</strong> The automation engine (n8n) may be unavailable.
+                                Check that n8n is running and properly configured in your environment.
+                            </p>
+                        )}
+                        {runError.includes('unreachable') && (
+                            <p className="text-xs text-slate-400 mb-4">
+                                <strong className="text-slate-300">Tip:</strong> Cannot connect to the automation engine.
+                                Make sure the n8n service is running (docker ps).
+                            </p>
+                        )}
+                        {runError.includes('API_KEY') && (
+                            <p className="text-xs text-slate-400 mb-4">
+                                <strong className="text-slate-300">Tip:</strong> Missing N8N_API_KEY in backend configuration.
+                                Add it to your .env file and restart the server.
+                            </p>
+                        )}
+                        {runError.includes('401') && (
+                            <p className="text-xs text-slate-400 mb-4">
+                                <strong className="text-slate-300">Tip:</strong> n8n authentication failed.
+                                Verify your N8N_API_KEY is correct.
+                            </p>
+                        )}
+                        {runError.includes('500') && (
+                            <p className="text-xs text-slate-400 mb-4">
+                                <strong className="text-slate-300">Tip:</strong> The automation engine encountered an internal error.
+                                Check n8n logs for details (docker logs n8n).
+                            </p>
+                        )}
+                        
+                        <div className="flex justify-end gap-2">
+                            <button
+                                onClick={() => setRunError(null)}
+                                className="px-4 py-2 rounded-lg text-sm font-medium bg-slate-700 text-white hover:bg-slate-600 transition-colors"
+                            >
+                                Close
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setRunError(null);
+                                    handleConfirmRun();
+                                }}
+                                disabled={isRunning}
+                                className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-500 transition-colors flex items-center gap-2 disabled:opacity-50"
+                            >
+                                <FiPlay className="w-3.5 h-3.5" />
+                                Retry
                             </button>
                         </div>
                     </div>

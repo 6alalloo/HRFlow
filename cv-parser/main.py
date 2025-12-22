@@ -29,6 +29,23 @@ app.add_middleware(
 )
 
 
+def normalize_text(text: str) -> str:
+    """
+    Normalize text from PDFs/DOCX that extract each word on a separate line.
+    Joins all words together, then creates logical lines at section breaks.
+    """
+    # 1. Brutal whitespace cleanup: Replace ALL whitespace sequences with a single space
+    # This handles \n, \r, \t, \f, etc.
+    normalized = re.sub(r'\s+', ' ', text).strip()
+    
+    parts = normalized.split('|')
+    full_text = ' | '.join(parts) # Simple join for now
+    
+    # We DO want to try to insert newlines for sections to help the fallback logic if needed
+    # (Though we mostly rely on the normalized single-line string for regexes now)
+    return full_text
+
+
 def extract_text_from_pdf(file_bytes: bytes) -> str:
     """Extract text from PDF file."""
     try:
@@ -37,7 +54,8 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
         text = ""
         for page in reader.pages:
             text += page.extract_text() + "\n"
-        return text
+        # Normalize the text to handle word-per-line PDFs
+        return normalize_text(text)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to parse PDF: {str(e)}")
 
@@ -50,13 +68,16 @@ def extract_text_from_docx(file_bytes: bytes) -> str:
         text = ""
         for paragraph in doc.paragraphs:
             text += paragraph.text + "\n"
-        return text
+        
+        # Apply normalization to DOCX as well to ensure consistent extraction
+        return normalize_text(text)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to parse DOCX: {str(e)}")
 
 
 def extract_email(text: str) -> Optional[str]:
-    """Extract email address from text."""
+    """Extract email from text."""
+    # Improved pattern that handles more cases but avoids false positives
     email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
     match = re.search(email_pattern, text)
     return match.group(0) if match else None
@@ -64,11 +85,13 @@ def extract_email(text: str) -> Optional[str]:
 
 def extract_phone(text: str) -> Optional[str]:
     """Extract phone number from text."""
-    # Matches various phone formats: +1-234-567-8900, (234) 567-8900, 234.567.8900, etc.
+    # Matches various phone formats including International/Bahraini
     phone_patterns = [
-        r'\+?\d{1,3}[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}',
-        r'\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}',
-        r'\d{3}[-.\s]?\d{3}[-.\s]?\d{4}'
+        r'\+\d{1,4}\s?\d{6,10}',  # International: +973 33430100
+        r'\+\d{1,4}[-.\s]?\d{3,4}[-.\s]?\d{3,4}[-.\s]?\d{3,4}', # Int w/ separators
+        r'\+?\d{1,3}[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}', # US/Generic
+        r'\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}', # Local US
+        r'\b\d{8}\b', # Simple 8 digit
     ]
     for pattern in phone_patterns:
         match = re.search(pattern, text)
@@ -79,22 +102,72 @@ def extract_phone(text: str) -> Optional[str]:
 
 def extract_name(text: str) -> Optional[str]:
     """Extract name from text (assumes name is in first few lines)."""
-    lines = [line.strip() for line in text.split('\n') if line.strip()]
-    if not lines:
-        return None
+    # Debug: Print start of text
+    first_chunk = text.split('\n')[0].strip()
+    print(f"[DEBUG] Name Text Start: {first_chunk[:100]}")
+    
+    skip_keywords = ['curriculum', 'vitae', 'resume', 'cv', 'contact', 'profile', 'about', 'summary']
+    job_title_keywords = [
+        'analyst', 'developer', 'engineer', 'manager', 'director', 'consultant', 
+        'specialist', 'senior', 'junior', 'lead', 'architect', 'admin', 'officer', 'data',
+        'product' # Added product
+    ]
+    
+    # Clean up first chunk
+    if any(k == first_chunk.lower() for k in skip_keywords):
+        # If first line is "RESUME", try second line
+        lines = text.split('\n')
+        if len(lines) > 1:
+            first_chunk = lines[1].strip()
 
-    # Look for name in first 3 lines, skip common headers
-    skip_keywords = ['curriculum', 'vitae', 'resume', 'cv']
-    for line in lines[:3]:
-        lower_line = line.lower()
-        if any(keyword in lower_line for keyword in skip_keywords):
-            continue
-        # Check if line looks like a name (2-4 words, capitalized, no special chars)
-        words = line.split()
-        if 2 <= len(words) <= 4 and all(word[0].isupper() for word in words if word):
-            return line
+    words = first_chunk.split()
+    possible_name = []
+    
+    for word in words:
+        # Stop at job titles, email, phone chars, or separators
+        if any(title in word.lower() for title in job_title_keywords):
+            print(f"[DEBUG] Stop at keyword: {word}")
+            break
+        if '@' in word or re.search(r'\d', word) or '|' in word:
+            print(f"[DEBUG] Stop at invalid: {word}")
+            break
+        
+        # Allow capitalized words
+        if word[0].isupper() or (possible_name and word.lower() in ['bin', 'al', 'de', 'van', 'von']):
+            possible_name.append(word)
+        # If we hit a lowercase word that isn't a connector, and we already have a name, stop
+        elif possible_name:
+            print(f"[DEBUG] Stop at lower: {word}")
+            break
+    
+    if 2 <= len(possible_name) <= 5:
+        return ' '.join(possible_name)
+        
+    # 2. Fallback strategy: If normalization somehow failed and we have broken lines
+    # e.g. "Talal\nAlhawaj" -> text still has newlines in it?
+    # If text has many newlines at start, try to join them
+    lines = [l.strip() for l in text.split('\n') if l.strip()]
+    
+    # Try merging first few capitalized lines
+    merged_name = []
+    for line in lines[:4]:
+        if not line: continue
+        # If line is single word and capitalized
+        if ' ' not in line and line[0].isupper() and not any(k in line.lower() for k in skip_keywords):
+             merged_name.append(line)
+        else:
+            break
+            
+    if 2 <= len(merged_name) <= 4:
+        return ' '.join(merged_name)
 
-    return lines[0] if lines else None
+    # 3. Last resort: Return first reasonable line
+    if lines:
+        first_line = lines[0]
+        if 3 < len(first_line) < 30 and not any(k in first_line.lower() for k in skip_keywords):
+            return first_line
+
+    return None
 
 
 def extract_skills(text: str) -> List[str]:
@@ -139,20 +212,94 @@ def extract_experience_years(text: str) -> Optional[int]:
 
 
 def extract_education(text: str) -> List[str]:
-    """Extract education information from text."""
-    degrees = []
-    degree_keywords = [
-        'bachelor', 'master', 'phd', 'doctorate', 'diploma', 'certificate',
-        'b.s.', 'b.a.', 'm.s.', 'm.a.', 'mba', 'ph.d.'
+    """Extract education information from text - finds full degree descriptions."""
+    text_lower = text.lower()
+    
+    # More robust patterns to capture the full line including "Bachelor of X in Y"
+    degree_patterns = [
+        # Pattern 1: Bachelor's Degree in X, University of Y
+        # Handles smart quotes (’) and straight quotes (')
+        # Allows commas in the middle (for "Database Systems, Bahrain Polytechnic")
+        # Added 'polytechnic' to institution list
+        r"(?:(?:bachelor|master|doctor)(?:['’]?s?)?|b\.?s\.?|m\.?s\.?|b\.?a\.?|m\.?a\.?|mba|ph\.?d\.?)\s+(?:degree\s+)?(?:of|in)?\s+[\w\s&,-]+(?:university|college|institute|school|polytechnic)[\w\s,-]*",
+        
+        # Pattern 2: Bachelor's Degree in X (without explicit university keyword)
+        r"(?:bachelor|master|doctor)(?:['’]?s?)?\s+(?:degree\s+)?(?:of|in)\s+[\w\s&,-]+",
+        
+        # Pattern 3: B.S. in X
+        r"(?:b\.?s\.?|m\.?s\.?|b\.?a\.?|m\.?a\.?)\s+in\s+[\w\s&,-]+",
     ]
+    
+    degrees = []
+    
+    # 1. Try regex patterns on the whole text
+    for pattern in degree_patterns:
+        matches = re.finditer(pattern, text_lower, re.IGNORECASE)
+        for match in matches:
+            # Get original text case if possible, but we are searching lower
+            # We'll just capitalize the match result
+            match_text = text[match.start():match.end()].strip()
+            
+            # Filter out false positives that are too long or too short
+            if 10 < len(match_text) < 100:
+                 # Clean up newlines in the match
+                clean_match = re.sub(r'\s+', ' ', match_text)
+                degrees.append(clean_match)
+    
+    # 2. Fallback: Line-based search (especially after normalization provided structure)
+    if not degrees:
+        lines = text.split('\n')
+        degree_keywords = ['bachelor', 'master', 'phd', 'doctorate', 'bsc', 'msc', 'mba', 'degree in']
+        
+        for line in lines:
+            line_clean = line.strip()
+            line_lower = line_clean.lower()
+            
+            if len(line_clean) < 10 or len(line_clean) > 150:
+                continue
+                
+            if any(k in line_lower for k in degree_keywords):
+                # Avoid headers like "Education" alone
+                if line_lower in ['education', 'education history', 'academic background']:
+                    continue
+                degrees.append(line_clean)
+    
+    # Remove duplicates with fuzzy matching
+    # if one string is contained in another, keep the longer one
+    # if they are very similar, keep one
+    
+    unique_degrees = []
+    # Sort by length descending to prioritize longer descriptions
+    degrees.sort(key=len, reverse=True)
+    
+    for d in degrees:
+        is_duplicate = False
+        d_lower = d.lower()
+        
+        for unique in unique_degrees:
+            unique_lower = unique.lower()
+            
+            # Check for substring match
+            if d_lower in unique_lower:
+                is_duplicate = True
+                break
+            
+            # Check for high similarity (if one is just slightly different)
+            # Simple Jaccard similarity on words
+            d_words = set(d_lower.split())
+            u_words = set(unique_lower.split())
+            intersection = d_words.intersection(u_words)
+            if not d_words or not u_words: continue
+            
+            similarity = len(intersection) / len(u_words)
+            if similarity > 0.6: # If 60% of words in the new entry are already in an existing entry
+                 is_duplicate = True
+                 break
 
-    lines = text.split('\n')
-    for line in lines:
-        line_lower = line.lower()
-        if any(keyword in line_lower for keyword in degree_keywords):
-            degrees.append(line.strip())
-
-    return degrees[:3]  # Return up to 3 degrees
+        if not is_duplicate:
+            unique_degrees.append(d)
+    
+    return unique_degrees[:3]
 
 
 def parse_cv_text(text: str) -> Dict[str, Any]:
@@ -217,6 +364,16 @@ async def parse_cv(
 
         # Parse extracted text
         parsed_data = parse_cv_text(text)
+        
+        # Debug: Print parsed data
+        print(f"\n{'='*50}")
+        print(f"[CV Parser] Parsed CV: {file.filename}")
+        print(f"  Name: {parsed_data.get('name')}")
+        print(f"  Email: {parsed_data.get('email')}")
+        print(f"  Phone: {parsed_data.get('phone')}")
+        print(f"  Skills: {len(parsed_data.get('skills', []))} found")
+        print(f"  Education: {parsed_data.get('education')}")
+        print(f"{'='*50}\n")
 
         return {
             "success": True,

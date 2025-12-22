@@ -11,7 +11,8 @@
       "Bash(tasklist:*)",
       "Bash(netstat:*)",
       "Bash(findstr:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(dir:*)"
     ]
   }
 }

@@ -3,12 +3,13 @@ import { motion } from 'framer-motion';
 import {
     LuX, LuSave, LuTrash2, LuPlus, LuMinus, LuUpload, LuFile,
     LuMail, LuUser, LuCalendar, LuClock, LuDatabase, LuGlobe,
-    LuMessageSquare, LuZap, LuArrowRight, LuInfo, LuCheck, LuLink
+    LuMessageSquare, LuZap, LuArrowRight, LuInfo, LuCheck, LuLink, LuLoader
 } from 'react-icons/lu';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { CONDITION_OPERATORS, CV_PARSER_FIELDS } from '../../types/nodeConfigs';
 import { fetchDatabaseTables, type DatabaseTable } from '../../api/workflows';
+import { apiUploadFile } from '../../api/apiClient';
 import type { NodeKind } from '../../types/nodeConfigs';
 
 // Node structure from the workflow builder
@@ -330,6 +331,11 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, onClose, onUpda
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [databaseTables, setDatabaseTables] = useState<DatabaseTable[]>([]);
     const firstInputRef = React.useRef<HTMLInputElement>(null);
+
+    // CV parser file upload state (always declared, conditionally used)
+    const [isUploading, setIsUploading] = useState(false);
+    const [uploadError, setUploadError] = useState<string | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Sync localConfig when node changes - this is intentional state synchronization
     const nodeId = node?.id;
@@ -899,8 +905,25 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, onClose, onUpda
 
             case 'cv_parser': {
                 const extractFields = getStringArray(localConfig, 'extractFields');
-                const inputMethod = getString(localConfig, 'inputMethod', 'url');
-                const cvUrl = getString(localConfig, 'cvUrl', '');
+                const fileId = getString(localConfig, 'fileId', '');
+                const fileName = getString(localConfig, 'fileName', '');
+
+                const handleFileUpload = async (file: File) => {
+                    setIsUploading(true);
+                    setUploadError(null);
+                    try {
+                        const response = await apiUploadFile('/files/upload', file);
+                        if (response.success) {
+                            handleChange('fileId', response.file.id);
+                            handleChange('fileName', response.file.originalName);
+                        }
+                    } catch (err) {
+                        setUploadError(err instanceof Error ? err.message : 'Upload failed');
+                    } finally {
+                        setIsUploading(false);
+                    }
+                };
+
                 return (
                     <div className="space-y-5">
                         <InfoBox variant="info">
@@ -914,36 +937,65 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, onClose, onUpda
                         </InfoBox>
 
                         <div className="space-y-4 border-t border-white/5 pt-4">
-                            <h3 className="text-sm font-bold text-white">How will you provide the CV?</h3>
+                            <h3 className="text-sm font-bold text-white">Upload CV/Resume</h3>
 
-                            <div className="space-y-2">
-                                <QuickActionButton
-                                    label="URL to CV File"
-                                    description="Provide a direct link to a PDF or DOCX file"
-                                    icon={<LuLink className="w-4 h-4" />}
-                                    onClick={() => handleChange('inputMethod', 'url')}
-                                    selected={inputMethod === 'url'}
-                                />
-                                <QuickActionButton
-                                    label="Upload File"
-                                    description="Upload a CV/resume file directly (coming soon)"
-                                    icon={<LuUpload className="w-4 h-4" />}
-                                    onClick={() => {}}
-                                    selected={false}
-                                    disabled
-                                />
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept=".pdf,.docx,.doc"
+                                onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) handleFileUpload(file);
+                                }}
+                                className="hidden"
+                            />
+
+                            <div
+                                onClick={() => !isUploading && fileInputRef.current?.click()}
+                                className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${
+                                    isUploading
+                                        ? 'border-cyan-glow/50 bg-cyan-glow/5'
+                                        : fileId
+                                            ? 'border-emerald-500/30 bg-emerald-500/5'
+                                            : 'border-white/20 hover:border-white/40 hover:bg-white/5'
+                                }`}
+                            >
+                                <div className="flex flex-col items-center gap-3">
+                                    {isUploading ? (
+                                        <>
+                                            <div className="w-12 h-12 rounded-xl bg-cyan-glow/20 flex items-center justify-center">
+                                                <LuLoader className="w-6 h-6 text-cyan-glow animate-spin" />
+                                            </div>
+                                            <div className="text-sm text-cyan-glow">Uploading...</div>
+                                        </>
+                                    ) : fileId && fileName ? (
+                                        <>
+                                            <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center">
+                                                <LuFile className="w-6 h-6 text-emerald-400" />
+                                            </div>
+                                            <div>
+                                                <div className="text-sm font-medium text-white">{fileName}</div>
+                                                <div className="text-xs text-slate-500 mt-1">Click to change file</div>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div className="w-12 h-12 rounded-xl bg-white/10 flex items-center justify-center">
+                                                <LuUpload className="w-6 h-6 text-slate-400" />
+                                            </div>
+                                            <div>
+                                                <div className="text-sm font-medium text-white">Drop file here or click to upload</div>
+                                                <div className="text-xs text-slate-500 mt-1">PDF or DOCX (max 10MB)</div>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
                             </div>
 
-                            {inputMethod === 'url' && (
-                                <FormField label="CV File URL" hint="Direct link to a PDF or DOCX file (e.g., Google Drive, Dropbox)">
-                                    <input
-                                        type="url"
-                                        value={cvUrl}
-                                        onChange={(e) => handleChange('cvUrl', e.target.value)}
-                                        placeholder="https://example.com/resume.pdf"
-                                        className="w-full px-4 py-2.5 bg-navy-900/50 border border-white/10 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-glow/50"
-                                    />
-                                </FormField>
+                            {uploadError && (
+                                <InfoBox variant="error">
+                                    <strong>Upload failed:</strong> {uploadError}
+                                </InfoBox>
                             )}
 
                             <FormField label="Information to Extract" hint="Select what you want to pull from the CV">

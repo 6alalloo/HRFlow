@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import * as dagre from 'dagre';
 import { FiPlay, FiCheck, FiCopy, FiLink, FiAlertCircle } from 'react-icons/fi';
-import { LuLayoutTemplate, LuChevronDown, LuUsers, LuServer, LuTriangleAlert } from 'react-icons/lu';
+import { LuLayoutTemplate, LuChevronDown, LuUsers, LuServer, LuTriangleAlert, LuLoader } from 'react-icons/lu';
 
 import {
   fetchWorkflowGraph,
@@ -593,7 +593,11 @@ const WorkflowBuilderContent: React.FC = () => {
     if (startDate) input.startDate = startDate;
     if (managerEmail) input.managerEmail = managerEmail;
 
-    return { employee: input };
+    // Return both nested (for structured access) and flat (for direct access like {{trigger.email}})
+    return { 
+        employee: input,
+        ...input 
+    };
   }, [state.nodes]);
 
   const handleRunClick = () => {
@@ -621,7 +625,7 @@ const WorkflowBuilderContent: React.FC = () => {
 
     try {
       setIsRunning(true);
-      setShowRunConfirmation(false);
+      // Don't close confirmation yet so spinner shows
       setRunError(null);
 
       const input = getRunInputFromTriggerNode();
@@ -629,9 +633,14 @@ const WorkflowBuilderContent: React.FC = () => {
       const result = await executeWorkflow(state.workflowId, input, "manual");
       if (result.execution?.id) {
         navigate(`/executions/${result.execution.id}`);
+      } else {
+          // If no execution ID (weird case), close modal
+          setShowRunConfirmation(false);
       }
     } catch (e: unknown) {
       console.error("[WorkflowBuilderPage] Failed to run workflow:", e);
+      // Close confirmation modal to show error modal
+      setShowRunConfirmation(false);
       const errorMessage = e instanceof Error ? e.message : "An unexpected error occurred";
       setRunError(errorMessage);
     } finally {
@@ -720,7 +729,12 @@ const WorkflowBuilderContent: React.FC = () => {
 
   const handleNodeDragStop = useCallback(
     async (_event: React.MouseEvent, node: RFNode) => {
-      const data = node.data as WorkflowNodeData;
+      const data = node.data as WorkflowNodeData | undefined;
+      if (!data) {
+        console.warn(`[WorkflowBuilderPage] Node ${node.id} has no data, skipping position update`);
+        return;
+      }
+
       const backendId = data.backendId;
       const { x, y } = node.position;
 
@@ -1186,10 +1200,19 @@ const WorkflowBuilderContent: React.FC = () => {
                             <button
                                 onClick={handleConfirmRun}
                                 disabled={isRunning}
-                                className="px-4 py-2 rounded-lg text-sm font-bold bg-gradient-to-r from-blue-600 to-cyan-600 text-white hover:from-blue-500 hover:to-cyan-500 transition-all shadow-lg flex items-center gap-2 disabled:opacity-50"
+                                className="px-4 py-2 rounded-lg text-sm font-bold bg-gradient-to-r from-blue-600 to-cyan-600 text-white hover:from-blue-500 hover:to-cyan-500 transition-all shadow-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-wait"
                             >
-                                <FiPlay className="w-4 h-4" />
-                                {isRunning ? 'Running...' : 'Confirm Run'}
+                                {isRunning ? (
+                                    <>
+                                        <LuLoader className="w-4 h-4 animate-spin" />
+                                        <span>Running...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <FiPlay className="w-4 h-4" />
+                                        <span>Confirm Run</span>
+                                    </>
+                                )}
                             </button>
                         </div>
                     </div>

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { FiCheck, FiX, FiClock, FiBox, FiActivity, FiCpu, FiMessageSquare, FiUser, FiMail, FiPhone, FiBriefcase, FiBook, FiAward } from "react-icons/fi";
+import { FiCheck, FiX, FiClock, FiBox, FiActivity, FiCpu, FiMessageSquare, FiUser, FiMail, FiPhone, FiBook, FiAward } from "react-icons/fi";
 import {
   LuMail, LuGlobe, LuSplit, LuDatabase, LuClock, LuFileText, LuZap, LuTerminal, LuCalendar, LuBox
 } from "react-icons/lu";
@@ -234,19 +234,26 @@ const ExecutionDetailPage: React.FC = () => {
                 const nodeType = selectedStep.workflow_nodes?.kind || hrflowMeta?.nodeType as string;
 
                 // Helper to render a data row
-                const DataRow = ({ label, value, icon }: { label: string; value: string | undefined; icon?: React.ReactNode }) => (
-                  value ? (
+                const DataRow = ({ label, value, icon }: { label: string; value: string | undefined; icon?: React.ReactNode }) => {
+                  if (!value) return null;
+
+                  // Only apply multiline formatting to specific fields (raw text)
+                  const isRawText = label.toLowerCase() === 'raw text' || label.toLowerCase() === 'raw_text';
+
+                  return (
                     <div className="flex items-start gap-3 py-2 border-b border-white/5 last:border-0">
                       <div className="w-5 h-5 flex items-center justify-center text-slate-500">
                         {icon || <FiBox className="w-3.5 h-3.5" />}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-0.5">{label}</div>
-                        <div className="text-sm text-white font-medium truncate">{value}</div>
+                        <div className={`text-sm text-slate-300 ${isRawText ? 'whitespace-pre-line font-mono text-xs leading-relaxed max-h-32 overflow-y-auto' : 'truncate font-medium text-white'}`}>
+                          {value}
+                        </div>
                       </div>
                     </div>
-                  ) : null
-                );
+                  );
+                };
 
                 return (
                   <>
@@ -328,115 +335,99 @@ const ExecutionDetailPage: React.FC = () => {
                     )}
 
                     {/* CV Parser Output Card */}
-                    {(nodeType === 'cv_parse' || nodeType === 'cv_parser') && Object.keys(outputData).length > 0 && (
-                      <div className="bg-gradient-to-br from-teal-500/5 to-emerald-500/5 border border-teal-500/20 rounded-xl overflow-hidden">
-                        <div className="px-4 py-3 border-b border-white/5 bg-white/5">
-                          <span className="text-xs font-bold text-teal-400 uppercase tracking-widest flex items-center gap-2">
-                            <FiUser /> CV Parse Results
-                          </span>
-                        </div>
-                        <div className="p-4 space-y-4">
-                          {/* Candidate Name & Contact */}
-                          <div className="flex items-start gap-4">
-                            <div className="w-14 h-14 bg-teal-500/20 rounded-xl flex items-center justify-center text-teal-400 text-2xl font-bold shrink-0">
-                              {String(outputData.name || outputData.full_name || 'U').charAt(0).toUpperCase()}
-                            </div>
-                            <div className="flex-1">
-                              <h3 className="text-lg font-bold text-white">
-                                {String(outputData.name || outputData.full_name || 'Unknown Candidate')}
-                              </h3>
-                              <div className="flex flex-wrap gap-3 mt-1 text-sm">
-                                {outputData.email && (
-                                  <span className="flex items-center gap-1.5 text-slate-400">
-                                    <FiMail className="text-teal-400" /> {String(outputData.email)}
-                                  </span>
-                                )}
-                                {outputData.phone && (
-                                  <span className="flex items-center gap-1.5 text-slate-400">
-                                    <FiPhone className="text-teal-400" /> {String(outputData.phone)}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
+                    {(nodeType === 'cv_parse' || nodeType === 'cv_parser') && Object.keys(outputData).length > 0 && (() => {
+                      // Backend already spreads cvResult.data directly into stepOutput (see executionService.ts line 479)
+                      // So outputData.name is available directly, not under outputData.data
+                      
+                      // Extract name - CV parser returns full name like "Talal Hawaj"
+                      const rawName = String(outputData.name || outputData.full_name || 'Unknown Candidate');
+                      const nameParts = rawName.trim().split(/\s+/);
+                      const firstName = nameParts[0] || 'Unknown';
+                      const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+                      
+                      const email = outputData.email ? String(outputData.email) : null;
+                      const phone = outputData.phone ? String(outputData.phone) : null;
+                      const skills = outputData.skills as unknown[] | undefined;
+                      const education = outputData.education as unknown[] | string | undefined;
+                      
+                      return (
+                        <div className="bg-gradient-to-br from-teal-500/5 to-emerald-500/5 border border-teal-500/20 rounded-xl overflow-hidden">
+                          <div className="px-4 py-3 border-b border-white/5 bg-white/5">
+                            <span className="text-xs font-bold text-teal-400 uppercase tracking-widest flex items-center gap-2">
+                              <FiUser /> CV Parse Results
+                            </span>
                           </div>
-
-                          {/* Skills */}
-                          {outputData.skills && (
-                            <div>
-                              <div className="flex items-center gap-2 text-[10px] text-slate-500 uppercase tracking-wide mb-2">
-                                <FiAward className="text-teal-400" /> Skills
+                          <div className="p-4 space-y-4">
+                            {/* Candidate Name & Contact */}
+                            <div className="flex items-start gap-4">
+                              <div className="w-14 h-14 bg-teal-500/20 rounded-xl flex items-center justify-center text-teal-400 text-2xl font-bold shrink-0">
+                                {firstName.charAt(0).toUpperCase()}{lastName.charAt(0).toUpperCase() || ''}
                               </div>
-                              <div className="flex flex-wrap gap-2">
-                                {(Array.isArray(outputData.skills) ? outputData.skills : [outputData.skills]).map((skill, i) => (
-                                  <span key={i} className="px-2 py-1 bg-teal-500/10 border border-teal-500/20 rounded-lg text-xs text-teal-300">
-                                    {String(skill)}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Education */}
-                          {outputData.education && (
-                            <div>
-                              <div className="flex items-center gap-2 text-[10px] text-slate-500 uppercase tracking-wide mb-2">
-                                <FiBook className="text-teal-400" /> Education
-                              </div>
-                              <div className="text-sm text-slate-300">
-                                {Array.isArray(outputData.education)
-                                  ? outputData.education.map((edu, i) => (
-                                      <div key={i} className="py-1 border-b border-white/5 last:border-0">
-                                        {typeof edu === 'object' ? JSON.stringify(edu) : String(edu)}
-                                      </div>
-                                    ))
-                                  : typeof outputData.education === 'object'
-                                    ? JSON.stringify(outputData.education, null, 2)
-                                    : String(outputData.education)
-                                }
+                              <div className="flex-1">
+                                <h3 className="text-lg font-bold text-white">
+                                  {firstName} <span className="text-teal-300">{lastName}</span>
+                                </h3>
+                                <div className="flex flex-wrap gap-3 mt-2 text-sm">
+                                  {email && (
+                                    <span className="flex items-center gap-1.5 text-slate-400">
+                                      <FiMail className="text-teal-400 w-4 h-4" /> {email}
+                                    </span>
+                                  )}
+                                  {phone && (
+                                    <span className="flex items-center gap-1.5 text-slate-400">
+                                      <FiPhone className="text-teal-400 w-4 h-4" /> {phone}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          )}
 
-                          {/* Experience / Work History */}
-                          {(outputData.experience || outputData.work_history || outputData.work_experience) && (
-                            <div>
-                              <div className="flex items-center gap-2 text-[10px] text-slate-500 uppercase tracking-wide mb-2">
-                                <FiBriefcase className="text-teal-400" /> Experience
+                            {/* Skills */}
+                            {skills && skills.length > 0 && (
+                              <div>
+                                <div className="flex items-center gap-2 text-[10px] text-slate-500 uppercase tracking-wide mb-2">
+                                  <FiAward className="text-teal-400" /> Skills
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {skills.map((skill, i) => (
+                                    <span key={i} className="px-2 py-1 bg-teal-500/10 border border-teal-500/20 rounded-lg text-xs text-teal-300">
+                                      {String(skill)}
+                                    </span>
+                                  ))}
+                                </div>
                               </div>
-                              <div className="text-sm text-slate-300">
-                                {(() => {
-                                  const exp = outputData.experience || outputData.work_history || outputData.work_experience;
-                                  if (Array.isArray(exp)) {
-                                    return exp.map((item, i) => (
-                                      <div key={i} className="py-2 border-b border-white/5 last:border-0">
-                                        {typeof item === 'object' ? (
-                                          <div>
-                                            {(item as Record<string, unknown>).title && <div className="font-medium text-white">{String((item as Record<string, unknown>).title)}</div>}
-                                            {(item as Record<string, unknown>).company && <div className="text-slate-400">{String((item as Record<string, unknown>).company)}</div>}
-                                            {(item as Record<string, unknown>).duration && <div className="text-slate-500 text-xs">{String((item as Record<string, unknown>).duration)}</div>}
-                                          </div>
-                                        ) : String(item)}
+                            )}
+
+                            {/* Education - Show full sentences */}
+                            {education && (
+                              <div>
+                                <div className="flex items-center gap-2 text-[10px] text-slate-500 uppercase tracking-wide mb-2">
+                                  <FiBook className="text-teal-400" /> Education
+                                </div>
+                                <div className="space-y-2">
+                                  {Array.isArray(education)
+                                    ? education.map((edu, i) => (
+                                        <div key={i} className="py-2 px-3 bg-white/5 rounded-lg border border-white/5">
+                                          <p className="text-sm text-slate-300 leading-relaxed">
+                                            {typeof edu === 'object' ? JSON.stringify(edu) : String(edu)}
+                                          </p>
+                                        </div>
+                                      ))
+                                    : (
+                                      <div className="py-2 px-3 bg-white/5 rounded-lg border border-white/5">
+                                        <p className="text-sm text-slate-300 leading-relaxed">
+                                          {typeof education === 'object' ? JSON.stringify(education) : String(education)}
+                                        </p>
                                       </div>
-                                    ));
+                                    )
                                   }
-                                  return typeof exp === 'object' ? JSON.stringify(exp, null, 2) : String(exp);
-                                })()}
+                                </div>
                               </div>
-                            </div>
-                          )}
-
-                          {/* Summary if available */}
-                          {outputData.summary && (
-                            <div>
-                              <div className="flex items-center gap-2 text-[10px] text-slate-500 uppercase tracking-wide mb-2">
-                                <FiMessageSquare className="text-teal-400" /> Summary
-                              </div>
-                              <p className="text-sm text-slate-300">{String(outputData.summary)}</p>
-                            </div>
-                          )}
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
 
                     {/* Generic Output Card (for other data, excludes CV parser fields when cv_parse node) */}
                     {(() => {

@@ -661,31 +661,42 @@ case "email": {
 
     case "cv_parse":
     case "cv_parser": {
-      const cvUrl = safeString(cfg.cvUrl, "");
-
-      // CV parser expects multipart form data with 'url' field
+      // CV parsing happens in HRFlow executionService before n8n execution.
+      // This node is a pass-through that just marks cv_parser was executed.
+      // The actual CV data is injected into execution_steps by executionService.
       return {
         id: `hrflow_node_${n.id}`,
         name,
-        type: "n8n-nodes-base.httpRequest",
-        typeVersion: 4.1,
+        type: "n8n-nodes-base.set",
+        typeVersion: 3.4,
         position,
         parameters: {
-          method: "POST",
-          url: "http://cv-parser:8000/parse",
-          sendBody: true,
-          contentType: "multipart-form-data",
-          bodyParameters: {
-            parameters: [
+          mode: "manual",
+          duplicateItem: false,
+          assignments: {
+            assignments: [
               {
-                name: "url",
-                value: cvUrl,
+                id: `cv_type_${n.id}`,
+                name: "_hrflow.nodeType",
+                value: "cv_parser",
+                type: "string",
+              },
+              {
+                id: `cv_parsed_${n.id}`,
+                name: "_hrflow.cvParsed",
+                value: "true",
+                type: "string",
+              },
+              {
+                id: `cv_ts_${n.id}`,
+                name: "_hrflow.cvParsedAt",
+                value: "={{ $now.toISO() }}",
+                type: "string",
               },
             ],
           },
-          options: {
-            timeout: 30000,
-          },
+          includeOtherFields: true,
+          options: {},
         },
       };
     }

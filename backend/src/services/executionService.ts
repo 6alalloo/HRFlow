@@ -8,6 +8,7 @@ import {
 } from "./n8nService";
 import { compileToN8n } from "./n8nCompiler";
 import * as auditService from "./auditService";
+import { parseCV, type CVParseResult } from "./cvParserService";
 
 type ExecutionFilters = {
   status?: string;
@@ -87,26 +88,38 @@ function looksLikeEmployee(obj: Record<string, unknown>): boolean {
 
 function buildDemoExecuteBody(input: unknown, triggerConfigFallback: Record<string, unknown> | null) {
   const obj = normalizeObject(input);
+  const result: Record<string, unknown> = {};
+
+  let employeeData: Record<string, unknown> | null = null;
 
   if (obj && typeof obj.employee === "object" && obj.employee && !Array.isArray(obj.employee)) {
-    return { employee: obj.employee as Record<string, unknown> };
-  }
-
-  if (obj && looksLikeEmployee(obj)) {
-    return { employee: obj };
-  }
-
-  if (triggerConfigFallback) {
+    employeeData = obj.employee as Record<string, unknown>;
+  } else if (obj && looksLikeEmployee(obj)) {
+    employeeData = obj;
+  } else if (triggerConfigFallback) {
     const tc = triggerConfigFallback;
     if (typeof tc.employee === "object" && tc.employee && !Array.isArray(tc.employee)) {
-      return { employee: tc.employee as Record<string, unknown> };
-    }
-    if (looksLikeEmployee(tc)) {
-      return { employee: tc };
+      employeeData = tc.employee as Record<string, unknown>;
+    } else if (looksLikeEmployee(tc)) {
+      employeeData = tc;
     }
   }
 
-  return { employee: {} };
+  // If found, populate both nested and flat structure
+  if (employeeData) {
+    result.employee = employeeData;
+    // Flatten fields for convenient access (e.g. {{trigger.email}})
+    Object.assign(result, employeeData);
+  } else {
+    result.employee = {};
+  }
+
+  // Also include any other root properties from the original input if it was an object
+  if (obj) {
+      Object.assign(result, obj);
+  }
+
+  return result;
 }
 
 function getWebhookBaseUrl(): string {
@@ -207,9 +220,40 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
     throw makeCodedError("Workflow has no nodes", "WORKFLOW_HAS_NO_NODES");
   }
 
+  // Pre-process CV parser nodes - parse CVs before n8n workflow execution
+  const cvParserResults = new Map<number, CVParseResult>();
+  for (const node of nodesRaw) {
+    if (node.kind === "cv_parser" || node.kind === "cv_parse") {
+      const config = safeParseJson<Record<string, unknown>>(node.config_json, {});
+      const fileId = config.fileId as string | undefined;
+
+      if (fileId) {
+        console.log(`[ExecutionService] Parsing CV for node ${node.id} with fileId: ${fileId}`);
+        const result = await parseCV(fileId);
+        cvParserResults.set(node.id, result);
+        console.log(`[ExecutionService] CV parse result:`, result.success ? "success" : result.error);
+      } else {
+        console.log(`[ExecutionService] No fileId for cv_parser node ${node.id}`);
+        cvParserResults.set(node.id, {
+          success: false,
+          source: "file",
+          data: {
+            name: null,
+            email: null,
+            phone: null,
+            skills: [],
+            experience_years: null,
+            education: [],
+          },
+          error: "No file uploaded for CV parser",
+        });
+      }
+    }
+  }
+
   const startTime = new Date();
 
-  const runContextPayload: RunContextPayload = {
+  const runContextPayload: RunContextPayload & { cvParserResults?: Record<number, CVParseResult> } = {
     input: input ?? null,
     engine: {
       n8n: null,
@@ -336,6 +380,11 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
 
   runContextPayload.engine.n8n = n8nResult;
 
+  // Store CV parser results in run_context for UI access
+  if (cvParserResults.size > 0) {
+    runContextPayload.cvParserResults = Object.fromEntries(cvParserResults);
+  }
+
   const updatedExecution = await prisma.executions.update({
     where: { id: execution.id },
     data: {
@@ -435,8 +484,21 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
     const stableNodeName = getStableNodeName(node);
     let stepOutput: Record<string, unknown> = perNodeOutputs.get(stableNodeName) || {};
 
-    // If no per-node data available, fall back to webhook response
-    if (Object.keys(stepOutput).length === 0) {
+    // For CV parser nodes, use the pre-computed cvParserResults
+    if ((node.kind === "cv_parser" || node.kind === "cv_parse") && cvParserResults.has(node.id)) {
+      const cvResult = cvParserResults.get(node.id)!;
+      stepOutput = {
+        ...cvResult.data,
+        _hrflow: {
+          nodeType: "cv_parser",
+          cvParsed: cvResult.success,
+          source: cvResult.source,
+          filename: cvResult.filename,
+          error: cvResult.error,
+        },
+      };
+    } else if (Object.keys(stepOutput).length === 0) {
+      // If no per-node data available, fall back to webhook response
       // If n8n returned multiple items, try to map to node order
       if (n8nOutputRaw.length > index) {
         const nodeResult = n8nOutputRaw[index];
@@ -462,8 +524,14 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
       } else if (node.kind === "trigger") {
         logMessage = `Trigger executed - Employee: ${(stepOutput.employee as Record<string, unknown>)?.name ?? "Unknown"}`;
       } else if (node.kind === "cv_parse" || node.kind === "cv_parser") {
-        const name = stepOutput.name || stepOutput.full_name || "Unknown";
-        logMessage = `CV parsed - Candidate: ${name}`;
+        const cvMeta = stepOutput._hrflow as Record<string, unknown> | undefined;
+        if (cvMeta?.cvParsed) {
+          const name = stepOutput.name || "Unknown";
+          const skills = Array.isArray(stepOutput.skills) ? stepOutput.skills.length : 0;
+          logMessage = `CV parsed successfully - Candidate: ${name}, Skills found: ${skills}`;
+        } else {
+          logMessage = `CV parsing failed - ${cvMeta?.error || "Unknown error"}`;
+        }
       } else {
         logMessage = `Executed node ${node.name ?? node.kind} (order ${index + 1}) via n8n`;
       }

@@ -8,6 +8,7 @@ import authRoutes from "./authRoutes";
 import auditRoutes from "./auditRoutes";
 import dashboardRoutes from "./dashboardRoutes";
 import settingsRoutes from "./settingsRoutes";
+import fileRoutes from "./fileRoutes";
 
 const router = Router();
 
@@ -34,6 +35,9 @@ router.use("/dashboard", dashboardRoutes);
 
 // /api/settings/... (Admin-only settings)
 router.use("/settings", settingsRoutes);
+
+// /api/files/... (File uploads)
+router.use("/files", fileRoutes);
 
 
 export default router;

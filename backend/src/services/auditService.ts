@@ -1,5 +1,6 @@
 // backend/src/services/auditService.ts
 import prisma from "../lib/prisma";
+import logger from "../lib/logger";
 
 export interface AuditLogParams {
   eventType: string; // e.g., "workflow_created", "execution_completed"
@@ -44,7 +45,15 @@ export async function logAuditEvent(params: AuditLogParams) {
 
     return auditLog;
   } catch (error) {
-    console.error("Failed to log audit event:", error);
+    logger.error("Failed to log audit event", {
+      service: "auditService",
+      eventType: params.eventType,
+      userId: params.userId,
+      targetType: params.targetType,
+      targetId: params.targetId,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    });
     // Don't throw - audit logging should not break main operations
     return null;
   }

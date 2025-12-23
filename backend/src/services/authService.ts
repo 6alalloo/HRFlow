@@ -1,9 +1,7 @@
 import bcrypt from 'bcryptjs';
 import jwt, { SignOptions } from 'jsonwebtoken';
 import prisma from '../lib/prisma';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'hrflow-jwt-secret-change-in-production';
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
+import { config } from '../config/appConfig';
 
 export interface JwtPayload {
   userId: number;
@@ -46,14 +44,17 @@ export function generateToken(user: AuthUser): string {
     role: user.role.name
   };
 
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '24h' });
+  // Use config value, TypeScript will infer the correct type
+  return jwt.sign(payload, config.jwt.secret, {
+    expiresIn: config.jwt.expiresIn
+  } as jwt.SignOptions);
 }
 
 /**
  * Verify and decode a JWT token
  */
 export function verifyToken(token: string): JwtPayload {
-  return jwt.verify(token, JWT_SECRET) as JwtPayload;
+  return jwt.verify(token, config.jwt.secret) as JwtPayload;
 }
 
 /**

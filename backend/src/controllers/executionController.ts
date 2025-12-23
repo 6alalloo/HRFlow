@@ -1,7 +1,14 @@
 // src/controllers/executionController.ts
-import { Request, Response } from "express";
+import { Request, Response, NextFunction } from "express";
 import * as executionService from "../services/executionService";
 import * as auditService from "../services/auditService";
+import logger from "../lib/logger";
+import {
+  createNotFoundError,
+  createValidationError,
+  ErrorCodes,
+  AppError,
+} from "../types/errors";
 
 /**
  * GET /api/executions
@@ -9,7 +16,7 @@ import * as auditService from "../services/auditService";
  * - ?status=completed       → filter by execution status
  * - ?workflowId=3           → filter by workflow_id
  */
-export async function getAllExecutions(req: Request, res: Response) {
+export async function getAllExecutions(req: Request, res: Response, next: NextFunction) {
   try {
     const { status, workflowId } = req.query;
 
@@ -35,10 +42,7 @@ export async function getAllExecutions(req: Request, res: Response) {
       data: executions,
     });
   } catch (error) {
-    console.error("[ExecutionController] Error getting all executions:", error);
-    return res.status(500).json({
-      message: "Internal server error",
-    });
+    next(error);
   }
 }
 
@@ -46,33 +50,26 @@ export async function getAllExecutions(req: Request, res: Response) {
  * GET /api/executions/:id
  * Returns a single execution by ID.
  */
-export async function getExecutionById(req: Request, res: Response) {
-  const { id } = req.params;
-
-  const numericId = Number(id);
-  if (Number.isNaN(numericId)) {
-    return res.status(400).json({
-      message: "Invalid execution ID",
-    });
-  }
-
+export async function getExecutionById(req: Request, res: Response, next: NextFunction) {
   try {
+    const { id } = req.params;
+
+    const numericId = Number(id);
+    if (Number.isNaN(numericId)) {
+      throw createValidationError("Invalid execution ID");
+    }
+
     const execution = await executionService.getExecutionById(numericId);
 
     if (!execution) {
-      return res.status(404).json({
-        message: "Execution not found",
-      });
+      throw createNotFoundError("Execution", numericId);
     }
 
     return res.status(200).json({
       data: execution,
     });
   } catch (error) {
-    console.error("[ExecutionController] Error getting execution by id:", error);
-    return res.status(500).json({
-      message: "Internal server error",
-    });
+    next(error);
   }
 }
 
@@ -82,23 +79,21 @@ export async function getExecutionById(req: Request, res: Response) {
  * Optional query:
  * - ?status=completed|failed|running
  */
-export async function getExecutionsForWorkflow(req: Request, res: Response) {
-  const { id } = req.params;
-  const { status } = req.query;
-
-  const workflowId = Number(id);
-  if (Number.isNaN(workflowId)) {
-    return res.status(400).json({
-      message: "Invalid workflow ID",
-    });
-  }
-
-  const statusFilter =
-    typeof status === "string" && status.trim().length > 0
-      ? status.trim()
-      : undefined;
-
+export async function getExecutionsForWorkflow(req: Request, res: Response, next: NextFunction) {
   try {
+    const { id } = req.params;
+    const { status } = req.query;
+
+    const workflowId = Number(id);
+    if (Number.isNaN(workflowId)) {
+      throw createValidationError("Invalid workflow ID");
+    }
+
+    const statusFilter =
+      typeof status === "string" && status.trim().length > 0
+        ? status.trim()
+        : undefined;
+
     const executions = await executionService.getAllExecutions({
       status: statusFilter,
       workflowId,
@@ -108,13 +103,7 @@ export async function getExecutionsForWorkflow(req: Request, res: Response) {
       data: executions,
     });
   } catch (error) {
-    console.error(
-      "[ExecutionController] Error getting executions for workflow:",
-      error
-    );
-    return res.status(500).json({
-      message: "Internal server error",
-    });
+    next(error);
   }
 }
 
@@ -122,17 +111,15 @@ export async function getExecutionsForWorkflow(req: Request, res: Response) {
  * GET /api/executions/:id/steps
  * Returns all steps for a given execution.
  */
-export async function getExecutionSteps(req: Request, res: Response) {
-  const { id } = req.params;
-
-  const executionId = Number(id);
-  if (Number.isNaN(executionId)) {
-    return res.status(400).json({
-      message: "Invalid execution ID",
-    });
-  }
-
+export async function getExecutionSteps(req: Request, res: Response, next: NextFunction) {
   try {
+    const { id } = req.params;
+
+    const executionId = Number(id);
+    if (Number.isNaN(executionId)) {
+      throw createValidationError("Invalid execution ID");
+    }
+
     const steps = await executionService.getExecutionStepsByExecutionId(
       executionId
     );
@@ -142,13 +129,7 @@ export async function getExecutionSteps(req: Request, res: Response) {
       data: steps,
     });
   } catch (error) {
-    console.error(
-      "[ExecutionController] Error getting steps for execution:",
-      error
-    );
-    return res.status(500).json({
-      message: "Internal server error",
-    });
+    next(error);
   }
 }
 
@@ -162,18 +143,16 @@ export async function getExecutionSteps(req: Request, res: Response) {
  *   "input": { ... any JSON ... }
  * }
  */
-export async function executeWorkflow(req: Request, res: Response) {
-  const { id } = req.params;
-  const { triggerType, input } = req.body || {};
-
-  const workflowId = Number(id);
-  if (Number.isNaN(workflowId)) {
-    return res.status(400).json({
-      message: "Invalid workflow ID",
-    });
-  }
-
+export async function executeWorkflow(req: Request, res: Response, next: NextFunction) {
   try {
+    const { id } = req.params;
+    const { triggerType, input } = req.body || {};
+
+    const workflowId = Number(id);
+    if (Number.isNaN(workflowId)) {
+      throw createValidationError("Invalid workflow ID");
+    }
+
     const result = await executionService.executeWorkflow({
       workflowId,
       triggerType,
@@ -185,29 +164,20 @@ export async function executeWorkflow(req: Request, res: Response) {
       data: result,
     });
   } catch (error: any) {
-    console.error("[ExecutionController] Error executing workflow:", error);
-
+    // Handle custom error codes from executionService
     if (error.code === "WORKFLOW_NOT_FOUND") {
-      return res.status(404).json({
-        message: "Workflow not found",
-      });
+      return next(createNotFoundError("Workflow"));
     }
 
     if (error.code === "WORKFLOW_INACTIVE") {
-      return res.status(400).json({
-        message: "Workflow is not active",
-      });
+      return next(new AppError("Workflow is not active", 400, ErrorCodes.INVALID_WORKFLOW_STATE));
     }
 
     if (error.code === "WORKFLOW_HAS_NO_NODES") {
-      return res.status(400).json({
-        message: "Workflow has no nodes",
-      });
+      return next(createValidationError("Workflow has no nodes"));
     }
 
-    return res.status(500).json({
-      message: "Internal server error",
-    });
+    next(error);
   }
 }
 
@@ -215,23 +185,19 @@ export async function executeWorkflow(req: Request, res: Response) {
  * DELETE /api/executions/:id
  * Deletes an execution and its steps.
  */
-export async function deleteExecution(req: Request, res: Response) {
-  const { id } = req.params;
-
-  const executionId = Number(id);
-  if (Number.isNaN(executionId)) {
-    return res.status(400).json({
-      message: "Invalid execution ID",
-    });
-  }
-
+export async function deleteExecution(req: Request, res: Response, next: NextFunction) {
   try {
+    const { id } = req.params;
+
+    const executionId = Number(id);
+    if (Number.isNaN(executionId)) {
+      throw createValidationError("Invalid execution ID");
+    }
+
     const deleted = await executionService.deleteExecution(executionId);
 
     if (!deleted) {
-      return res.status(404).json({
-        message: "Execution not found",
-      });
+      throw createNotFoundError("Execution", executionId);
     }
 
     const userId = (req as any).user?.userId || 1;
@@ -251,9 +217,6 @@ export async function deleteExecution(req: Request, res: Response) {
 
     return res.status(204).send();
   } catch (error) {
-    console.error("[ExecutionController] Error deleting execution:", error);
-    return res.status(500).json({
-      message: "Internal server error",
-    });
+    next(error);
   }
 }

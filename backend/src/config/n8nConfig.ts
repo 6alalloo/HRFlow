@@ -1,12 +1,11 @@
 // backend/src/config/n8nConfig.ts
+import { config } from './appConfig';
 
 /**
  * Base URL where n8n is reachable.
- * Examples:
- * - Local Docker: http://localhost:5678
- * - VM/host:      http://10.0.2.15:5678
+ * Now loaded from centralized appConfig.
  */
-export const N8N_BASE_URL = (process.env.N8N_BASE_URL ?? "http://localhost:5678").replace(/\/$/, "");
+export const N8N_BASE_URL = config.n8n.baseUrl.replace(/\/$/, "");
 
 /**
  * n8n REST API base (v1).
@@ -17,16 +16,13 @@ export const N8N_API_BASE_URL = `${N8N_BASE_URL}/api/v1`;
 /**
  * API key for n8n v1 REST API.
  */
-export const N8N_API_KEY = process.env.N8N_API_KEY ?? "";
+export const N8N_API_KEY = config.n8n.apiKey;
 
 /**
  * Base URL for calling webhooks.
  * Usually identical to N8N_BASE_URL, but split out for clarity/future proxying.
  */
-export const N8N_WEBHOOK_BASE_URL = (process.env.N8N_WEBHOOK_BASE_URL ?? N8N_BASE_URL).replace(
-  /\/$/,
-  ""
-);
+export const N8N_WEBHOOK_BASE_URL = config.n8n.webhookBaseUrl.replace(/\/$/, "");
 
 /**
  * ✅ NEW (MVP demo path): unique webhook path per HRFlow workflow.
@@ -51,12 +47,8 @@ export const N8N_HRFLOW_EXECUTE_PATH =
  * ⚠️ LEGACY (old design): single shared webhook URL.
  */
 export const N8N_EXECUTE_URL = `${N8N_WEBHOOK_BASE_URL}${N8N_HRFLOW_EXECUTE_PATH}`;
-export const N8N_POSTGRES_CREDENTIAL_ID =
-  process.env.N8N_POSTGRES_CREDENTIAL_ID ?? "";
-export const N8N_POSTGRES_CREDENTIAL_NAME =
-  process.env.N8N_POSTGRES_CREDENTIAL_NAME ?? "";
+export const N8N_POSTGRES_CREDENTIAL_ID = config.n8n.postgresCredentialId;
+export const N8N_POSTGRES_CREDENTIAL_NAME = config.n8n.postgresCredentialName;
 
-export const N8N_SMTP_CREDENTIAL_ID =
-  process.env.N8N_SMTP_CREDENTIAL_ID ?? "";
-export const N8N_SMTP_CREDENTIAL_NAME =
-  process.env.N8N_SMTP_CREDENTIAL_NAME ?? "";
+export const N8N_SMTP_CREDENTIAL_ID = config.n8n.smtpCredentialId;
+export const N8N_SMTP_CREDENTIAL_NAME = config.n8n.smtpCredentialName;

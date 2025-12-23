@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import * as executionService from "../services/executionService";
 import prisma from "../lib/prisma";
+import logger from "../lib/logger";
 
 /**
  * Comprehensive field mapping for Google Form field normalization
@@ -157,7 +158,9 @@ export async function handleGoogleFormSubmission(req: Request, res: Response) {
     const expectedToken = process.env.WEBHOOK_SECRET_KEY;
 
     if (!expectedToken) {
-      console.error("[GoogleFormWebhook] WEBHOOK_SECRET_KEY not configured in .env");
+      logger.error("WEBHOOK_SECRET_KEY not configured in .env", {
+        service: "GoogleFormController"
+      });
       return res.status(500).json({
         success: false,
         error: "Webhook authentication not configured",
@@ -165,7 +168,9 @@ export async function handleGoogleFormSubmission(req: Request, res: Response) {
     }
 
     if (!token || token !== expectedToken) {
-      console.warn("[GoogleFormWebhook] Invalid or missing token attempt");
+      logger.warn("Invalid or missing token attempt", {
+        service: "GoogleFormController"
+      });
       return res.status(401).json({
         success: false,
         error: "Unauthorized: Invalid or missing token",
@@ -187,7 +192,10 @@ export async function handleGoogleFormSubmission(req: Request, res: Response) {
     });
 
     if (!workflow) {
-      console.warn(`[GoogleFormWebhook] Workflow ${workflowId} not found`);
+      logger.warn("Workflow not found", {
+        service: "GoogleFormController",
+        workflowId
+      });
       return res.status(404).json({
         success: false,
         error: "Workflow not found",
@@ -195,7 +203,10 @@ export async function handleGoogleFormSubmission(req: Request, res: Response) {
     }
 
     if (!workflow.is_active) {
-      console.warn(`[GoogleFormWebhook] Workflow ${workflowId} is not active`);
+      logger.warn("Workflow is not active", {
+        service: "GoogleFormController",
+        workflowId
+      });
       return res.status(400).json({
         success: false,
         error: "Workflow is not active",
@@ -204,10 +215,18 @@ export async function handleGoogleFormSubmission(req: Request, res: Response) {
 
     // 4. Parse and normalize form data
     const formData = req.body as Record<string, unknown>;
-    console.log(`[GoogleFormWebhook] Received form data for workflow ${workflowId}:`, formData);
+    logger.info("Received form data for workflow", {
+      service: "GoogleFormController",
+      workflowId,
+      formData
+    });
 
     const normalizedData = normalizeGoogleFormData(formData);
-    console.log(`[GoogleFormWebhook] Normalized data:`, normalizedData);
+    logger.debug("Normalized form data", {
+      service: "GoogleFormController",
+      workflowId,
+      normalizedData
+    });
 
     // 5. Execute workflow
     const result = await executionService.executeWorkflow({
@@ -216,16 +235,25 @@ export async function handleGoogleFormSubmission(req: Request, res: Response) {
       input: normalizedData,
     });
 
-    console.log(`[GoogleFormWebhook] Workflow execution started: execution ID ${result.executionId}`);
+    logger.info("Workflow execution started", {
+      service: "GoogleFormController",
+      workflowId,
+      executionId: result.execution.id
+    });
 
     // 6. Return 202 Accepted (execution is async)
     return res.status(202).json({
       success: true,
       message: "Workflow execution started",
-      executionId: result.executionId,
+      executionId: result.execution.id,
     });
   } catch (error) {
-    console.error("[GoogleFormWebhook] Error:", error);
+    logger.error("Google Form webhook error", {
+      service: "GoogleFormController",
+      workflowId: req.params.workflowId,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    });
     return res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : "Internal server error",

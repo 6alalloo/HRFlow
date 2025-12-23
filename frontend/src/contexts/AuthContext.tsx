@@ -1,7 +1,8 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { config } from '../config/appConfig';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000/api';
+const API_BASE_URL = config.apiBaseUrl;
 
 // Storage keys
 const TOKEN_KEY = 'hrflow_token';

@@ -8,7 +8,9 @@ import {
 } from "./n8nService";
 import { compileToN8n } from "./n8nCompiler";
 import * as auditService from "./auditService";
+import { config } from "../config/appConfig";
 import { parseCV, type CVParseResult } from "./cvParserService";
+import logger from "../lib/logger";
 
 type ExecutionFilters = {
   status?: string;
@@ -123,9 +125,7 @@ function buildDemoExecuteBody(input: unknown, triggerConfigFallback: Record<stri
 }
 
 function getWebhookBaseUrl(): string {
-  const fromEnv = process.env.N8N_WEBHOOK_BASE_URL;
-  if (fromEnv && fromEnv.trim().length > 0) return fromEnv.trim();
-  return "http://localhost:5678";
+  return config.n8n.webhookBaseUrl;
 }
 
 export async function getAllExecutions(filters: ExecutionFilters = {}) {
@@ -228,12 +228,16 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
       const fileId = config.fileId as string | undefined;
 
       if (fileId) {
-        console.log(`[ExecutionService] Parsing CV for node ${node.id} with fileId: ${fileId}`);
+        logger.info('Parsing CV for node', { nodeId: node.id, fileId });
         const result = await parseCV(fileId);
         cvParserResults.set(node.id, result);
-        console.log(`[ExecutionService] CV parse result:`, result.success ? "success" : result.error);
+        logger.info('CV parse result', {
+          nodeId: node.id,
+          success: result.success,
+          error: result.success ? undefined : result.error
+        });
       } else {
-        console.log(`[ExecutionService] No fileId for cv_parser node ${node.id}`);
+        logger.warn('No fileId provided for cv_parser node', { nodeId: node.id });
         cvParserResults.set(node.id, {
           success: false,
           source: "file",
@@ -363,9 +367,15 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
 
     finalStatus = "completed";
   } catch (err: unknown) {
-    console.error("[ExecutionService] Engine failure:", err);
-
     const code = getErrorCode(err);
+    logger.error('Workflow execution failed', {
+      workflowId,
+      executionId,
+      errorCode: code,
+      error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined
+    });
+
     if (code === "N8N_UNREACHABLE" || code === "N8N_HTTP_ERROR" || code === "N8N_MISSING_API_KEY") {
       finalStatus = "engine_error";
     } else {
@@ -445,20 +455,37 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
       // Small delay to ensure n8n has processed the execution
       await new Promise((resolve) => setTimeout(resolve, 500));
 
-      console.log("[ExecutionService] Fetching per-node outputs for n8n workflow:", n8nWorkflowId);
+      logger.debug('Fetching per-node outputs from n8n', {
+        executionId,
+        n8nWorkflowId
+      });
       const executionData = await getN8nExecutionForWorkflow(n8nWorkflowId);
 
       if (executionData?.nodeOutputs) {
-        console.log("[ExecutionService] Got execution data with", executionData.nodeOutputs.size, "node outputs");
+        logger.debug('Retrieved node outputs from n8n', {
+          executionId,
+          nodeCount: executionData.nodeOutputs.size
+        });
         for (const [nodeName, nodeData] of executionData.nodeOutputs) {
-          console.log("[ExecutionService] Node output:", nodeName, "->", JSON.stringify(nodeData.data).slice(0, 200));
+          logger.debug('Node output retrieved', {
+            executionId,
+            nodeName,
+            dataPreview: JSON.stringify(nodeData.data).slice(0, 200)
+          });
           perNodeOutputs.set(nodeName, nodeData.data);
         }
       } else {
-        console.log("[ExecutionService] No node outputs in execution data:", executionData);
+        logger.debug('No node outputs in execution data', {
+          executionId,
+          hasExecutionData: !!executionData
+        });
       }
     } catch (err) {
-      console.warn("[ExecutionService] Could not fetch per-node outputs:", err);
+      logger.warn('Could not fetch per-node outputs from n8n', {
+        executionId,
+        n8nWorkflowId,
+        error: err instanceof Error ? err.message : String(err)
+      });
       // Fall back to webhook response data
     }
   }

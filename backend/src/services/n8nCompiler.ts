@@ -2,6 +2,7 @@
 import type { WorkflowNodeKind } from "./workflowService";
 import * as allowListService from "./allowListService";
 import * as auditService from "./auditService";
+import { config } from "../config/appConfig";
 
 import {
   N8N_POSTGRES_CREDENTIAL_ID,
@@ -432,6 +433,7 @@ case "trigger": {
 }
 
     case "http": {
+      // Default to httpbin for testing/demo purposes
       const url = safeString(cfg.url, "https://httpbin.org/anything");
       const method = safeString(cfg.method, "GET").toUpperCase();
 
@@ -538,7 +540,7 @@ case "trigger": {
   "  VALUES (",
   "    '={{(",
   "      ($json.employee && $json.employee.email ? $json.employee.email : $json.email)",
-  "      || \"demo.user@example.com\"",
+  `      || "${config.email.defaultRecipient}"`,
   "    )}}',",
   "    'TEMP_PASSWORD_HASH',",
   "    '={{(",
@@ -572,7 +574,7 @@ case "trigger": {
   "  (SELECT id FROM ins_employee) AS employee_id,",
   "  '={{(",
   "      ($json.employee && $json.employee.email ? $json.employee.email : $json.email)",
-  "      || \"demo.user@example.com\"",
+  `      || "${config.email.defaultRecipient}"`,
   "    )}}' AS email,",
   "  '={{(",
   "      ($json.employee && $json.employee.name ? $json.employee.name : ($json.name || $json.full_name || $json.fullName))",
@@ -641,7 +643,7 @@ case "email": {
     typeVersion: 2.1,
     position,
     parameters: {
-      fromEmail: "talal.hawaj@gmail.com",
+      fromEmail: config.email.defaultSender,
       toEmail,
       ...(cc ? { ccEmail: cc } : {}),
       ...(bcc ? { bccEmail: bcc } : {}),

@@ -1,14 +1,21 @@
 // src/controllers/workflowController.ts
-import { Request, Response } from "express";
+import { Request, Response, NextFunction } from "express";
 import * as workflowService from "../services/workflowService";
 import * as auditService from "../services/auditService";
 import * as googleFormHelper from "../utils/googleFormHelper";
+import logger from "../lib/logger";
+import {
+  createNotFoundError,
+  createValidationError,
+  ErrorCodes,
+  AppError,
+} from "../types/errors";
 
 /**
  * GET /api/workflows
  * List all workflows.
  */
-export async function getAllWorkflows(req: Request, res: Response) {
+export async function getAllWorkflows(req: Request, res: Response, next: NextFunction) {
   try {
     const { active, ownerId, q } = req.query;
 
@@ -43,10 +50,7 @@ export async function getAllWorkflows(req: Request, res: Response) {
       data: workflows,
     });
   } catch (error) {
-    console.error("[WorkflowController] Error getting all workflows:", error);
-    return res.status(500).json({
-      message: "Internal server error",
-    });
+    next(error);
   }
 }
 
@@ -54,33 +58,26 @@ export async function getAllWorkflows(req: Request, res: Response) {
  * GET /api/workflows/:id
  * Get a single workflow by ID.
  */
-export async function getWorkflowById(req: Request, res: Response) {
-  const { id } = req.params;
-
-  const numericId = Number(id);
-  if (Number.isNaN(numericId)) {
-    return res.status(400).json({
-      message: "Invalid workflow ID",
-    });
-  }
-
+export async function getWorkflowById(req: Request, res: Response, next: NextFunction) {
   try {
+    const { id } = req.params;
+
+    const numericId = Number(id);
+    if (Number.isNaN(numericId)) {
+      throw createValidationError("Invalid workflow ID");
+    }
+
     const workflow = await workflowService.getWorkflowById(numericId);
 
     if (!workflow) {
-      return res.status(404).json({
-        message: "Workflow not found",
-      });
+      throw createNotFoundError("Workflow", numericId);
     }
 
     return res.status(200).json({
       data: workflow,
     });
   } catch (error) {
-    console.error("[WorkflowController] Error getting workflow by id:", error);
-    return res.status(500).json({
-      message: "Internal server error",
-    });
+    next(error);
   }
 }
 
@@ -88,17 +85,15 @@ export async function getWorkflowById(req: Request, res: Response) {
  * PATCH /api/workflows/:id
  * Update workflow metadata (name, description, is_active, default_trigger).
  */
-export async function updateWorkflow(req: Request, res: Response) {
-  const { id } = req.params;
-
-  const numericId = Number(id);
-  if (Number.isNaN(numericId)) {
-    return res.status(400).json({
-      message: "Invalid workflow ID",
-    });
-  }
-
+export async function updateWorkflow(req: Request, res: Response, next: NextFunction) {
   try {
+    const { id } = req.params;
+
+    const numericId = Number(id);
+    if (Number.isNaN(numericId)) {
+      throw createValidationError("Invalid workflow ID");
+    }
+
     const { name, description, is_active, default_trigger } = req.body;
 
     const updated = await workflowService.updateWorkflow(numericId, {
@@ -109,9 +104,7 @@ export async function updateWorkflow(req: Request, res: Response) {
     });
 
     if (!updated) {
-      return res.status(404).json({
-        message: "Workflow not found",
-      });
+      throw createNotFoundError("Workflow", numericId);
     }
 
     // Audit log
@@ -130,10 +123,7 @@ export async function updateWorkflow(req: Request, res: Response) {
       data: updated,
     });
   } catch (error) {
-    console.error("[WorkflowController] Error updating workflow:", error);
-    return res.status(500).json({
-      message: "Internal server error",
-    });
+    next(error);
   }
 }
 
@@ -141,27 +131,22 @@ export async function updateWorkflow(req: Request, res: Response) {
  * GET /api/workflows/:id/nodes
  * Get all nodes for a workflow.
  */
-export async function getWorkflowNodes(req: Request, res: Response) {
-  const { id } = req.params;
-
-  const numericId = Number(id);
-  if (Number.isNaN(numericId)) {
-    return res.status(400).json({
-      message: "Invalid workflow ID",
-    });
-  }
-
+export async function getWorkflowNodes(req: Request, res: Response, next: NextFunction) {
   try {
+    const { id } = req.params;
+
+    const numericId = Number(id);
+    if (Number.isNaN(numericId)) {
+      throw createValidationError("Invalid workflow ID");
+    }
+
     const nodes = await workflowService.getWorkflowNodes(numericId);
 
     return res.status(200).json({
       data: nodes,
     });
   } catch (error) {
-    console.error("[WorkflowController] Error getting workflow nodes:", error);
-    return res.status(500).json({
-      message: "Internal server error",
-    });
+    next(error);
   }
 }
 
@@ -169,27 +154,22 @@ export async function getWorkflowNodes(req: Request, res: Response) {
  * GET /api/workflows/:id/edges
  * Get all edges for a workflow.
  */
-export async function getWorkflowEdges(req: Request, res: Response) {
-  const { id } = req.params;
-
-  const numericId = Number(id);
-  if (Number.isNaN(numericId)) {
-    return res.status(400).json({
-      message: "Invalid workflow ID",
-    });
-  }
-
+export async function getWorkflowEdges(req: Request, res: Response, next: NextFunction) {
   try {
+    const { id } = req.params;
+
+    const numericId = Number(id);
+    if (Number.isNaN(numericId)) {
+      throw createValidationError("Invalid workflow ID");
+    }
+
     const edges = await workflowService.getWorkflowEdges(numericId);
 
     return res.status(200).json({
       data: edges,
     });
   } catch (error) {
-    console.error("[WorkflowController] Error getting workflow edges:", error);
-    return res.status(500).json({
-      message: "Internal server error",
-    });
+    next(error);
   }
 }
 
@@ -197,33 +177,26 @@ export async function getWorkflowEdges(req: Request, res: Response) {
  * GET /api/workflows/:id/graph
  * Return { nodes, edges } for a workflow graph.
  */
-export async function getWorkflowGraph(req: Request, res: Response) {
-  const { id } = req.params;
-
-  const numericId = Number(id);
-  if (Number.isNaN(numericId)) {
-    return res.status(400).json({
-      message: "Invalid workflow ID",
-    });
-  }
-
+export async function getWorkflowGraph(req: Request, res: Response, next: NextFunction) {
   try {
+    const { id } = req.params;
+
+    const numericId = Number(id);
+    if (Number.isNaN(numericId)) {
+      throw createValidationError("Invalid workflow ID");
+    }
+
     const graph = await workflowService.getWorkflowGraph(numericId);
 
     if (!graph) {
-      return res.status(404).json({
-        message: "Workflow not found",
-      });
+      throw createNotFoundError("Workflow", numericId);
     }
 
     return res.status(200).json({
       data: graph,
     });
   } catch (error) {
-    console.error("[WorkflowController] Error getting workflow graph:", error);
-    return res.status(500).json({
-      message: "Internal server error",
-    });
+    next(error);
   }
 }
 
@@ -237,19 +210,17 @@ export async function getWorkflowGraph(req: Request, res: Response) {
  * PUT /api/workflows/:id/nodes/:nodeId
  * Update an existing node in the workflow.
  */
-export async function updateWorkflowNode(req: Request, res: Response) {
-  const { id, nodeId } = req.params;
-
-  const workflowId = Number(id);
-  const numericNodeId = Number(nodeId);
-
-  if (Number.isNaN(workflowId) || Number.isNaN(numericNodeId)) {
-    return res
-      .status(400)
-      .json({ message: "Invalid workflow ID or node ID" });
-  }
-
+export async function updateWorkflowNode(req: Request, res: Response, next: NextFunction) {
   try {
+    const { id, nodeId } = req.params;
+
+    const workflowId = Number(id);
+    const numericNodeId = Number(nodeId);
+
+    if (Number.isNaN(workflowId) || Number.isNaN(numericNodeId)) {
+      throw createValidationError("Invalid workflow ID or node ID");
+    }
+
     const { kind, name, config, posX, posY } = req.body ?? {};
 
     const updated = await workflowService.updateWorkflowNode(
@@ -265,9 +236,7 @@ export async function updateWorkflowNode(req: Request, res: Response) {
     );
 
     if (!updated) {
-      return res.status(404).json({
-        message: "Node not found for this workflow",
-      });
+      throw createNotFoundError("Node", numericNodeId);
     }
 
     // Audit log
@@ -285,11 +254,8 @@ export async function updateWorkflowNode(req: Request, res: Response) {
 
     // Return whatever the frontend expects as the node shape
     return res.status(200).json({ data: updated });
-  } catch (err) {
-    console.error("[updateWorkflowNode] error:", err);
-    return res.status(500).json({
-      message: "Failed to update node",
-    });
+  } catch (error) {
+    next(error);
   }
 }
 
@@ -297,25 +263,23 @@ export async function updateWorkflowNode(req: Request, res: Response) {
  * DELETE /api/workflows/:id/nodes/:nodeId
  * Delete a node from the workflow.
  */
-export async function deleteWorkflowNode(req: Request, res: Response) {
-  const { id, nodeId } = req.params;
-  const numericId = Number(id);
-  const numericNodeId = Number(nodeId);
-
-  if (Number.isNaN(numericId) || Number.isNaN(numericNodeId)) {
-    return res
-      .status(400)
-      .json({ message: "Invalid workflow ID or node ID" });
-  }
-
+export async function deleteWorkflowNode(req: Request, res: Response, next: NextFunction) {
   try {
+    const { id, nodeId } = req.params;
+    const numericId = Number(id);
+    const numericNodeId = Number(nodeId);
+
+    if (Number.isNaN(numericId) || Number.isNaN(numericNodeId)) {
+      throw createValidationError("Invalid workflow ID or node ID");
+    }
+
     const ok = await workflowService.deleteWorkflowNode(
       numericId,
       numericNodeId
     );
 
     if (!ok) {
-      return res.status(404).json({ message: "Node not found" });
+      throw createNotFoundError("Node", numericNodeId);
     }
 
     // Audit log
@@ -334,8 +298,7 @@ export async function deleteWorkflowNode(req: Request, res: Response) {
     // 204 No Content is standard for successful delete
     return res.status(204).send();
   } catch (error) {
-    console.error("[WorkflowController] Error deleting workflow node:", error);
-    return res.status(500).json({ message: "Internal server error" });
+    next(error);
   }
 }
 
@@ -343,23 +306,21 @@ export async function deleteWorkflowNode(req: Request, res: Response) {
  * POST /api/workflows/:id/edges
  * Create a new edge between two nodes in the workflow.
  */
-export async function createWorkflowEdge(req: Request, res: Response) {
-  const { id } = req.params;
-  const numericId = Number(id);
-
-  if (Number.isNaN(numericId)) {
-    return res.status(400).json({ message: "Invalid workflow ID" });
-  }
-
-  const { fromNodeId, toNodeId, label, priority, condition } = req.body;
-
-  if (typeof fromNodeId !== "number" || typeof toNodeId !== "number") {
-    return res.status(400).json({
-      message: "fromNodeId and toNodeId must be numbers",
-    });
-  }
-
+export async function createWorkflowEdge(req: Request, res: Response, next: NextFunction) {
   try {
+    const { id } = req.params;
+    const numericId = Number(id);
+
+    if (Number.isNaN(numericId)) {
+      throw createValidationError("Invalid workflow ID");
+    }
+
+    const { fromNodeId, toNodeId, label, priority, condition } = req.body;
+
+    if (typeof fromNodeId !== "number" || typeof toNodeId !== "number") {
+      throw createValidationError("fromNodeId and toNodeId must be numbers");
+    }
+
     const edge = await workflowService.createWorkflowEdge(numericId, {
       fromNodeId,
       toNodeId,
@@ -369,11 +330,8 @@ export async function createWorkflowEdge(req: Request, res: Response) {
     });
 
     return res.status(201).json({ data: edge });
-  } catch (error: any) {
-    console.error("[WorkflowController] Error creating workflow edge:", error);
-    return res.status(400).json({
-      message: error?.message ?? "Bad request",
-    });
+  } catch (error) {
+    next(error);
   }
 }
 
@@ -381,20 +339,18 @@ export async function createWorkflowEdge(req: Request, res: Response) {
  * PUT /api/workflows/:id/edges/:edgeId
  * Update an existing edge in the workflow.
  */
-export async function updateWorkflowEdge(req: Request, res: Response) {
-  const { id, edgeId } = req.params;
-  const numericId = Number(id);
-  const numericEdgeId = Number(edgeId);
-
-  if (Number.isNaN(numericId) || Number.isNaN(numericEdgeId)) {
-    return res
-      .status(400)
-      .json({ message: "Invalid workflow ID or edge ID" });
-  }
-
-  const { fromNodeId, toNodeId, label, priority, condition } = req.body;
-
+export async function updateWorkflowEdge(req: Request, res: Response, next: NextFunction) {
   try {
+    const { id, edgeId } = req.params;
+    const numericId = Number(id);
+    const numericEdgeId = Number(edgeId);
+
+    if (Number.isNaN(numericId) || Number.isNaN(numericEdgeId)) {
+      throw createValidationError("Invalid workflow ID or edge ID");
+    }
+
+    const { fromNodeId, toNodeId, label, priority, condition } = req.body;
+
     const edge = await workflowService.updateWorkflowEdge(
       numericId,
       numericEdgeId,
@@ -408,15 +364,12 @@ export async function updateWorkflowEdge(req: Request, res: Response) {
     );
 
     if (!edge) {
-      return res.status(404).json({ message: "Edge not found" });
+      throw createNotFoundError("Edge", numericEdgeId);
     }
 
     return res.status(200).json({ data: edge });
-  } catch (error: any) {
-    console.error("[WorkflowController] Error updating workflow edge:", error);
-    return res.status(400).json({
-      message: error?.message ?? "Bad request",
-    });
+  } catch (error) {
+    next(error);
   }
 }
 
@@ -424,31 +377,28 @@ export async function updateWorkflowEdge(req: Request, res: Response) {
  * DELETE /api/workflows/:id/edges/:edgeId
  * Delete an edge from the workflow.
  */
-export async function deleteWorkflowEdge(req: Request, res: Response) {
-  const { id, edgeId } = req.params;
-  const numericId = Number(id);
-  const numericEdgeId = Number(edgeId);
-
-  if (Number.isNaN(numericId) || Number.isNaN(numericEdgeId)) {
-    return res
-      .status(400)
-      .json({ message: "Invalid workflow ID or edge ID" });
-  }
-
+export async function deleteWorkflowEdge(req: Request, res: Response, next: NextFunction) {
   try {
+    const { id, edgeId } = req.params;
+    const numericId = Number(id);
+    const numericEdgeId = Number(edgeId);
+
+    if (Number.isNaN(numericId) || Number.isNaN(numericEdgeId)) {
+      throw createValidationError("Invalid workflow ID or edge ID");
+    }
+
     const ok = await workflowService.deleteWorkflowEdge(
       numericId,
       numericEdgeId
     );
 
     if (!ok) {
-      return res.status(404).json({ message: "Edge not found" });
+      throw createNotFoundError("Edge", numericEdgeId);
     }
 
     return res.status(204).send();
   } catch (error) {
-    console.error("[WorkflowController] Error deleting workflow edge:", error);
-    return res.status(500).json({ message: "Internal server error" });
+    next(error);
   }
 }
 
@@ -456,27 +406,27 @@ export async function deleteWorkflowEdge(req: Request, res: Response) {
  * POST /api/workflows/:id/nodes
  * Create a new node for a workflow.
  */
-export async function createWorkflowNode(req: Request, res: Response) {
-  const { id } = req.params;
-  const workflowId = Number(id);
-
-  if (Number.isNaN(workflowId)) {
-    return res.status(400).json({ message: "Invalid workflow ID" });
-  }
-
-  const { kind, name, config, posX, posY } = req.body as {
-    kind?: string;
-    name?: string;
-    config?: Record<string, any>;
-    posX?: number;
-    posY?: number;
-  };
-
-  if (!kind) {
-    return res.status(400).json({ message: "Node kind is required" });
-  }
-
+export async function createWorkflowNode(req: Request, res: Response, next: NextFunction) {
   try {
+    const { id } = req.params;
+    const workflowId = Number(id);
+
+    if (Number.isNaN(workflowId)) {
+      throw createValidationError("Invalid workflow ID");
+    }
+
+    const { kind, name, config, posX, posY } = req.body as {
+      kind?: string;
+      name?: string;
+      config?: Record<string, any>;
+      posX?: number;
+      posY?: number;
+    };
+
+    if (!kind) {
+      throw createValidationError("Node kind is required");
+    }
+
     const node = await workflowService.createWorkflowNode(workflowId, {
       kind: kind as any,
       name: name ?? null,
@@ -487,42 +437,28 @@ export async function createWorkflowNode(req: Request, res: Response) {
 
     return res.status(201).json({ data: node });
   } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Internal server error while creating node";
-    console.error(
-      "[WorkflowController] Error creating workflow node:",
-      error
-    );
-    return res
-      .status(500)
-      .json({ message });
+    next(error);
   }
 }
-export async function updateWorkflowNodePosition(req: Request, res: Response) {
-  const { id, nodeId } = req.params;
-  const { posX, posY } = req.body as {
-    posX?: number;
-    posY?: number;
-  };
-
-  const numericId = Number(id);
-  const numericNodeId = Number(nodeId);
-
-  if (Number.isNaN(numericId) || Number.isNaN(numericNodeId)) {
-    return res
-      .status(400)
-      .json({ message: "Invalid workflow ID or node ID" });
-  }
-
-  if (typeof posX !== "number" || typeof posY !== "number") {
-    return res
-      .status(400)
-      .json({ message: "posX and posY must be numbers" });
-  }
-
+export async function updateWorkflowNodePosition(req: Request, res: Response, next: NextFunction) {
   try {
+    const { id, nodeId } = req.params;
+    const { posX, posY } = req.body as {
+      posX?: number;
+      posY?: number;
+    };
+
+    const numericId = Number(id);
+    const numericNodeId = Number(nodeId);
+
+    if (Number.isNaN(numericId) || Number.isNaN(numericNodeId)) {
+      throw createValidationError("Invalid workflow ID or node ID");
+    }
+
+    if (typeof posX !== "number" || typeof posY !== "number") {
+      throw createValidationError("posX and posY must be numbers");
+    }
+
     const updated = await workflowService.updateWorkflowNodePosition(
       numericId,
       numericNodeId,
@@ -531,25 +467,20 @@ export async function updateWorkflowNodePosition(req: Request, res: Response) {
     );
 
     if (!updated) {
-      return res.status(404).json({ message: "Node not found" });
+      throw createNotFoundError("Node", numericNodeId);
     }
 
     return res.status(200).json({ data: updated });
   } catch (error) {
-    console.error(
-      "[WorkflowController] Error updating workflow node position:",
-      error
-    );
-    return res.status(500).json({ message: "Internal server error" });
+    next(error);
   }
-
 }
 
 /**
  * POST /api/workflows
  * Create a workflow.
  */
-export async function createWorkflow(req: Request, res: Response) {
+export async function createWorkflow(req: Request, res: Response, next: NextFunction) {
   try {
     const { name, description, isActive, ownerUserId, defaultTrigger } =
       req.body ?? {};
@@ -562,7 +493,7 @@ export async function createWorkflow(req: Request, res: Response) {
           : null;
 
     if (typeof name !== "string" || name.trim().length === 0) {
-      return res.status(400).json({ message: "Workflow name is required" });
+      throw createValidationError("Workflow name is required");
     }
 
     const created = await workflowService.createWorkflow({
@@ -598,8 +529,7 @@ export async function createWorkflow(req: Request, res: Response) {
 
     return res.status(201).json({ data: created });
   } catch (error) {
-    console.error("[WorkflowController] Error creating workflow:", error);
-    return res.status(500).json({ message: "Internal server error" });
+    next(error);
   }
 }
 
@@ -607,22 +537,18 @@ export async function createWorkflow(req: Request, res: Response) {
  * DELETE /api/workflows/:id
  * Delete a workflow.
  */
-export async function deleteWorkflow(req: Request, res: Response) {
-  const { id } = req.params;
-
-  const numericId = Number(id);
-  if (Number.isNaN(numericId)) {
-    return res.status(400).json({
-      message: "Invalid workflow ID",
-    });
-  }
-
+export async function deleteWorkflow(req: Request, res: Response, next: NextFunction) {
   try {
+    const { id } = req.params;
+
+    const numericId = Number(id);
+    if (Number.isNaN(numericId)) {
+      throw createValidationError("Invalid workflow ID");
+    }
+
     const workflow = await workflowService.getWorkflowById(numericId);
     if (!workflow) {
-      return res.status(404).json({
-        message: "Workflow not found",
-      });
+      throw createNotFoundError("Workflow", numericId);
     }
 
     await workflowService.deleteWorkflow(numericId);
@@ -641,10 +567,7 @@ export async function deleteWorkflow(req: Request, res: Response) {
 
     return res.status(204).send();
   } catch (error) {
-    console.error("[WorkflowController] Error deleting workflow:", error);
-    return res.status(500).json({
-      message: "Internal server error",
-    });
+    next(error);
   }
 }
 
@@ -652,17 +575,15 @@ export async function deleteWorkflow(req: Request, res: Response) {
  * POST /api/workflows/:id/duplicate
  * Duplicate a workflow with all its nodes and edges.
  */
-export async function duplicateWorkflow(req: Request, res: Response) {
-  const { id } = req.params;
-
-  const numericId = Number(id);
-  if (Number.isNaN(numericId)) {
-    return res.status(400).json({
-      message: "Invalid workflow ID",
-    });
-  }
-
+export async function duplicateWorkflow(req: Request, res: Response, next: NextFunction) {
   try {
+    const { id } = req.params;
+
+    const numericId = Number(id);
+    if (Number.isNaN(numericId)) {
+      throw createValidationError("Invalid workflow ID");
+    }
+
     const authUserId = (req as any).user?.userId;
     const duplicated = await workflowService.duplicateWorkflow(
       numericId,
@@ -670,9 +591,7 @@ export async function duplicateWorkflow(req: Request, res: Response) {
     );
 
     if (!duplicated) {
-      return res.status(404).json({
-        message: "Workflow not found",
-      });
+      throw createNotFoundError("Workflow", numericId);
     }
 
     // Audit log
@@ -693,10 +612,7 @@ export async function duplicateWorkflow(req: Request, res: Response) {
 
     return res.status(201).json({ data: duplicated });
   } catch (error) {
-    console.error("[WorkflowController] Error duplicating workflow:", error);
-    return res.status(500).json({
-      message: "Internal server error",
-    });
+    next(error);
   }
 }
 
@@ -704,31 +620,28 @@ export async function duplicateWorkflow(req: Request, res: Response) {
  * GET /api/workflows/:id/form-url
  * Generate a pre-filled Google Form URL for this workflow
  */
-export async function getWorkflowFormUrl(req: Request, res: Response) {
-  const { id } = req.params;
-
-  const workflowId = Number(id);
-  if (Number.isNaN(workflowId)) {
-    return res.status(400).json({
-      message: "Invalid workflow ID",
-    });
-  }
-
+export async function getWorkflowFormUrl(req: Request, res: Response, next: NextFunction) {
   try {
+    const { id } = req.params;
+
+    const workflowId = Number(id);
+    if (Number.isNaN(workflowId)) {
+      throw createValidationError("Invalid workflow ID");
+    }
+
     // Check if Google Form is configured
     if (!googleFormHelper.isGoogleFormConfigured()) {
-      return res.status(503).json({
-        message: "Google Form integration not configured",
-        configured: false,
-      });
+      throw new AppError(
+        "Google Form integration not configured",
+        503,
+        ErrorCodes.N8N_UNAVAILABLE
+      );
     }
 
     // Verify workflow exists
     const workflow = await workflowService.getWorkflowById(workflowId);
     if (!workflow) {
-      return res.status(404).json({
-        message: "Workflow not found",
-      });
+      throw createNotFoundError("Workflow", workflowId);
     }
 
     // Generate pre-filled form URL
@@ -743,9 +656,6 @@ export async function getWorkflowFormUrl(req: Request, res: Response) {
       },
     });
   } catch (error) {
-    console.error("[WorkflowController] Error generating form URL:", error);
-    return res.status(500).json({
-      message: "Internal server error",
-    });
+    next(error);
   }
 }

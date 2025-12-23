@@ -1,6 +1,7 @@
 // backend/src/routes/dashboardRoutes.ts
 import { Router, Request, Response } from "express";
 import * as dashboardService from "../services/dashboardService";
+import logger from "../lib/logger";
 
 const router = Router();
 
@@ -25,7 +26,14 @@ router.get("/stats", async (req: Request, res: Response) => {
 
     res.json(stats);
   } catch (error) {
-    console.error("[Dashboard] Failed to get stats:", error);
+    logger.error("Failed to fetch dashboard stats", {
+      service: "dashboardRoutes",
+      requestId: (req as any).requestId,
+      userId: req.user?.userId,
+      role: req.user?.role,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    });
     res.status(500).json({ error: "Failed to fetch dashboard stats" });
   }
 });
@@ -46,7 +54,14 @@ router.get("/charts", async (req: Request, res: Response) => {
 
     res.json(chartData);
   } catch (error) {
-    console.error("[Dashboard] Failed to get chart data:", error);
+    logger.error("Failed to fetch dashboard chart data", {
+      service: "dashboardRoutes",
+      requestId: (req as any).requestId,
+      userId: req.user?.userId,
+      role: req.user?.role,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    });
     res.status(500).json({ error: "Failed to fetch chart data" });
   }
 });

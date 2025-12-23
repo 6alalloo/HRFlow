@@ -2,6 +2,7 @@
 import { Request, Response } from "express";
 import * as allowListService from "../services/allowListService";
 import * as auditService from "../services/auditService";
+import logger from "../lib/logger";
 
 /**
  * GET /api/settings/database-tables
@@ -23,7 +24,11 @@ export async function getDatabaseTables(_req: Request, res: Response) {
     ];
     res.json({ data: tables });
   } catch (error) {
-    console.error("Error fetching database tables:", error);
+    logger.error("Error fetching database tables", {
+      service: "SettingsController",
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    });
     res.status(500).json({ error: "Failed to fetch database tables" });
   }
 }
@@ -37,7 +42,11 @@ export async function getAllowedDomains(_req: Request, res: Response) {
     const domains = await allowListService.getAllowList();
     res.json({ data: domains });
   } catch (error) {
-    console.error("Error fetching allow-list:", error);
+    logger.error("Error fetching allow-list", {
+      service: "SettingsController",
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    });
     res.status(500).json({ error: "Failed to fetch allow-list" });
   }
 }
@@ -98,7 +107,12 @@ export async function addAllowedDomain(req: Request, res: Response) {
 
     res.status(201).json(newDomain);
   } catch (error) {
-    console.error("Error adding domain:", error);
+    logger.error("Error adding domain", {
+      service: "SettingsController",
+      domain: normalizedDomain,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    });
     res.status(500).json({ error: "Failed to add domain" });
   }
 }
@@ -137,7 +151,12 @@ export async function removeAllowedDomain(req: Request, res: Response) {
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Error removing domain:", error);
+    logger.error("Error removing domain", {
+      service: "SettingsController",
+      domainId,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    });
     res.status(500).json({ error: "Failed to remove domain" });
   }
 }

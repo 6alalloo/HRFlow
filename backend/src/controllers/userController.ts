@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import * as userService from "../services/userService";
+import logger from "../lib/logger";
 
 /**
  * GET /api/users
@@ -38,7 +39,11 @@ export async function getAllUsers(req: Request, res: Response) {
       data: users,
     });
   } catch (error) {
-    console.error("[UserController] Error getting all users:", error);
+    logger.error("Error getting all users", {
+      service: "UserController",
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    });
     return res.status(500).json({
       message: "Internal server error",
     });
@@ -72,7 +77,12 @@ export async function getUserById(req: Request, res: Response) {
       data: user,
     });
   } catch (error) {
-    console.error("[UserController] Error getting user by id:", error);
+    logger.error("Error getting user by id", {
+      service: "UserController",
+      userId: numericId,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    });
     return res.status(500).json({
       message: "Internal server error",
     });

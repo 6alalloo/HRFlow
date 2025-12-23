@@ -6,6 +6,7 @@ import {
   getFileMetadata,
   deleteFile,
 } from "../services/fileUploadService";
+import logger from "../lib/logger";
 
 const router = Router();
 
@@ -31,7 +32,13 @@ router.post("/upload", upload.single("file"), (req: Request, res: Response) => {
       },
     });
   } catch (err) {
-    console.error("[FileRoutes] Upload error:", err);
+    logger.error("File upload error", {
+      service: "fileRoutes",
+      requestId: (req as any).requestId,
+      filename: req.file?.originalname,
+      error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined
+    });
     res.status(500).json({
       error: err instanceof Error ? err.message : "Failed to upload file",
     });

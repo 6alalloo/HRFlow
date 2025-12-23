@@ -1,5 +1,7 @@
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000";
+import { config } from "../config/appConfig";
+
+// Note: config.apiBaseUrl already includes /api suffix
+const API_BASE_URL = config.apiBaseUrl.replace(/\/api$/, "");
 
 /**
  * Execution row statuses (from DB)

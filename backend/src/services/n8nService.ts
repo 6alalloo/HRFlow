@@ -1,5 +1,6 @@
 // backend/src/services/n8nService.ts
 import { N8N_EXECUTE_URL, N8N_API_BASE_URL, N8N_API_KEY } from "../config/n8nConfig";
+import logger from "../lib/logger";
 
 export type N8nExecutePayload = {
   hrflowWorkflowId: number;
@@ -207,7 +208,10 @@ export async function getN8nExecutionForWorkflow(
   n8nWorkflowId: string
 ): Promise<N8nExecutionData | null> {
   try {
-    console.log("[n8nService] Fetching executions for workflow:", n8nWorkflowId);
+    logger.info("Fetching executions from n8n", {
+      service: "n8nService",
+      n8nWorkflowId
+    });
 
     // Get executions for this workflow, sorted by most recent
     const res = await n8nApiFetch(
@@ -216,19 +220,32 @@ export async function getN8nExecutionForWorkflow(
     );
     const data = await res.json();
 
-    console.log("[n8nService] Executions API response keys:", Object.keys(data || {}));
+    logger.debug("n8n executions API response", {
+      service: "n8nService",
+      n8nWorkflowId,
+      responseKeys: Object.keys(data || {})
+    });
 
     // Handle both array and { data: [...] } response formats
     const executions = Array.isArray(data) ? data : data?.data || [];
 
-    console.log("[n8nService] Found", executions.length, "executions");
+    logger.info("Found n8n executions", {
+      service: "n8nService",
+      n8nWorkflowId,
+      executionCount: executions.length
+    });
 
     if (executions.length === 0) {
       return null;
     }
 
     const latestExecution = executions[0];
-    console.log("[n8nService] Latest execution ID:", latestExecution.id, "status:", latestExecution.status);
+    logger.info("Retrieved latest n8n execution", {
+      service: "n8nService",
+      n8nWorkflowId,
+      n8nExecutionId: latestExecution.id,
+      status: latestExecution.status
+    });
 
     // Fetch full execution details with data
     const detailRes = await n8nApiFetch(
@@ -237,12 +254,22 @@ export async function getN8nExecutionForWorkflow(
     );
     const executionDetail = await detailRes.json();
 
-    console.log("[n8nService] Execution detail keys:", Object.keys(executionDetail || {}));
-    console.log("[n8nService] Has data.resultData.runData:", !!executionDetail?.data?.resultData?.runData);
+    logger.debug("n8n execution details retrieved", {
+      service: "n8nService",
+      n8nWorkflowId,
+      n8nExecutionId: latestExecution.id,
+      detailKeys: Object.keys(executionDetail || {}),
+      hasRunData: !!executionDetail?.data?.resultData?.runData
+    });
 
     return parseN8nExecutionData(executionDetail);
   } catch (err) {
-    console.error("[n8nService] Failed to fetch execution details:", err);
+    logger.error("Failed to fetch n8n execution details", {
+      service: "n8nService",
+      n8nWorkflowId,
+      error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined
+    });
     return null;
   }
 }

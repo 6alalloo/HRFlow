@@ -1,6 +1,7 @@
 // backend/src/controllers/auditController.ts
 import { Request, Response } from "express";
 import * as auditService from "../services/auditService";
+import logger from "../lib/logger";
 
 /**
  * GET /api/audit
@@ -41,7 +42,11 @@ export async function getAuditLogs(req: Request, res: Response) {
       offset: result.offset,
     });
   } catch (error) {
-    console.error("[AuditController] Error getting audit logs:", error);
+    logger.error("Error getting audit logs", {
+      service: "AuditController",
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    });
     return res.status(500).json({
       message: "Internal server error",
     });
@@ -70,7 +75,12 @@ export async function getWorkflowAuditLogs(req: Request, res: Response) {
       total: result.total,
     });
   } catch (error) {
-    console.error("[AuditController] Error getting workflow audit logs:", error);
+    logger.error("Error getting workflow audit logs", {
+      service: "AuditController",
+      workflowId: numericWorkflowId,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    });
     return res.status(500).json({
       message: "Internal server error",
     });
@@ -99,7 +109,12 @@ export async function getExecutionAuditLogs(req: Request, res: Response) {
       total: result.total,
     });
   } catch (error) {
-    console.error("[AuditController] Error getting execution audit logs:", error);
+    logger.error("Error getting execution audit logs", {
+      service: "AuditController",
+      executionId: numericExecutionId,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    });
     return res.status(500).json({
       message: "Internal server error",
     });
@@ -128,7 +143,12 @@ export async function getUserAuditLogs(req: Request, res: Response) {
       total: result.total,
     });
   } catch (error) {
-    console.error("[AuditController] Error getting user audit logs:", error);
+    logger.error("Error getting user audit logs", {
+      service: "AuditController",
+      userId: numericUserId,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    });
     return res.status(500).json({
       message: "Internal server error",
     });
@@ -167,7 +187,12 @@ export async function purgeOldAuditLogs(req: Request, res: Response) {
       message: `Successfully purged ${deletedCount} audit log records older than ${days} days`,
     });
   } catch (error) {
-    console.error("[AuditController] Error purging audit logs:", error);
+    logger.error("Error purging audit logs", {
+      service: "AuditController",
+      days,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    });
     return res.status(500).json({
       message: "Internal server error",
     });

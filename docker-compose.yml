@@ -79,6 +79,9 @@ services:
       - N8N_SMTP_CREDENTIAL_NAME=${N8N_SMTP_CREDENTIAL_NAME:-}
       - CV_PARSER_URL=http://cv-parser:8000
       - JWT_SECRET=${JWT_SECRET:-hrflow-jwt-secret-change-in-production}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-24h}
+      - DEFAULT_EMAIL_SENDER=${DEFAULT_EMAIL_SENDER:-noreply@hrflow.local}
+      - DEFAULT_EMAIL_RECIPIENT=${DEFAULT_EMAIL_RECIPIENT:-demo@example.com}
       - PORT=4000
     ports:
       - "4000:4000"

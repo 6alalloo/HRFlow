@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { FiCheck, FiX, FiActivity, FiZap, FiUser, FiClock, FiChevronRight } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
 import { getAuthToken } from '../../../contexts/AuthContext';
+import { config } from '../../../config/appConfig';
 
 type ExecutionSummary = {
     id: number;
@@ -26,7 +27,7 @@ const RecentExecutions: React.FC<{ workflowId: number }> = ({ workflowId }) => {
                 if (token) {
                     headers['Authorization'] = `Bearer ${token}`;
                 }
-                const res = await fetch(`http://localhost:4000/api/workflows/${workflowId}/executions?limit=3`, { headers });
+                const res = await fetch(`${config.apiBaseUrl}/workflows/${workflowId}/executions?limit=3`, { headers });
                 if (res.ok) {
                     const json = await res.json();
                     const data = json.data || json;

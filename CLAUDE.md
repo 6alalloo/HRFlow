@@ -89,23 +89,79 @@ npx prisma migrate reset
 
 ## Environment Setup
 
-### Backend (.env)
-Required environment variables in `backend/.env`:
+All environment variables are managed through centralized configuration modules:
+- **Backend:** [backend/src/config/appConfig.ts](backend/src/config/appConfig.ts)
+- **Frontend:** [frontend/src/config/appConfig.ts](frontend/src/config/appConfig.ts)
 
-```bash
-DATABASE_URL="postgresql://user:password@localhost:5432/HRFlow?schema=Core"
+The application will fail to start with clear error messages if required environment variables are missing.
 
-# n8n integration
-N8N_BASE_URL=http://localhost:5678
-N8N_API_KEY=your_n8n_api_key
-N8N_POSTGRES_CREDENTIAL_ID=credential_id_from_n8n
-N8N_SMTP_CREDENTIAL_ID=credential_id_from_n8n
-```
+### Environment Variables Reference
 
-**Critical**: n8n must be running locally with configured PostgreSQL and SMTP credentials before testing workflow execution.
+#### Required Variables (Backend)
+These MUST be set or the application will not start:
 
-### Frontend
-No environment variables required. API base URL is hardcoded to `http://localhost:4000/api` in `frontend/src/api/workflows.ts` and `frontend/src/api/executions.ts`.
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `DATABASE_URL` | PostgreSQL connection string | `postgresql://hrflow:hrflow123@localhost:5432/HRFlow?schema=Core` |
+| `JWT_SECRET` | Secret for JWT token signing | Generate with: `openssl rand -base64 32` |
+| `N8N_API_KEY` | n8n API key from n8n UI (Settings > API) | `n8n_api_abc123...` |
+
+#### Optional Variables (Backend)
+These have sensible defaults for local development:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `4000` | Server port |
+| `NODE_ENV` | `development` | Environment mode |
+| `N8N_BASE_URL` | `http://localhost:5678` | n8n base URL |
+| `N8N_WEBHOOK_BASE_URL` | Same as `N8N_BASE_URL` | n8n webhook URL (for external access) |
+| `N8N_POSTGRES_CREDENTIAL_ID` | `""` | PostgreSQL credential ID in n8n |
+| `N8N_POSTGRES_CREDENTIAL_NAME` | `""` | PostgreSQL credential name in n8n |
+| `N8N_SMTP_CREDENTIAL_ID` | `""` | SMTP credential ID in n8n |
+| `N8N_SMTP_CREDENTIAL_NAME` | `""` | SMTP credential name in n8n |
+| `CV_PARSER_URL` | `http://localhost:8000` | CV parser service URL |
+| `JWT_EXPIRES_IN` | `24h` | JWT token expiration time |
+| `DEFAULT_EMAIL_SENDER` | `noreply@hrflow.local` | Default sender for n8n email templates |
+| `DEFAULT_EMAIL_RECIPIENT` | `demo@example.com` | Default recipient for demo workflows |
+
+#### Frontend Variables
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `VITE_API_BASE_URL` | Production only | Backend API base URL (e.g., `http://localhost:4000/api`) |
+
+**Note:** In development, `VITE_API_BASE_URL` defaults to `http://localhost:4000/api`.
+
+### File Upload Configuration
+File upload limits are configured as constants in code (not environment variables):
+- **Max Size:** 10MB (see `FILE_UPLOAD_CONFIG` in [backend/src/services/fileUploadService.ts](backend/src/services/fileUploadService.ts))
+- **Expiry:** 24 hours (temporary file cleanup policy)
+
+### Setup Instructions
+
+1. **Copy environment template:**
+   ```bash
+   cp .env.example .env
+   ```
+
+2. **Generate JWT secret:**
+   ```bash
+   openssl rand -base64 32
+   ```
+   Add to `.env` as `JWT_SECRET=<generated-value>`
+
+3. **Start n8n and create credentials:**
+   - Start n8n: `docker-compose up n8n -d`
+   - Access UI: http://localhost:5678
+   - Create PostgreSQL credential, copy ID to `N8N_POSTGRES_CREDENTIAL_ID`
+   - Create SMTP credential, copy ID to `N8N_SMTP_CREDENTIAL_ID`
+   - Generate API key in Settings > API, copy to `N8N_API_KEY`
+
+4. **Start all services:**
+   ```bash
+   docker-compose up -d
+   ```
+
+**Critical**: n8n must be running with configured PostgreSQL and SMTP credentials before testing workflow execution.
 
 ## Code Architecture
 

@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken, JwtPayload } from '../services/authService';
+import logger from '../lib/logger';
 
 // Extend Express Request to include user info
 declare global {
@@ -39,7 +40,14 @@ export function authenticate(req: Request, res: Response, next: NextFunction) {
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
   } catch (error) {
-    console.error('Auth middleware error:', error);
+    logger.error('Authentication middleware error', {
+      service: 'authMiddleware',
+      requestId: (req as any).requestId,
+      path: req.path,
+      method: req.method,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    });
     return res.status(500).json({ error: 'Internal server error' });
   }
 }

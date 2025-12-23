@@ -4,9 +4,11 @@ import FormData from "form-data";
 import fs from "fs";
 import path from "path";
 import { getFilePath, getFileMetadata } from "./fileUploadService";
+import { config } from "../config/appConfig";
+import logger from "../lib/logger";
 
-// CV Parser service URL (Docker internal network)
-const CV_PARSER_URL = process.env.CV_PARSER_URL || "http://localhost:8000";
+// CV Parser service URL from centralized config
+const CV_PARSER_URL = config.cvParser.url;
 
 export interface CVParseResult {
   success: boolean;
@@ -32,7 +34,7 @@ export async function parseCV(fileId: string): Promise<CVParseResult> {
   // Check if cv-parser is healthy
   const isHealthy = await isCVParserHealthy();
   if (!isHealthy) {
-    console.warn(`[CVParserService] CV parser service is not healthy at ${CV_PARSER_URL}`);
+    logger.warn('CV parser service is not healthy', { cvParserUrl: CV_PARSER_URL });
     return {
       success: false,
       source: "file",
@@ -77,17 +79,29 @@ export async function parseCV(fileId: string): Promise<CVParseResult> {
     });
 
     // Call cv-parser service using axios
-    console.log(`[CVParserService] Calling cv-parser at ${CV_PARSER_URL}/parse`);
-    console.log(`[CVParserService] File: ${metadata.originalName} (${metadata.size} bytes, type: ${metadata.mimeType})`);
+    logger.info('Calling CV parser service', {
+      cvParserUrl: CV_PARSER_URL,
+      fileId,
+      fileName: metadata.originalName,
+      fileSize: metadata.size,
+      mimeType: metadata.mimeType
+    });
 
     const response = await axios.post(`${CV_PARSER_URL}/parse`, form, {
       headers: form.getHeaders(),
     });
 
-    console.log(`[CVParserService] Response status: ${response.status}`);
+    logger.debug('CV parser response received', {
+      fileId,
+      status: response.status
+    });
 
     if (response.status !== 200) {
-      console.error(`[CVParserService] cv-parser error: ${response.status} - ${JSON.stringify(response.data)}`);
+      logger.error('CV parser returned error status', {
+        fileId,
+        status: response.status,
+        responseData: response.data
+      });
       return {
         success: false,
         source: "file",
@@ -105,7 +119,11 @@ export async function parseCV(fileId: string): Promise<CVParseResult> {
     }
 
     const result = response.data;
-    console.log("[CVParserService] Parse result:", JSON.stringify(result).slice(0, 500));
+    logger.info('CV parse completed successfully', {
+      fileId,
+      fileName: metadata.originalName,
+      resultPreview: JSON.stringify(result).slice(0, 200)
+    });
 
     return {
       success: true,
@@ -114,7 +132,11 @@ export async function parseCV(fileId: string): Promise<CVParseResult> {
       data: result.data || result,
     };
   } catch (err) {
-    console.error("[CVParserService] Error calling cv-parser:", err);
+    logger.error('Error calling CV parser service', {
+      fileId,
+      error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined
+    });
     return {
       success: false,
       source: "file",

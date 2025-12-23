@@ -24,7 +24,8 @@
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.0.2",
-    "undici": "^7.16.0"
+    "undici": "^7.16.0",
+    "winston": "^3.19.0"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

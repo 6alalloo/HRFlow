@@ -3,6 +3,18 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
+import logger from "../lib/logger";
+
+/**
+ * File Upload Configuration
+ * These limits are intentionally hardcoded as business rules, not environment variables.
+ */
+export const FILE_UPLOAD_CONFIG = {
+  /** Maximum file size: 10MB - intentional limit for CV/resume files */
+  MAX_SIZE_MB: 10,
+  /** File expiry time: 24 hours - temporary file cleanup policy */
+  EXPIRY_HOURS: 24
+} as const;
 
 // Ensure uploads directory exists
 const UPLOADS_DIR = path.join(__dirname, "../../uploads");
@@ -63,7 +75,7 @@ export const upload = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
+    fileSize: FILE_UPLOAD_CONFIG.MAX_SIZE_MB * 1024 * 1024,
   },
 });
 
@@ -77,7 +89,7 @@ export function saveFileMetadata(file: Express.Multer.File): FileMetadata {
     size: file.size,
     path: file.path,
     uploadedAt: new Date(),
-    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+    expiresAt: new Date(Date.now() + FILE_UPLOAD_CONFIG.EXPIRY_HOURS * 60 * 60 * 1000),
   };
 
   fileMetadata.set(id, metadata);
@@ -91,17 +103,32 @@ export function getFileMetadata(id: string): FileMetadata | undefined {
   if (cached) return cached;
 
   // Fallback: scan uploads directory for matching files (handles server restarts)
-  console.log(`[FileUploadService] File ${id} not in cache, scanning uploads directory...`);
+  logger.info("File not in cache, scanning uploads directory", {
+    service: "fileUploadService",
+    fileId: id
+  });
+
   try {
     const files = fs.readdirSync(UPLOADS_DIR);
-    console.log(`[FileUploadService] Found ${files.length} files in ${UPLOADS_DIR}`);
+    logger.debug("Scanned uploads directory", {
+      service: "fileUploadService",
+      fileId: id,
+      fileCount: files.length,
+      uploadsDir: UPLOADS_DIR
+    });
+
     const matchingFile = files.find((filename) => {
       const fileId = path.basename(filename, path.extname(filename));
       return fileId === id;
     });
 
     if (matchingFile) {
-      console.log(`[FileUploadService] Found matching file: ${matchingFile}`);
+      logger.info("Found matching file on disk", {
+        service: "fileUploadService",
+        fileId: id,
+        filename: matchingFile
+      });
+
       const filePath = path.join(UPLOADS_DIR, matchingFile);
       const stats = fs.statSync(filePath);
 
@@ -113,7 +140,7 @@ export function getFileMetadata(id: string): FileMetadata | undefined {
         size: stats.size,
         path: filePath,
         uploadedAt: stats.birthtime,
-        expiresAt: new Date(stats.birthtime.getTime() + 24 * 60 * 60 * 1000),
+        expiresAt: new Date(stats.birthtime.getTime() + FILE_UPLOAD_CONFIG.EXPIRY_HOURS * 60 * 60 * 1000),
       };
 
       // Cache it for future use
@@ -121,7 +148,13 @@ export function getFileMetadata(id: string): FileMetadata | undefined {
       return metadata;
     }
   } catch (err) {
-    console.error("[FileUploadService] Error scanning uploads directory:", err);
+    logger.error("Error scanning uploads directory", {
+      service: "fileUploadService",
+      fileId: id,
+      uploadsDir: UPLOADS_DIR,
+      error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined
+    });
   }
 
   return undefined;

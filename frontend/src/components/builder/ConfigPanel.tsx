@@ -598,17 +598,33 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, workflowId, onC
                             </div>
                         </InfoBox>
 
-                        {/* Trigger Source Selector */}
-                        <FormField label="Trigger Source" icon={<LuZap className="w-3 h-3" />}>
-                            <Select
-                                value={triggerSource}
-                                onChange={(val) => handleChange('triggerSource', val)}
-                                options={[
-                                    { value: 'manual', label: 'Manual (Run Button)' },
-                                    { value: 'google_form', label: 'Google Form Submission' },
-                                ]}
-                            />
-                        </FormField>
+                        {/* Trigger Source Selector - Segmented Control */}
+                        <div className="flex bg-navy-950 p-1 rounded-lg border border-white/10 w-full mb-6">
+                            <button
+                                type="button"
+                                onClick={() => handleChange('triggerSource', 'manual')}
+                                className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-semibold rounded-md transition-all ${
+                                    triggerSource === 'manual'
+                                        ? 'bg-cyan-glow/20 text-cyan-glow shadow-sm border border-cyan-glow/20'
+                                        : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                                }`}
+                            >
+                                <LuZap className="w-4 h-4" />
+                                Manual Trigger
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => handleChange('triggerSource', 'google_form')}
+                                className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-semibold rounded-md transition-all ${
+                                    triggerSource === 'google_form'
+                                        ? 'bg-purple-500/20 text-purple-300 shadow-sm border border-purple-500/20'
+                                        : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                                }`}
+                            >
+                                <LuGlobe className="w-4 h-4" />
+                                Google Form
+                            </button>
+                        </div>
 
                         {/* Conditional rendering based on trigger source */}
                         {triggerSource === 'manual' && (
@@ -1557,15 +1573,6 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, workflowId, onC
 
                 {/* Content (Form) */}
                 <div className="flex-1 overflow-y-auto p-5 space-y-6 custom-scrollbar">
-                    {/* Common Field: Name */}
-                    <FormField label="Step Name" hint="Give this step a descriptive name">
-                        <TextInput
-                            value={node.name || ''}
-                            onChange={(val) => onUpdate(node.id, { name: val })}
-                            placeholder={node.kind.replace('_', ' ')}
-                        />
-                    </FormField>
-
                     {/* Node-specific forms */}
                     {renderForm()}
                 </div>

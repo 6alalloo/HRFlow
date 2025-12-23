@@ -12,7 +12,13 @@
       "Bash(netstat:*)",
       "Bash(findstr:*)",
       "Bash(curl:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(npm run dev:*)",
+      "Bash(docker logs:*)",
+      "Bash(docker-compose restart:*)",
+      "Bash(docker-compose stop:*)",
+      "Bash(docker-compose rm:*)",
+      "Bash(docker-compose up:*)"
     ]
   }
 }

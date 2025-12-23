@@ -53,6 +53,9 @@ router.delete("/:id/nodes/:nodeId", workflowController.deleteWorkflowNode);
 // Get executions for a workflow
 router.get("/:id/executions", executionController.getExecutionsForWorkflow);
 
+// Get Google Form URL for workflow
+router.get("/:id/form-url", workflowController.getWorkflowFormUrl);
+
 // Run or execute a workflow
 router.post("/:id/execute", executionController.executeWorkflow);
 

@@ -2,6 +2,7 @@
 import { Request, Response } from "express";
 import * as workflowService from "../services/workflowService";
 import * as auditService from "../services/auditService";
+import * as googleFormHelper from "../utils/googleFormHelper";
 
 /**
  * GET /api/workflows
@@ -693,6 +694,56 @@ export async function duplicateWorkflow(req: Request, res: Response) {
     return res.status(201).json({ data: duplicated });
   } catch (error) {
     console.error("[WorkflowController] Error duplicating workflow:", error);
+    return res.status(500).json({
+      message: "Internal server error",
+    });
+  }
+}
+
+/**
+ * GET /api/workflows/:id/form-url
+ * Generate a pre-filled Google Form URL for this workflow
+ */
+export async function getWorkflowFormUrl(req: Request, res: Response) {
+  const { id } = req.params;
+
+  const workflowId = Number(id);
+  if (Number.isNaN(workflowId)) {
+    return res.status(400).json({
+      message: "Invalid workflow ID",
+    });
+  }
+
+  try {
+    // Check if Google Form is configured
+    if (!googleFormHelper.isGoogleFormConfigured()) {
+      return res.status(503).json({
+        message: "Google Form integration not configured",
+        configured: false,
+      });
+    }
+
+    // Verify workflow exists
+    const workflow = await workflowService.getWorkflowById(workflowId);
+    if (!workflow) {
+      return res.status(404).json({
+        message: "Workflow not found",
+      });
+    }
+
+    // Generate pre-filled form URL
+    const formUrl = googleFormHelper.generateGoogleFormUrl(workflowId);
+
+    return res.status(200).json({
+      data: {
+        formUrl,
+        workflowId,
+        workflowName: workflow.name,
+        configured: true,
+      },
+    });
+  } catch (error) {
+    console.error("[WorkflowController] Error generating form URL:", error);
     return res.status(500).json({
       message: "Internal server error",
     });

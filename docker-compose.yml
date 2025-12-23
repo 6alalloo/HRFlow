@@ -110,6 +110,26 @@ services:
     environment:
       - VITE_API_BASE_URL=http://localhost:4000/api
 
+  # Persistent SSH Tunnel (Exposes backend to public internet via Serveo)
+  # This service forwards traffic from a public Serveo URL to your local backend
+  tunnel:
+    image: alpine:latest
+    container_name: hrflow-tunnel
+    # network_mode: host removed for Windows compatibility
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - tunnel_ssh:/root/.ssh
+      - ./docker/tunnel-start.sh:/tunnel-start.sh:ro
+    # Runs the tunnel startup script which:
+    # - Installs autossh and openssh-client
+    # - Generates SSH key on first run (persisted in tunnel_ssh volume)
+    # - Connects to serveo.net with custom subdomain "hrflowautomation"
+    # - Forwards https://hrflowautomation.serveo.net -> host.docker.internal:4000 (your local npm run dev)
+    command: /bin/sh /tunnel-start.sh
+    restart: always
+
 volumes:
   postgres_data:
   n8n_data:
+  tunnel_ssh:

@@ -2,6 +2,7 @@
 import express from "express";
 import cors from "cors";
 import routes from "./routes";
+import webhookRoutes from "./routes/webhookRoutes";
 
 const app = express();
 
@@ -13,6 +14,9 @@ app.use(express.json()); // parse JSON request bodies
 app.get("/health", (req, res) => {
 res.json({ status: "ok", service: "HRFlow backend" });
 });
+
+// Mount webhook routes at root level (no /api prefix for clean external URLs)
+app.use("/webhooks", webhookRoutes);
 
 // Mount all API routes under /api
 app.use("/api", routes);

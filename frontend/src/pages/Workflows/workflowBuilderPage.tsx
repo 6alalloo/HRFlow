@@ -1125,6 +1125,7 @@ const WorkflowBuilderContent: React.FC = () => {
                         config: found.config || {}
                     };
                 })()}
+                workflowId={state.workflowId || 0}
                 onUpdate={async (nodeId, updates: { config?: Record<string, unknown>; name?: string }) => {
                      // Optimistic
                      const newNodes = state.nodes.map((n: WorkflowGraphNode) => n.id === nodeId ? { ...n, ...updates } : n);

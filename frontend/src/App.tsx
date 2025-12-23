@@ -1,7 +1,9 @@
 import React from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { Toaster } from 'sonner';
 
 import { useAuth } from "./contexts/AuthContext";
+import { ExecutionNotificationProvider } from "./contexts/ExecutionNotificationContext";
 import AppLayout from "./layout/appLayout";
 import LoginPage from "./pages/Auth/LoginPage";
 import LandingPage from "./pages/Dashboard/LandingPage";
@@ -47,7 +49,8 @@ const App: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
 
   return (
-    <Routes>
+    <ExecutionNotificationProvider>
+      <Routes>
       {/* Public routes */}
       <Route
         path="/login"
@@ -125,7 +128,9 @@ const App: React.FC = () => {
         }
       />
 
-    </Routes>
+      </Routes>
+      <Toaster position="bottom-right" richColors />
+    </ExecutionNotificationProvider>
   );
 };
 

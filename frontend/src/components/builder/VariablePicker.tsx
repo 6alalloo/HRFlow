@@ -29,12 +29,16 @@ function getVariablesForNodeKind(kind: string, nodeId: number, nodeName: string)
 
     switch (kind.toLowerCase()) {
         case "trigger":
+            // Flat structure for trigger variables matching normalized Google Form data
             return [
-                { label: "Employee Name", value: `{{${basePath}.body.employee.name}}`, description: "Employee full name" },
-                { label: "Employee Email", value: `{{${basePath}.body.employee.email}}`, description: "Employee email" },
-                { label: "Department", value: `{{${basePath}.body.employee.department}}`, description: "Department name" },
-                { label: "Role", value: `{{${basePath}.body.employee.role}}`, description: "Job role/title" },
-                { label: "Full Payload", value: `{{${basePath}.body}}`, description: "Complete trigger payload" },
+                { label: "Name", value: `{{${basePath}.name}}`, description: "Full name" },
+                { label: "Email", value: `{{${basePath}.email}}`, description: "Email address" },
+                { label: "Phone", value: `{{${basePath}.phone}}`, description: "Phone number" },
+                { label: "Department", value: `{{${basePath}.department}}`, description: "Department/Team" },
+                { label: "Role", value: `{{${basePath}.role}}`, description: "Job title/position" },
+                { label: "Resume URL", value: `{{${basePath}.resume_url}}`, description: "Uploaded resume file" },
+                { label: "Start Date", value: `{{${basePath}.start_date}}`, description: "Start/Join date" },
+                { label: "Manager Email", value: `{{${basePath}.manager_email}}`, description: "Manager's email" },
             ];
         case "http":
             return [

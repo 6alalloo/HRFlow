@@ -710,7 +710,7 @@ export async function duplicateWorkflow(id: number, ownerUserId?: number | null)
     return null;
   }
 
-  // 2) Get all nodes and edges
+  // 2) Get all nodes and edges (read-only, can be outside transaction or inside)
   const [nodes, edges] = await Promise.all([
     prisma.workflow_nodes.findMany({
       where: { workflow_id: id },
@@ -722,88 +722,96 @@ export async function duplicateWorkflow(id: number, ownerUserId?: number | null)
     }),
   ]);
 
-  // 3) Create the new workflow with " (Copy)" suffix
-  const newWorkflow = await prisma.workflows.create({
-    data: {
-      name: `${original.name} (Copy)`,
-      description: original.description,
-      is_active: original.is_active,
-      owner_user_id:
-        typeof ownerUserId === "number" ? ownerUserId : original.owner_user_id,
-      default_trigger: original.default_trigger,
-    },
-    select: {
-      id: true,
-      name: true,
-      description: true,
-      is_active: true,
-      version: true,
-      default_trigger: true,
-      owner_user_id: true,
-      archived_at: true,
-      created_at: true,
-      updated_at: true,
-      users: {
-        select: {
-          id: true,
-          full_name: true,
-          email: true,
-        },
-      },
-    },
-  });
+  // 3) Perform duplication atomically
+  return prisma.$transaction(async (tx) => {
+    // Fix: Ensure sequences are synced to max ID to avoid P2002 unique constraint errors
+    await tx.$executeRaw`SELECT setval(pg_get_serial_sequence('workflow_nodes','id'), (SELECT COALESCE(MAX(id), 0) FROM workflow_nodes), true);`;
+    await tx.$executeRaw`SELECT setval(pg_get_serial_sequence('workflow_edges','id'), (SELECT COALESCE(MAX(id), 0) FROM workflow_edges), true);`;
 
-  // 4) Create a mapping of old node IDs to new node IDs
-  const nodeIdMap: Record<number, number> = {};
-
-  // 5) Duplicate all nodes
-  for (const node of nodes) {
-    const newNode = await prisma.workflow_nodes.create({
+    // a) Create the new workflow
+    const newWorkflow = await tx.workflows.create({
       data: {
-        workflow_id: newWorkflow.id,
-        kind: node.kind,
-        name: node.name,
-        config_json: node.config_json,
-        pos_x: node.pos_x,
-        pos_y: node.pos_y,
+        name: `${original.name} (Copy)`,
+        description: original.description,
+        is_active: false, // Default to inactive for copies to prevent accidental triggers
+        owner_user_id:
+          typeof ownerUserId === "number" ? ownerUserId : original.owner_user_id,
+        default_trigger: original.default_trigger,
+      },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        is_active: true,
+        version: true,
+        default_trigger: true,
+        owner_user_id: true,
+        archived_at: true,
+        created_at: true,
+        updated_at: true,
+        n8n_workflow_id: true, // Do not copy these! They are specific to the instance
+        n8n_webhook_path: true,
+        users: {
+          select: {
+            id: true,
+            full_name: true,
+            email: true,
+          },
+        },
       },
     });
-    nodeIdMap[node.id] = newNode.id;
-  }
 
-  // 6) Duplicate all edges with updated node IDs
-  for (const edge of edges) {
-    const newFromNodeId = nodeIdMap[edge.from_node_id];
-    const newToNodeId = nodeIdMap[edge.to_node_id];
+    // b) Create a mapping of old node IDs to new node IDs
+    const nodeIdMap: Record<number, number> = {};
 
-    if (newFromNodeId && newToNodeId) {
-      await prisma.workflow_edges.create({
+    // c) Duplicate all nodes
+    for (const node of nodes) {
+      const newNode = await tx.workflow_nodes.create({
         data: {
           workflow_id: newWorkflow.id,
-          from_node_id: newFromNodeId,
-          to_node_id: newToNodeId,
-          label: edge.label,
-          priority: edge.priority,
-          condition_json: edge.condition_json,
+          kind: node.kind,
+          name: node.name,
+          config_json: node.config_json,
+          pos_x: node.pos_x,
+          pos_y: node.pos_y,
         },
       });
+      nodeIdMap[node.id] = newNode.id;
     }
-  }
 
-  // 7) Return the new workflow with full details
-  return {
-    id: newWorkflow.id,
-    name: newWorkflow.name,
-    description: newWorkflow.description,
-    is_active: newWorkflow.is_active,
-    version: newWorkflow.version,
-    default_trigger: newWorkflow.default_trigger,
-    owner_user_id: newWorkflow.owner_user_id,
-    archived_at: newWorkflow.archived_at,
-    created_at: newWorkflow.created_at,
-    updated_at: newWorkflow.updated_at,
-    users: newWorkflow.users,
-    nodeCount: nodes.length,
-    edgeCount: edges.length,
-  };
+    // d) Duplicate all edges with updated node IDs
+    for (const edge of edges) {
+      const newFromNodeId = nodeIdMap[edge.from_node_id];
+      const newToNodeId = nodeIdMap[edge.to_node_id];
+
+      if (newFromNodeId && newToNodeId) {
+        await tx.workflow_edges.create({
+          data: {
+            workflow_id: newWorkflow.id,
+            from_node_id: newFromNodeId,
+            to_node_id: newToNodeId,
+            label: edge.label,
+            priority: edge.priority,
+            condition_json: edge.condition_json,
+          },
+        });
+      }
+    }
+
+    return {
+      id: newWorkflow.id,
+      name: newWorkflow.name,
+      description: newWorkflow.description,
+      is_active: newWorkflow.is_active,
+      version: newWorkflow.version,
+      default_trigger: newWorkflow.default_trigger,
+      owner_user_id: newWorkflow.owner_user_id,
+      archived_at: newWorkflow.archived_at,
+      created_at: newWorkflow.created_at,
+      updated_at: newWorkflow.updated_at,
+      users: newWorkflow.users,
+      nodeCount: nodes.length,
+      edgeCount: edges.length,
+    };
+  });
 }

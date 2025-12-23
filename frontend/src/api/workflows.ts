@@ -867,3 +867,33 @@ export async function fetchDatabaseTables(): Promise<DatabaseTable[]> {
 
   return [];
 }
+
+/**
+ * Fetch Google Form URL for a workflow
+ */
+export type GoogleFormUrlResponse = {
+  data: {
+    formUrl: string;
+    workflowId: number;
+    workflowName: string;
+    configured: boolean;
+  };
+};
+
+export async function fetchWorkflowFormUrl(workflowId: number): Promise<string | null> {
+  const res = await fetch(`${API_BASE_URL}/workflows/${workflowId}/form-url`, {
+    headers: getAuthHeaders(),
+  });
+
+  if (!res.ok) {
+    if (res.status === 503) {
+      // Google Form not configured
+      return null;
+    }
+    console.error("[fetchWorkflowFormUrl] HTTP error:", res.status, res.statusText);
+    throw new Error(`Failed to fetch form URL (status ${res.status})`);
+  }
+
+  const json = (await res.json()) as GoogleFormUrlResponse;
+  return json.data.formUrl;
+}

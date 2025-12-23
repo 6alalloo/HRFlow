@@ -3,14 +3,17 @@ import { motion } from 'framer-motion';
 import {
     LuX, LuSave, LuTrash2, LuPlus, LuMinus, LuUpload, LuFile,
     LuMail, LuUser, LuCalendar, LuClock, LuDatabase, LuGlobe,
-    LuMessageSquare, LuZap, LuArrowRight, LuInfo, LuCheck, LuLink, LuLoader
+    LuMessageSquare, LuZap, LuArrowRight, LuInfo, LuCheck, LuLoader,
+    LuCopy, LuExternalLink
 } from 'react-icons/lu';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { CONDITION_OPERATORS, CV_PARSER_FIELDS } from '../../types/nodeConfigs';
-import { fetchDatabaseTables, type DatabaseTable } from '../../api/workflows';
+import { fetchDatabaseTables, type DatabaseTable, fetchWorkflowFormUrl } from '../../api/workflows';
 import { apiUploadFile } from '../../api/apiClient';
 import type { NodeKind } from '../../types/nodeConfigs';
+import VariableGrid from './VariableGrid';
+import SmartField from './SmartField';
 
 // Node structure from the workflow builder
 interface WorkflowNode {
@@ -23,6 +26,7 @@ interface WorkflowNode {
 type ConfigPanelProps = {
     isOpen: boolean;
     node: WorkflowNode | null;
+    workflowId: number;
     onClose: () => void;
     onUpdate: (id: number, update: { config?: Record<string, unknown>; name?: string }) => void;
     onDelete: (id: number) => void;
@@ -206,6 +210,165 @@ const InfoBox: React.FC<{
     );
 };
 
+// Google Form Trigger Section Component
+const GoogleFormTriggerSection: React.FC<{ workflowId: number }> = ({ workflowId }) => {
+    const [formUrl, setFormUrl] = useState<string | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [copied, setCopied] = useState(false);
+
+    useEffect(() => {
+        async function loadFormUrl() {
+            try {
+                setLoading(true);
+                setError(null);
+                const url = await fetchWorkflowFormUrl(workflowId);
+                setFormUrl(url);
+            } catch (err) {
+                console.error('[GoogleFormTriggerSection] Error loading form URL:', err);
+                setError(err instanceof Error ? err.message : 'Failed to load form URL');
+            } finally {
+                setLoading(false);
+            }
+        }
+        loadFormUrl();
+    }, [workflowId]);
+
+    const handleCopyLink = () => {
+        if (formUrl) {
+            navigator.clipboard.writeText(formUrl);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        }
+    };
+
+    return (
+        <div className="space-y-4 border-t border-white/5 pt-4">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <LuGlobe className="w-4 h-4 text-cyan-glow" />
+                Google Form Integration
+            </h3>
+
+            {loading && (
+                <div className="flex items-center gap-2 text-sm text-slate-400">
+                    <LuLoader className="w-4 h-4 animate-spin" />
+                    Loading form URL...
+                </div>
+            )}
+
+            {error && (
+                <InfoBox variant="warning">
+                    <div className="flex items-start gap-2">
+                        <LuInfo className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                        <div>
+                            <strong>Error Loading Form</strong>
+                            <p className="mt-1 opacity-80">{error}</p>
+                        </div>
+                    </div>
+                </InfoBox>
+            )}
+
+            {!loading && !error && !formUrl && (
+                <InfoBox variant="warning">
+                    <div className="flex items-start gap-2">
+                        <LuInfo className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                        <div>
+                            <strong>Google Form Not Configured</strong>
+                            <p className="mt-1 opacity-80">
+                                Please contact your administrator to configure the Google Form integration.
+                            </p>
+                        </div>
+                    </div>
+                </InfoBox>
+            )}
+
+            {!loading && !error && formUrl && (
+                <>
+                    {/* Info box */}
+                    <InfoBox variant="info">
+                        <div className="flex items-start gap-2">
+                            <LuInfo className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                            <div>
+                                <strong>Google Form Trigger</strong>
+                                <p className="mt-1 opacity-80">
+                                    This workflow will automatically run when someone submits the Google Form
+                                    using the link below.
+                                </p>
+                            </div>
+                        </div>
+                    </InfoBox>
+
+                    <div className="space-y-2 pt-2 border-t border-white/5">
+                        <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                            Available Trigger Variables
+                        </h4>
+                        <VariableGrid />
+                    </div>
+
+                    {/* Copy Link Section */}
+                    <div className="space-y-3 pt-2 border-t border-white/5">
+                        <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                            Share this link with candidates
+                        </h4>
+
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                value={formUrl}
+                                readOnly
+                                className="flex-1 px-3 py-2 bg-gray-900 border border-white/10 rounded-lg text-cyan-400 font-mono text-xs focus:outline-none select-all cursor-pointer truncate"
+                                onClick={(e) => (e.target as HTMLInputElement).select()}
+                            />
+                            <button
+                                onClick={handleCopyLink}
+                                className="px-4 py-2 bg-cyan-400 hover:bg-cyan-300 text-navy-950 font-semibold rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap"
+                            >
+                                {copied ? (
+                                    <>
+                                        <LuCheck className="w-4 h-4" />
+                                        Copied!
+                                    </>
+                                ) : (
+                                    <>
+                                        <LuCopy className="w-4 h-4" />
+                                        Copy
+                                    </>
+                                )}
+                            </button>
+                        </div>
+
+                        <a
+                            href={formUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-center gap-2 w-full px-4 py-2 bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-lg transition-colors text-sm"
+                        >
+                            <LuExternalLink className="w-4 h-4" />
+                            Preview Form
+                        </a>
+                    </div>
+
+                    {/* How it works */}
+                    <InfoBox variant="tip">
+                        <div className="flex items-start gap-2">
+                            <LuInfo className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                            <div>
+                                <strong>How it works</strong>
+                                <ul className="mt-1 space-y-0.5 opacity-80 list-disc list-inside text-[10px]">
+                                    <li>Candidate clicks the link above</li>
+                                    <li>Fills out the standardized Google Form</li>
+                                    <li>On submit, this workflow automatically starts</li>
+                                    <li>Check Executions page to monitor results</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </InfoBox>
+                </>
+            )}
+        </div>
+    );
+};
+
 // Checkbox Group Component
 const CheckboxGroup: React.FC<{
     options: { value: string; label: string }[];
@@ -324,7 +487,7 @@ const FileUploadButton: React.FC<{
     );
 };
 
-const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, onClose, onUpdate, onDelete }) => {
+const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, workflowId, onClose, onUpdate, onDelete }) => {
     // Use useMemo to derive initial config, avoiding setState in effect
     const initialConfig = useMemo(() => node?.config || {}, [node]);
     const [localConfig, setLocalConfig] = useState<Record<string, unknown>>({});
@@ -420,7 +583,9 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, onClose, onUpda
     // Render form based on node kind
     const renderForm = () => {
         switch (node.kind) {
-            case 'trigger':
+            case 'trigger': {
+                const triggerSource = getString(localConfig, 'triggerSource', 'manual');
+
                 return (
                     <div className="space-y-5">
                         <InfoBox variant="info">
@@ -428,89 +593,109 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, onClose, onUpda
                                 <LuInfo className="w-4 h-4 mt-0.5 flex-shrink-0" />
                                 <div>
                                     <strong>Workflow Starting Point</strong>
-                                    <p className="mt-1 opacity-80">Enter the employee details that will be used throughout this workflow.</p>
+                                    <p className="mt-1 opacity-80">Choose how this workflow should be triggered.</p>
                                 </div>
                             </div>
                         </InfoBox>
 
-                        <div className="space-y-4 border-t border-white/5 pt-4">
-                            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                                <LuUser className="w-4 h-4 text-cyan-glow" />
-                                Employee Information
-                            </h3>
+                        {/* Trigger Source Selector */}
+                        <FormField label="Trigger Source" icon={<LuZap className="w-3 h-3" />}>
+                            <Select
+                                value={triggerSource}
+                                onChange={(val) => handleChange('triggerSource', val)}
+                                options={[
+                                    { value: 'manual', label: 'Manual (Run Button)' },
+                                    { value: 'google_form', label: 'Google Form Submission' },
+                                ]}
+                            />
+                        </FormField>
 
-                            <FormField label="Full Name" icon={<LuUser className="w-3 h-3" />}>
-                                <TextInput
-                                    value={getString(localConfig, 'name')}
-                                    onChange={(val) => handleChange('name', val)}
-                                    placeholder="e.g. John Doe"
-                                    icon={<LuUser className="w-4 h-4" />}
-                                />
-                            </FormField>
+                        {/* Conditional rendering based on trigger source */}
+                        {triggerSource === 'manual' && (
+                            <div className="space-y-4 border-t border-white/5 pt-4">
+                                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                                    <LuUser className="w-4 h-4 text-cyan-glow" />
+                                    Employee Information
+                                </h3>
 
-                            <FormField label="Email Address" icon={<LuMail className="w-3 h-3" />}>
-                                <TextInput
-                                    value={getString(localConfig, 'email')}
-                                    onChange={(val) => handleChange('email', val)}
-                                    placeholder="e.g. john.doe@company.com"
-                                    icon={<LuMail className="w-4 h-4" />}
-                                />
-                            </FormField>
-
-                            <div className="grid grid-cols-2 gap-3">
-                                <FormField label="Department">
-                                    <Select
-                                        value={getString(localConfig, 'department')}
-                                        onChange={(val) => handleChange('department', val)}
-                                        options={[
-                                            { value: '', label: 'Select department...' },
-                                            { value: 'Engineering', label: 'Engineering' },
-                                            { value: 'Marketing', label: 'Marketing' },
-                                            { value: 'Sales', label: 'Sales' },
-                                            { value: 'HR', label: 'Human Resources' },
-                                            { value: 'Finance', label: 'Finance' },
-                                            { value: 'Operations', label: 'Operations' },
-                                            { value: 'Other', label: 'Other' },
-                                        ]}
+                                <FormField label="Full Name" icon={<LuUser className="w-3 h-3" />}>
+                                    <TextInput
+                                        value={getString(localConfig, 'name')}
+                                        onChange={(val) => handleChange('name', val)}
+                                        placeholder="e.g. John Doe"
+                                        icon={<LuUser className="w-4 h-4" />}
                                     />
                                 </FormField>
-                                <FormField label="Role/Position">
+
+                                <FormField label="Email Address" icon={<LuMail className="w-3 h-3" />}>
                                     <TextInput
-                                        value={getString(localConfig, 'role')}
-                                        onChange={(val) => handleChange('role', val)}
-                                        placeholder="e.g. Developer"
+                                        value={getString(localConfig, 'email')}
+                                        onChange={(val) => handleChange('email', val)}
+                                        placeholder="e.g. john.doe@company.com"
+                                        icon={<LuMail className="w-4 h-4" />}
+                                    />
+                                </FormField>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <FormField label="Department">
+                                        <Select
+                                            value={getString(localConfig, 'department')}
+                                            onChange={(val) => handleChange('department', val)}
+                                            options={[
+                                                { value: '', label: 'Select department...' },
+                                                { value: 'Engineering', label: 'Engineering' },
+                                                { value: 'Marketing', label: 'Marketing' },
+                                                { value: 'Sales', label: 'Sales' },
+                                                { value: 'HR', label: 'Human Resources' },
+                                                { value: 'Finance', label: 'Finance' },
+                                                { value: 'Operations', label: 'Operations' },
+                                                { value: 'Other', label: 'Other' },
+                                            ]}
+                                        />
+                                    </FormField>
+                                    <FormField label="Role/Position">
+                                        <TextInput
+                                            value={getString(localConfig, 'role')}
+                                            onChange={(val) => handleChange('role', val)}
+                                            placeholder="e.g. Developer"
+                                        />
+                                    </FormField>
+                                </div>
+
+                                <FormField label="Start Date" icon={<LuCalendar className="w-3 h-3" />}>
+                                    <div className="relative">
+                                        <DatePicker
+                                            selected={getString(localConfig, 'startDate') ? new Date(getString(localConfig, 'startDate')) : null}
+                                            onChange={(date: Date | null) => handleChange('startDate', date ? date.toISOString().split('T')[0] : '')}
+                                            dateFormat="MMMM d, yyyy"
+                                            placeholderText="Click to select date"
+                                            className="w-full bg-navy-950 border border-white/10 rounded-lg px-2.5 py-1.5 pl-7 text-sm text-white focus:border-cyan-glow focus:outline-none transition-colors cursor-pointer"
+                                            calendarClassName="bg-navy-900 border border-white/10 rounded-xl shadow-2xl"
+                                            wrapperClassName="w-full"
+                                            showPopperArrow={false}
+                                            minDate={new Date()}
+                                        />
+                                        <LuCalendar className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+                                    </div>
+                                </FormField>
+
+                                <FormField label="Manager Email" hint="Their manager will receive notifications">
+                                    <TextInput
+                                        value={getString(localConfig, 'managerEmail')}
+                                        onChange={(val) => handleChange('managerEmail', val)}
+                                        placeholder="e.g. manager@company.com"
+                                        icon={<LuMail className="w-4 h-4" />}
                                     />
                                 </FormField>
                             </div>
+                        )}
 
-                            <FormField label="Start Date" icon={<LuCalendar className="w-3 h-3" />}>
-                                <div className="relative">
-                                    <DatePicker
-                                        selected={getString(localConfig, 'startDate') ? new Date(getString(localConfig, 'startDate')) : null}
-                                        onChange={(date: Date | null) => handleChange('startDate', date ? date.toISOString().split('T')[0] : '')}
-                                        dateFormat="MMMM d, yyyy"
-                                        placeholderText="Click to select date"
-                                        className="w-full bg-navy-950 border border-white/10 rounded-lg px-2.5 py-1.5 pl-7 text-sm text-white focus:border-cyan-glow focus:outline-none transition-colors cursor-pointer"
-                                        calendarClassName="bg-navy-900 border border-white/10 rounded-xl shadow-2xl"
-                                        wrapperClassName="w-full"
-                                        showPopperArrow={false}
-                                        minDate={new Date()}
-                                    />
-                                    <LuCalendar className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
-                                </div>
-                            </FormField>
-
-                            <FormField label="Manager Email" hint="Their manager will receive notifications">
-                                <TextInput
-                                    value={getString(localConfig, 'managerEmail')}
-                                    onChange={(val) => handleChange('managerEmail', val)}
-                                    placeholder="e.g. manager@company.com"
-                                    icon={<LuMail className="w-4 h-4" />}
-                                />
-                            </FormField>
-                        </div>
+                        {triggerSource === 'google_form' && (
+                            <GoogleFormTriggerSection workflowId={workflowId} />
+                        )}
                     </div>
                 );
+            }
 
             case 'email': {
                 const recipientType = getString(localConfig, 'recipientType', 'employee');
@@ -564,17 +749,16 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, onClose, onUpda
 
                             {recipientType === 'custom' && (
                                 <FormField label="Email Address">
-                                    <TextInput
+                                    <SmartField
                                         value={getString(localConfig, 'to')}
                                         onChange={(val) => handleChange('to', val)}
                                         placeholder="e.g. hr@company.com"
-                                        icon={<LuMail className="w-4 h-4" />}
                                     />
                                 </FormField>
                             )}
 
                             <FormField label="Subject Line">
-                                <TextInput
+                                <SmartField
                                     value={getString(localConfig, 'subject')}
                                     onChange={(val) => handleChange('subject', val)}
                                     placeholder="e.g. Welcome to the team!"
@@ -582,7 +766,7 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, onClose, onUpda
                             </FormField>
 
                             <FormField label="Email Body" hint="Write your message below">
-                                <TextArea
+                                <SmartField
                                     rows={6}
                                     value={getString(localConfig, 'body')}
                                     onChange={(val) => handleChange('body', val)}
@@ -650,15 +834,14 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, onClose, onUpda
                             {useCase === 'slack' && (
                                 <>
                                     <FormField label="Slack Webhook URL" hint="Get this from your Slack app settings">
-                                        <TextInput
+                                        <SmartField
                                             value={getString(localConfig, 'url')}
                                             onChange={(val) => handleChange('url', val)}
                                             placeholder="https://hooks.slack.com/services/..."
-                                            icon={<LuGlobe className="w-4 h-4" />}
                                         />
                                     </FormField>
                                     <FormField label="Message">
-                                        <TextArea
+                                        <SmartField
                                             rows={3}
                                             value={getString(localConfig, 'slackMessage') || getString(localConfig, 'body')}
                                             onChange={(val) => {
@@ -674,11 +857,10 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, onClose, onUpda
                             {useCase === 'hris' && (
                                 <>
                                     <FormField label="API Endpoint URL" hint="The URL of your HR system's API">
-                                        <TextInput
+                                        <SmartField
                                             value={getString(localConfig, 'url')}
                                             onChange={(val) => handleChange('url', val)}
                                             placeholder="https://api.yourhris.com/employees"
-                                            icon={<LuGlobe className="w-4 h-4" />}
                                         />
                                     </FormField>
                                     <InfoBox variant="success">
@@ -704,7 +886,7 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, onClose, onUpda
                                         </FormField>
                                         <div className="col-span-2">
                                             <FormField label="URL">
-                                                <TextInput
+                                                <SmartField
                                                     value={getString(localConfig, 'url')}
                                                     onChange={(val) => handleChange('url', val)}
                                                     placeholder="https://api.example.com/endpoint"
@@ -715,7 +897,7 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, onClose, onUpda
 
                                     {(getString(localConfig, 'method') === 'POST' || getString(localConfig, 'method') === 'PUT') && (
                                         <FormField label="Request Data" hint="The data to send (JSON format)">
-                                            <TextArea
+                                            <SmartField
                                                 rows={4}
                                                 value={getString(localConfig, 'body')}
                                                 onChange={(val) => handleChange('body', val)}
@@ -800,7 +982,7 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, onClose, onUpda
                                     />
                                     {getString(localConfig, 'filterField') === 'custom' && (
                                         <div className="mt-2">
-                                            <TextInput
+                                            <SmartField
                                                 value={getString(localConfig, 'whereClause')}
                                                 onChange={(val) => handleChange('whereClause', val)}
                                                 placeholder="e.g. department = 'Engineering'"
@@ -869,7 +1051,7 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, onClose, onUpda
 
                                 {!['is_empty', 'is_not_empty'].includes(operator) && (
                                     <FormField label="Value">
-                                        <TextInput
+                                        <SmartField
                                             value={getString(localConfig, 'value')}
                                             onChange={(val) => handleChange('value', val)}
                                             placeholder={checkField === 'department' ? 'e.g. Engineering' : 'Enter value...'}

@@ -194,13 +194,14 @@ const QuickActionButton: React.FC<{
 // Info Box Component
 const InfoBox: React.FC<{
     children: React.ReactNode;
-    variant?: 'info' | 'success' | 'warning' | 'tip';
+    variant?: 'info' | 'success' | 'warning' | 'tip' | 'error';
 }> = ({ children, variant = 'info' }) => {
     const styles = {
         info: 'bg-blue-500/10 border-blue-500/20 text-blue-200',
         success: 'bg-emerald-500/10 border-emerald-500/20 text-emerald-200',
         warning: 'bg-amber-500/10 border-amber-500/20 text-amber-200',
         tip: 'bg-purple-500/10 border-purple-500/20 text-purple-200',
+        error: 'bg-red-500/10 border-red-500/20 text-red-200',
     };
 
     return (

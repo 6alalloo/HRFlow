@@ -181,7 +181,7 @@ export type WorkflowNodeData = {
   onAdd?: (event: React.MouseEvent) => void; // For ghost nodes
 };
 
-// --- DAGRE LAYOUT HELPER ---
+// Dagre Layout Helper
 const nodeWidth = 240;
 const nodeHeight = 100;
 

@@ -105,7 +105,7 @@ export type WorkflowGraphMeta = {
   updatedAt?: string;
 };
 
-// Config/condition shape – we don't know exact fields yet, but no `any`
+
 export type WorkflowGraphConfig = Record<string, unknown>;
 
 // Node type used in the frontend (normalized)

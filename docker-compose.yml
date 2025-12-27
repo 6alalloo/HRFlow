@@ -56,7 +56,6 @@ services:
     ports:
       - "8000:8000"
     healthcheck:
-      # Use the Dockerfile's healthcheck mechanism (using python) instead of wget which is missing
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
       interval: 30s
       timeout: 10s
@@ -114,11 +113,9 @@ services:
       - VITE_API_BASE_URL=http://localhost:4000/api
 
   # Persistent SSH Tunnel (Exposes backend to public internet via Serveo)
-  # This service forwards traffic from a public Serveo URL to your local backend
   tunnel:
     image: alpine:latest
     container_name: hrflow-tunnel
-    # network_mode: host removed for Windows compatibility
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -128,7 +125,7 @@ services:
     # - Installs autossh and openssh-client
     # - Generates SSH key on first run (persisted in tunnel_ssh volume)
     # - Connects to serveo.net with custom subdomain "hrflowautomation"
-    # - Forwards https://hrflowautomation.serveo.net -> host.docker.internal:4000 (your local npm run dev)
+    # - Forwards https://hrflowautomation.serveo.net -> host.docker.internal:4000 (local npm run dev)
     command: /bin/sh /tunnel-start.sh
     restart: always
 

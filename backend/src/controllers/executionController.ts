@@ -1,4 +1,13 @@
-// src/controllers/executionController.ts
+/**
+ * Execution HTTP Controllers
+ *
+ * Handles HTTP requests for workflow execution history, status tracking,
+ * and execution detail retrieval. Delegates to executionService for
+ * business logic and execution orchestration.
+ *
+ * Routes: /api/executions
+ */
+
 import { Request, Response, NextFunction } from "express";
 import * as executionService from "../services/executionService";
 import * as auditService from "../services/auditService";

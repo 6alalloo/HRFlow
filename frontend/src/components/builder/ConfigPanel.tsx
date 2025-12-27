@@ -1292,9 +1292,9 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, workflowId, onC
                                     value={getString(localConfig, 'level', 'info')}
                                     onChange={(val) => handleChange('level', val)}
                                     options={[
-                                        { value: 'info', label: 'ℹ️ Information - General status update' },
-                                        { value: 'warn', label: '⚠️ Warning - Something to watch' },
-                                        { value: 'error', label: '🔴 Error - Something went wrong' },
+                                        { value: 'info', label: 'Information - General status update' },
+                                        { value: 'warn', label: 'Warning - Something to watch' },
+                                        { value: 'error', label: 'Error - Something went wrong' },
                                     ]}
                                 />
                             </FormField>

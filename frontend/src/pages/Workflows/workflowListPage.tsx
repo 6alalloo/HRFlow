@@ -155,7 +155,7 @@ const ExecuteWorkflowModal: React.FC<RunModalProps> = ({
               onClick={onClose}
               disabled={isRunning}
             >
-                ✕
+                &times;
             </button>
           </div>
 

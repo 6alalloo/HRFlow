@@ -8,10 +8,10 @@ import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 
 const app = express();
 
-// Middlewares: things that run before your route handlers
+// Middleware configuration applied before route handlers
 app.use(cors());
-app.use(express.json()); // parse JSON request bodies
-app.use(requestIdMiddleware); // Add request ID to all requests
+app.use(express.json());
+app.use(requestIdMiddleware);
 
 // Simple health check route
 app.get("/health", (req, res) => {

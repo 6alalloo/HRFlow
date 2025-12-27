@@ -25,7 +25,7 @@ export const N8N_API_KEY = config.n8n.apiKey;
 export const N8N_WEBHOOK_BASE_URL = config.n8n.webhookBaseUrl.replace(/\/$/, "");
 
 /**
- * ✅ NEW (MVP demo path): unique webhook path per HRFlow workflow.
+ * Generate unique webhook path per HRFlow workflow.
  * This avoids n8n "Conflicting Webhook Path" errors.
  */
 export function buildHrflowWebhookPath(workflowId: number): string {
@@ -37,14 +37,14 @@ export function buildHrflowWebhookUrl(workflowId: number): string {
 }
 
 /**
- * ⚠️ LEGACY (old design): single shared webhook path.
- * Keep it only if you still want the old "hrflow-execute" workflow around.
+ * LEGACY (old design): single shared webhook path.
+ * Retained for backward compatibility with existing workflows.
  */
 export const N8N_HRFLOW_EXECUTE_PATH =
   process.env.N8N_HRFLOW_EXECUTE_PATH ?? "/webhook/hrflow/execute";
 
 /**
- * ⚠️ LEGACY (old design): single shared webhook URL.
+ * LEGACY (old design): single shared webhook URL.
  */
 export const N8N_EXECUTE_URL = `${N8N_WEBHOOK_BASE_URL}${N8N_HRFLOW_EXECUTE_PATH}`;
 export const N8N_POSTGRES_CREDENTIAL_ID = config.n8n.postgresCredentialId;

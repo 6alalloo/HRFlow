@@ -72,8 +72,9 @@ const FIELD_MAPPINGS: Record<string, string> = {
 };
 
 /**
- * Fuzzy match a raw form field key to a standardized field name
- * Handles variations like "What is your name?" -> "name"
+ * Fuzzy match a raw form field key to a standardized field name.
+ * Handles common variations like "What is your name?" -> "name" by cleaning
+ * punctuation and performing partial string matching against known field patterns.
  *
  * @param rawKey - The raw field name from Google Forms
  * @returns Matched standardized field name or null

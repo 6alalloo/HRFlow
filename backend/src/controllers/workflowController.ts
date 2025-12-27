@@ -1,4 +1,13 @@
-// src/controllers/workflowController.ts
+/**
+ * Workflow HTTP Controllers
+ *
+ * Handles HTTP requests for workflow CRUD operations, graph management,
+ * and workflow execution. Delegates business logic to workflowService
+ * and executionService.
+ *
+ * Routes: /api/workflows
+ */
+
 import { Request, Response, NextFunction } from "express";
 import * as workflowService from "../services/workflowService";
 import * as auditService from "../services/auditService";

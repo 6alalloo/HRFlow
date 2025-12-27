@@ -1,4 +1,11 @@
-// backend/src/services/n8nCompiler.ts
+/**
+ * HRFlow to n8n Workflow Compiler
+ *
+ * Transforms HRFlow's simplified workflow graph into n8n-compatible workflow JSON.
+ * This is the core translation layer that enables HRFlow to delegate execution to n8n.
+ * Each HRFlow node type (trigger, http, email, etc.) is compiled into corresponding n8n nodes.
+ */
+
 import type { WorkflowNodeKind } from "./workflowService";
 import * as allowListService from "./allowListService";
 import * as auditService from "./auditService";
@@ -53,8 +60,11 @@ type UrlValidationError = {
 };
 
 /**
- * Validate all URLs in the workflow against the allow-list
- * Returns an array of validation errors (empty if all URLs are allowed)
+ * Validate all URLs in the workflow against the allow-list.
+ * Prevents malicious or unapproved HTTP requests by checking extracted URLs
+ * against the configured domain allow-list before compilation proceeds.
+ *
+ * @returns Array of validation errors (empty if all URLs are allowed)
  */
 async function validateWorkflowUrls(
   nodes: HRFlowNode[],
@@ -147,11 +157,12 @@ function makeNoOpNode(id: string, name: string, position: [number, number]) {
 
 
 /**
- * Parse headers/kv text in either:
- * 1) JSON object string: {"Authorization":"Bearer x"}
- * 2) key:value lines:
- *    Authorization: Bearer x
- *    X-Test: 1
+ * Parse key-value input from multiple formats into a normalized object.
+ * Supports both JSON object strings and newline-delimited key:value pairs.
+ * Used for HTTP headers and similar configuration fields in the workflow builder.
+ *
+ * @param input - JSON string, key:value text, or existing object
+ * @returns Normalized key-value object
  */
 function parseKeyValueText(input: unknown): Record<string, unknown> {
   if (!input) return {};
@@ -326,15 +337,19 @@ function connectConditionNode(
   }
 }
 
+/**
+ * Create an n8n Code node (v2) with JavaScript execution configuration.
+ * Used for custom logic execution within n8n workflows.
+ *
+ * @param args - Node configuration with ID, name, position, and JS code
+ * @returns n8n-compatible Code node object
+ */
 function makeCodeNode(args: {
   id: string;
   name: string;
   position: [number, number];
   jsCode: string;
 }) {
-  // IMPORTANT for your n8n:
-  // Code node expects jsCode to exist and is read from node parameters.
-  // Also include mode+language to match what the UI/runtime expects.
   return {
     id: args.id,
     name: args.name,
@@ -356,8 +371,8 @@ function mapHrflowNodeToN8n(n: HRFlowNode, position: [number, number]) {
 
   switch (kind) {
 case "trigger": {
-  // HRFlow "trigger" passes through the webhook data with employee info exposed.
-  // Use Set node to make the data available for subsequent nodes.
+  // Compiles to n8n Set node that exposes employee data from webhook payload.
+  // Normalizes nested employee object to flat structure for convenient variable access.
   const employeeName = safeString(cfg.name, "");
   const employeeEmail = safeString(cfg.email, "");
   const department = safeString(cfg.department, "");
@@ -433,7 +448,7 @@ case "trigger": {
 }
 
     case "http": {
-      // Default to httpbin for testing/demo purposes
+      // Compiles to n8n HTTP Request node with configurable method, headers, and body.
       const url = safeString(cfg.url, "https://httpbin.org/anything");
       const method = safeString(cfg.method, "GET").toUpperCase();
 
@@ -472,7 +487,7 @@ case "trigger": {
     }
 
     case "logger": {
-      // Use Set node to add logging metadata - data flows through with log info attached
+      // Compiles to n8n Set node that attaches logging metadata to the data stream.
       const message = safeString(cfg.message, `Log from node ${n.id}`);
       const level = safeString(cfg.level, "info");
 
@@ -526,6 +541,8 @@ case "trigger": {
     }
 
     case "database": {
+  // Compiles to n8n Postgres node with employee upsert query.
+  // Uses CTE pattern for atomic user + employee record creation.
   const customQuery = safeString(cfg.query, "").trim();
 
   const defaultQuery = [
@@ -592,7 +609,7 @@ case "trigger": {
     id: `hrflow_node_${n.id}`,
     name,
     type: "n8n-nodes-base.postgres",
-    typeVersion: 2.6, // match your working export
+    typeVersion: 2.6,
     position,
     parameters: {
       operation: "executeQuery",
@@ -609,6 +626,8 @@ case "trigger": {
 }
 
 case "email": {
+  // Compiles to n8n Email Send node with dynamic recipient resolution.
+  // Template includes employee name and department from webhook trigger data.
   const cc = safeString(cfg.cc, "").trim();
   const bcc = safeString(cfg.bcc, "").trim();
 
@@ -616,7 +635,7 @@ case "email": {
     throw new Error("Missing SMTP credential env vars (ID + NAME) for n8n compiler.");
   }
 
-  // If someone set cfg.to before to the broken value, override it.
+  // Normalize recipient email expression to proper n8n syntax.
   let toEmail = safeString(cfg.to, "").trim();
   if (!toEmail || toEmail.includes("$json.employee.email") || toEmail.includes("json.employee.email")) {
     toEmail = '={{$node["HRFlow Webhook Trigger"].json.body.employee.email}}';
@@ -628,7 +647,7 @@ case "email": {
   const subject =
     '=Welcome to HRFlow, {{$node["HRFlow Webhook Trigger"].json.body.employee.name}}!';
 
-  // IMPORTANT: start with "=" so n8n evaluates the {{...}} expressions
+  // Email body uses n8n expression syntax (prefix "=" for evaluation).
   const html =
     '=Hi {{$node["HRFlow Webhook Trigger"].json.body.employee.name}},<br/><br/>' +
     'Welcome to the <b>{{$node["HRFlow Webhook Trigger"].json.body.employee.department}}</b> department!<br/>' +
@@ -663,9 +682,9 @@ case "email": {
 
     case "cv_parse":
     case "cv_parser": {
-      // CV parsing happens in HRFlow executionService before n8n execution.
-      // This node is a pass-through that just marks cv_parser was executed.
-      // The actual CV data is injected into execution_steps by executionService.
+      // Compiles to n8n Set node that marks CV parsing step.
+      // Actual CV parsing occurs in executionService before n8n execution.
+      // Parsed data is injected into execution_steps for UI display.
       return {
         id: `hrflow_node_${n.id}`,
         name,
@@ -704,7 +723,8 @@ case "email": {
     }
 
     case "variable": {
-      // NOTE: n8n API strips jsCode from Code nodes - use Set node instead
+      // Compiles to n8n Set node for variable assignment.
+      // Set node used instead of Code node to avoid jsCode stripping by n8n API.
       const variableName = safeString(cfg.variableName, "myVariable");
       const value = safeString(cfg.value, "");
 
@@ -734,14 +754,14 @@ case "email": {
     }
 
     case "datetime": {
-      // Use Set node to add datetime output
+      // Compiles to n8n Set node with datetime calculation expressions.
       const operation = safeString(cfg.operation, "now");
       const format = safeString(cfg.format, "YYYY-MM-DD");
       const outputField = safeString(cfg.outputField, "calculatedDate");
       const value = typeof cfg.value === "number" ? cfg.value : 0;
       const unit = safeString(cfg.unit, "days");
 
-      // Build the expression based on operation
+      // Build n8n expression based on operation type.
       let dateExpression = "={{ $now.toISO() }}";
       if (operation === "add") {
         dateExpression = `={{ $now.plus({ ${unit}: ${value} }).toISO() }}`;
@@ -795,14 +815,25 @@ case "email": {
 
 
     default: {
-      // Use NoOp for unknown node types to avoid Code node issues
+      // Unknown node types compile to NoOp to prevent workflow failures.
       return makeNoOpNode(`hrflow_node_${n.id}`, name, position);
     }
   }
 }
 
+/**
+ * Compile HRFlow workflow graph into n8n-compatible workflow JSON.
+ * This is the main entry point for workflow compilation.
+ *
+ * Performs URL validation, node ordering, webhook setup, and node-by-node compilation.
+ * Returns n8n workflow structure ready for API upsert.
+ *
+ * @param input - Workflow metadata, nodes, edges, and context
+ * @returns Compiled n8n workflow with nodes and connections
+ * @throws Error if URL validation fails or compilation encounters issues
+ */
 export async function compileToN8n(input: CompileInput): Promise<N8nCompiled> {
-  // Validate URLs against allow-list before compilation
+  // Validate URLs against allow-list before compilation proceeds.
   const urlErrors = await validateWorkflowUrls(
     input.nodes,
     input.hrflowWorkflowId,
@@ -824,7 +855,7 @@ export async function compileToN8n(input: CompileInput): Promise<N8nCompiled> {
 
   const webhookNodeName = normalizeName("HRFlow Webhook Trigger");
 
-  // Normalize internalPath and keep it slash-free (webhook stability)
+  // Normalize webhook path to slash-free format for n8n webhook stability.
   const internalPath = input.webhookPath
     .replace(/^\/webhook\//, "")
     .replace(/^\//, "")
@@ -838,7 +869,7 @@ export async function compileToN8n(input: CompileInput): Promise<N8nCompiled> {
       typeVersion: 1,
       position: [200, 200],
 
-      // IMPORTANT: without webhookId, some n8n versions fail to register the production webhook after API upserts.
+      // webhookId ensures production webhook registration stability across n8n API upserts.
       webhookId: internalPath,
 
       parameters: {
@@ -856,7 +887,7 @@ export async function compileToN8n(input: CompileInput): Promise<N8nCompiled> {
     compiledNodes.push(mapHrflowNodeToN8n(n, pos));
   }
 
-  // Webhook -> roots
+  // Build connections: webhook triggers root nodes (nodes with no incoming edges).
   const incoming = new Set<number>();
   for (const e of input.edges) incoming.add(e.toNodeId);
 
@@ -869,7 +900,7 @@ export async function compileToN8n(input: CompileInput): Promise<N8nCompiled> {
     connect(webhookNodeName, stableNodeName(r), connections, 0);
   }
 
-  // Graph edges
+  // Map HRFlow edges to n8n connections (handles condition nodes with true/false branches).
   for (const n of input.nodes) {
     const outs = outgoing.get(n.id) ?? [];
     if (outs.length === 0) continue;

@@ -12,7 +12,7 @@ async function hashPassword(password: string): Promise<string> {
 }
 
 async function main() {
-  console.log('🌱 Starting database seed...');
+  console.log('Starting database seed...');
 
   // ============================================
   // 1. ROLES (Upsert - idempotent)
@@ -31,7 +31,7 @@ async function main() {
     create: { name: 'Operator' }
   });
 
-  console.log(`✅ Roles created: Admin (${adminRole.id}), Operator (${operatorRole.id})`);
+  console.log(`Roles created: Admin (${adminRole.id}), Operator (${operatorRole.id})`);
 
   // ============================================
   // 2. USERS (Upsert - idempotent with hashed passwords)
@@ -69,7 +69,7 @@ async function main() {
     }
   });
 
-  console.log(`✅ Users created: admin@hrflow.local (${adminUser.id}), operator@hrflow.local (${operatorUser.id})`);
+  console.log(`Users created: admin@hrflow.local (${adminUser.id}), operator@hrflow.local (${operatorUser.id})`);
 
   // ============================================
   // 3. MIGRATE EXISTING WORKFLOWS TO ADMIN USER
@@ -81,7 +81,7 @@ async function main() {
     data: { owner_user_id: adminUser.id }
   });
 
-  console.log(`✅ Migrated ${migrated.count} workflows to admin user`);
+  console.log(`Migrated ${migrated.count} workflows to admin user`);
 
   // ============================================
   // 4. TEMPLATE WORKFLOW 1: Employee Onboarding
@@ -189,9 +189,9 @@ async function main() {
       }
     });
 
-    console.log(`✅ Created template workflow: Employee Onboarding (${onboardingWorkflow.id})`);
+    console.log(`Created template workflow: Employee Onboarding (${onboardingWorkflow.id})`);
   } else {
-    console.log('⏭️  Template workflow "Employee Onboarding" already exists, skipping...');
+    console.log('Template workflow "Employee Onboarding" already exists, skipping...');
   }
 
   // ============================================
@@ -390,13 +390,13 @@ async function main() {
       }
     });
 
-    console.log(`✅ Created template workflow: Interview Scheduling (${interviewWorkflow.id})`);
+    console.log(`Created template workflow: Interview Scheduling (${interviewWorkflow.id})`);
   } else {
-    console.log('⏭️  Template workflow "Interview Scheduling" already exists, skipping...');
+    console.log('Template workflow "Interview Scheduling" already exists, skipping...');
   }
 
   console.log('');
-  console.log('🎉 Database seed completed successfully!');
+  console.log('Database seed completed successfully!');
   console.log('');
   console.log('Default credentials:');
   console.log('  Admin:    admin@hrflow.local / admin123');
@@ -406,7 +406,7 @@ async function main() {
 
 main()
   .catch((e) => {
-    console.error('❌ Seed failed:', e);
+    console.error('Seed failed:', e);
     process.exit(1);
   })
   .finally(async () => {

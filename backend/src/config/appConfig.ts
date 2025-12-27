@@ -44,7 +44,7 @@ function validateConfig(): AppConfig {
   if (missing.length > 0) {
     throw new Error(
       `Missing required environment variables: ${missing.join(', ')}\n` +
-      `Please check your .env file and ensure all required variables are set.\n` +
+      `Check the .env file and ensure all required variables are set.\n` +
       `See .env.example for reference.`
     );
   }

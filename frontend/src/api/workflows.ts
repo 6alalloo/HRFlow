@@ -1,4 +1,20 @@
-const API_BASE_URL = "http://localhost:4000/api";
+import { getAuthToken } from "../contexts/AuthContext";
+import { config } from "../config/appConfig";
+
+const API_BASE_URL = config.apiBaseUrl;
+
+// Helper to get auth headers for API calls
+function getAuthHeaders(): Record<string, string> {
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 
 /* ---------- Core API types ---------- */
 
@@ -14,6 +30,11 @@ export type WorkflowApi = {
   archived_at: string | null;
   created_at: string;
   updated_at: string;
+  users?: {
+    id: number;
+    full_name: string;
+    email: string;
+  } | null;
 };
 
 export type CreateWorkflowNodePayload = {
@@ -21,6 +42,7 @@ export type CreateWorkflowNodePayload = {
   name?: string;
   posX?: number;
   posY?: number;
+  config?: Record<string, unknown>;
 };
 
 export type ExecutionApi = {
@@ -83,7 +105,7 @@ export type WorkflowGraphMeta = {
   updatedAt?: string;
 };
 
-// Config/condition shape – we don't know exact fields yet, but no `any`
+
 export type WorkflowGraphConfig = Record<string, unknown>;
 
 // Node type used in the frontend (normalized)
@@ -214,7 +236,9 @@ function safeParseJson<T>(value: string | null | undefined, fallback: T): T {
 
 // GET /api/workflows
 export async function fetchWorkflows(): Promise<WorkflowApi[]> {
-  const res = await fetch(`${API_BASE_URL}/workflows`);
+  const res = await fetch(`${API_BASE_URL}/workflows`, {
+    headers: getAuthHeaders(),
+  });
 
   if (!res.ok) {
     console.error(
@@ -248,40 +272,53 @@ export async function fetchWorkflows(): Promise<WorkflowApi[]> {
 // POST /api/workflows/:id/execute
 export async function executeWorkflow(
   workflowId: number,
-  note?: string
+  input?: Record<string, unknown> | null,
+  triggerType?: string
 ): Promise<{
   execution: ExecutionApi;
   steps: ExecutionStepApi[];
+  // backend may include this; keep it optional so it doesn't break typing
+  n8nResult?: unknown;
 }> {
   const res = await fetch(`${API_BASE_URL}/workflows/${workflowId}/execute`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ note }),
+    headers: getAuthHeaders(),
+    body: JSON.stringify({
+      triggerType: triggerType ?? "manual",
+      input: input ?? {},
+    }),
   });
 
   if (!res.ok) {
-    console.error(
-      "[executeWorkflow] HTTP error:",
-      res.status,
-      res.statusText
-    );
-    throw new Error(
-      `Failed to execute workflow ${workflowId} (status ${res.status})`
-    );
+    console.error("[executeWorkflow] HTTP error:", res.status, res.statusText);
+    // Try to extract error message from response body
+    let errorMessage = `Failed to execute workflow (status ${res.status})`;
+    try {
+      const errorBody = await res.json();
+      if (errorBody.message) {
+        errorMessage = errorBody.message;
+      }
+    } catch {
+      // Ignore JSON parse errors
+    }
+    throw new Error(errorMessage);
   }
 
   const json = (await res.json()) as
-    | { data: { execution: ExecutionApi; steps: ExecutionStepApi[] } }
-    | { execution: ExecutionApi; steps: ExecutionStepApi[] };
+    | {
+        data: {
+          execution: ExecutionApi;
+          steps: ExecutionStepApi[];
+          n8nResult?: unknown;
+        };
+      }
+    | {
+        execution: ExecutionApi;
+        steps: ExecutionStepApi[];
+        n8nResult?: unknown;
+      };
 
-  console.log("[executeWorkflow] raw response:", json);
-
-  if ("data" in json) {
-    return json.data;
-  }
-
+  if ("data" in json) return json.data;
   return json;
 }
 
@@ -292,7 +329,7 @@ type WorkflowByIdResponse = WorkflowApi | { data: WorkflowApi };
 
 // GET /api/workflows/:id
 export async function fetchWorkflowById(id: number): Promise<WorkflowApi> {
-  const res = await fetch(`${API_BASE_URL}/workflows/${id}`);
+  const res = await fetch(`${API_BASE_URL}/workflows/${id}`, { headers: getAuthHeaders() });
 
   if (!res.ok) {
     console.error(
@@ -320,7 +357,7 @@ export async function fetchWorkflowGraph(
   nodes: WorkflowGraphNode[];
   edges: WorkflowGraphEdge[];
 }> {
-  const res = await fetch(`${API_BASE_URL}/workflows/${id}/graph`);
+  const res = await fetch(`${API_BASE_URL}/workflows/${id}/graph`, { headers: getAuthHeaders() });
 
   if (!res.ok) {
     console.error(
@@ -398,24 +435,48 @@ export async function fetchWorkflowGraph(
 }
 
 // POST /api/workflows/:id/nodes
+export async function deleteWorkflow(id: number): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/workflows/${id}`, {
+    method: "DELETE",
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to delete workflow: ${res.statusText}`);
+  }
+}
+
 export async function createWorkflowNode(
   workflowId: number,
   payload: CreateWorkflowNodePayload
 ): Promise<WorkflowGraphNode> {
   const res = await fetch(`${API_BASE_URL}/workflows/${workflowId}/nodes`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify(payload),
   });
 
   if (!res.ok) {
+    let serverMessage = "";
+    try {
+      const text = await res.text();
+      if (text) {
+        try {
+          const parsed = JSON.parse(text) as { message?: string; error?: string };
+          serverMessage = parsed.message || parsed.error || text;
+        } catch {
+          serverMessage = text;
+        }
+      }
+    } catch {
+      serverMessage = "";
+    }
     console.error(
       "[createWorkflowNode] HTTP error:",
       res.status,
       res.statusText
     );
     throw new Error(
-      `Failed to create node for workflow ${workflowId} (status ${res.status})`
+      `Failed to create node for workflow ${workflowId} (status ${res.status})${serverMessage ? `: ${serverMessage}` : ""}`
     );
   }
 
@@ -437,9 +498,7 @@ export async function updateWorkflowNodePosition(
     `${API_BASE_URL}/workflows/${workflowId}/nodes/${nodeId}/position`,
     {
       method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ posX, posY }),
     }
   );
@@ -473,6 +532,78 @@ export async function updateWorkflowNodePosition(
   return node;
 }
 
+/* ---------- Node update (name/config/position) ---------- */
+
+type WorkflowNodeUpdateDto = {
+  id: number;
+  workflowId: number;
+  kind: string;
+  name: string | null;
+  config: WorkflowGraphConfig;
+  posX: number;
+  posY: number;
+};
+
+type UpdateWorkflowNodeResponse =
+  | WorkflowNodeUpdateDto
+  | { data: WorkflowNodeUpdateDto };
+
+export type UpdateWorkflowNodePayload = {
+  kind?: string;
+  name?: string | null;
+  config?: WorkflowGraphConfig;
+  posX?: number;
+  posY?: number;
+};
+
+/**
+ * PUT /api/workflows/:workflowId/nodes/:nodeId
+ * Update workflow node core fields (name, kind, config, position).
+ */
+export async function updateWorkflowNode(
+  workflowId: number,
+  nodeId: number,
+  payload: UpdateWorkflowNodePayload
+): Promise<WorkflowGraphNode> {
+  const res = await fetch(
+    `${API_BASE_URL}/workflows/${workflowId}/nodes/${nodeId}`,
+    {
+      method: "PUT",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload),
+    }
+  );
+
+  if (!res.ok) {
+    console.error(
+      "[updateWorkflowNode] HTTP error:",
+      res.status,
+      res.statusText
+    );
+    throw new Error(
+      `Failed to update node ${nodeId} for workflow ${workflowId} (status ${res.status})`
+    );
+  }
+
+  const json = (await res.json()) as UpdateWorkflowNodeResponse;
+  console.log("[updateWorkflowNode] raw response:", json);
+
+  const raw: WorkflowNodeUpdateDto =
+    "data" in json ? json.data : (json as WorkflowNodeUpdateDto);
+
+  const node: WorkflowGraphNode = {
+    id: raw.id,
+    workflow_id: raw.workflowId,
+    kind: raw.kind,
+    name: raw.name,
+    pos_x: raw.posX,
+    pos_y: raw.posY,
+    config: raw.config,
+  };
+
+  return node;
+}
+
 /* ---------- Edge helpers ---------- */
 
 // POST /api/workflows/:id/edges
@@ -482,7 +613,7 @@ export async function createWorkflowEdge(
 ): Promise<WorkflowGraphEdge> {
   const res = await fetch(`${API_BASE_URL}/workflows/${workflowId}/edges`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify(payload),
   });
 
@@ -525,6 +656,7 @@ export async function deleteWorkflowEdge(
     `${API_BASE_URL}/workflows/${workflowId}/edges/${edgeId}`,
     {
       method: "DELETE",
+      headers: getAuthHeaders(),
     }
   );
 
@@ -541,10 +673,40 @@ export async function deleteWorkflowEdge(
   }
 }
 
+export async function deleteWorkflowNode(
+  workflowId: number,
+  nodeId: number
+): Promise<boolean> {
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/workflows/${workflowId}/nodes/${nodeId}`,
+      {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      }
+    );
+
+    // Any 2xx (including 204) is a success
+    if (res.ok) {
+      return true;
+    }
+
+    console.error(
+      "[deleteWorkflowNode] HTTP error:",
+      res.status,
+      res.statusText
+    );
+    return false;
+  } catch (err) {
+    console.error("[deleteWorkflowNode] Network or fetch error:", err);
+    return false;
+  }
+}
+
 /* ---------- Executions ---------- */
 
 export async function fetchExecution(id: number): Promise<ExecutionApi> {
-  const res = await fetch(`${API_BASE_URL}/executions/${id}`);
+  const res = await fetch(`${API_BASE_URL}/executions/${id}`, { headers: getAuthHeaders() });
 
   if (!res.ok) {
     console.error(
@@ -568,7 +730,7 @@ export async function fetchExecution(id: number): Promise<ExecutionApi> {
 export async function fetchExecutionSteps(
   id: number
 ): Promise<ExecutionStepApi[]> {
-  const res = await fetch(`${API_BASE_URL}/executions/${id}/steps`);
+  const res = await fetch(`${API_BASE_URL}/executions/${id}/steps`, { headers: getAuthHeaders() });
 
   if (!res.ok) {
     console.error(
@@ -591,4 +753,148 @@ export async function fetchExecutionSteps(
   }
 
   throw new Error("Unexpected execution steps response shape");
+}
+
+type CreateWorkflowResponse = WorkflowApi | { data: WorkflowApi };
+
+export type CreateWorkflowPayload = {
+  name: string;
+  description?: string | null;
+  is_active?: boolean;
+};
+
+export async function createWorkflow(payload: {
+  name: string;
+  description?: string | null;
+  isActive?: boolean;
+  ownerUserId?: number | null;
+  defaultTrigger?: string | null;
+}): Promise<WorkflowApi> {
+  const res = await fetch(`${API_BASE_URL}/workflows`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    console.error("[createWorkflow] HTTP error:", res.status, res.statusText);
+    throw new Error(`Failed to create workflow (status ${res.status})`);
+  }
+
+  const json = (await res.json()) as CreateWorkflowResponse;
+  return "data" in json ? json.data : json;
+}
+
+export type UpdateWorkflowPayload = {
+  name?: string;
+  description?: string | null;
+  isActive?: boolean;
+  defaultTrigger?: string | null;
+  ownerUserId?: number | null;
+  is_active?: boolean;
+  default_trigger?: string | null;
+};
+
+// PATCH /api/workflows/:id
+export async function updateWorkflow(
+  id: number,
+  payload: UpdateWorkflowPayload
+): Promise<WorkflowApi> {
+  const res = await fetch(`${API_BASE_URL}/workflows/${id}`, {
+    method: "PATCH",
+    headers: getAuthHeaders(),
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    console.error(`[updateWorkflow] HTTP error:`, res.status, res.statusText);
+    throw new Error(`Failed to update workflow ${id} (status ${res.status})`);
+  }
+
+  const json = await res.json();
+  const data = "data" in json ? json.data : json;
+  return data as WorkflowApi;
+}
+
+// POST /api/workflows/:id/duplicate
+export async function duplicateWorkflow(id: number): Promise<WorkflowApi> {
+  const res = await fetch(`${API_BASE_URL}/workflows/${id}/duplicate`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+  });
+
+  if (!res.ok) {
+    console.error(`[duplicateWorkflow] HTTP error:`, res.status, res.statusText);
+    throw new Error(`Failed to duplicate workflow ${id} (status ${res.status})`);
+  }
+
+  const json = await res.json();
+  const data = "data" in json ? json.data : json;
+  return data as WorkflowApi;
+}
+
+/* ---------- Settings API ---------- */
+
+export type DatabaseTable = {
+  name: string;
+  label: string;
+  description: string;
+};
+
+type DatabaseTablesResponse =
+  | { data: DatabaseTable[] }
+  | DatabaseTable[];
+
+// GET /api/settings/database-tables
+export async function fetchDatabaseTables(): Promise<DatabaseTable[]> {
+  const res = await fetch(`${API_BASE_URL}/settings/database-tables`, {
+    headers: getAuthHeaders(),
+  });
+
+  if (!res.ok) {
+    console.error("[fetchDatabaseTables] HTTP error:", res.status, res.statusText);
+    throw new Error(`Failed to fetch database tables (status ${res.status})`);
+  }
+
+  const json = (await res.json()) as DatabaseTablesResponse;
+
+  if (Array.isArray(json)) {
+    return json;
+  }
+
+  if ("data" in json) {
+    return json.data;
+  }
+
+  return [];
+}
+
+/**
+ * Fetch Google Form URL for a workflow
+ */
+export type GoogleFormUrlResponse = {
+  data: {
+    formUrl: string;
+    workflowId: number;
+    workflowName: string;
+    configured: boolean;
+  };
+};
+
+export async function fetchWorkflowFormUrl(workflowId: number): Promise<string | null> {
+  const res = await fetch(`${API_BASE_URL}/workflows/${workflowId}/form-url`, {
+    headers: getAuthHeaders(),
+  });
+
+  if (!res.ok) {
+    if (res.status === 503) {
+      // Google Form not configured
+      return null;
+    }
+    console.error("[fetchWorkflowFormUrl] HTTP error:", res.status, res.statusText);
+    throw new Error(`Failed to fetch form URL (status ${res.status})`);
+  }
+
+  const json = (await res.json()) as GoogleFormUrlResponse;
+  return json.data.formUrl;
 }

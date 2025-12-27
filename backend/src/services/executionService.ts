@@ -1,5 +1,29 @@
+/**
+ * Workflow Execution Orchestration Service
+ *
+ * Manages the complete workflow execution lifecycle:
+ * 1. Pre-process CV parser nodes
+ * 2. Compile HRFlow graph to n8n workflow
+ * 3. Upsert and activate workflow in n8n
+ * 4. Trigger execution via webhook
+ * 5. Track execution status and capture step-by-step results
+ *
+ * This service coordinates between HRFlow's database, the n8n engine,
+ * and external services like the CV parser.
+ */
 
 import prisma from "../lib/prisma";
+import {
+  callN8nExecute,
+  upsertN8nWorkflow,
+  activateN8nWorkflow,
+  getN8nExecutionForWorkflow,
+} from "./n8nService";
+import { compileToN8n } from "./n8nCompiler";
+import * as auditService from "./auditService";
+import { config } from "../config/appConfig";
+import { parseCV, type CVParseResult } from "./cvParserService";
+import logger from "../lib/logger";
 
 type ExecutionFilters = {
   status?: string;
@@ -9,28 +33,130 @@ type ExecutionFilters = {
 type ExecuteWorkflowInput = {
   workflowId: number;
   triggerType?: string;
-  input?: any;
+  input?: unknown;
 };
 
+type ExecutionFinalStatus = "completed" | "engine_error" | "failed";
+type StepStatus = "completed" | "skipped";
+
+type ErrorWithCode = Error & { code?: string };
+
+type RunContextPayload = {
+  input: unknown | null;
+  engine: {
+    n8n: unknown | null;
+    n8nWorkflowId?: string | null;
+    n8nCreated?: boolean | null;
+    webhookPath?: string | null;
+    webhookUrl?: string | null;
+  };
+};
+
+function safeParseJson<T = unknown>(value: string | null | undefined, fallback: T): T {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function makeCodedError(message: string, code: string): ErrorWithCode {
+  const err: ErrorWithCode = new Error(message);
+  err.code = code;
+  return err;
+}
+
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return "Unknown error";
+  }
+}
+
+function getErrorCode(err: unknown): string | undefined {
+  if (err && typeof err === "object" && "code" in err) {
+    const maybe = (err as { code?: unknown }).code;
+    return typeof maybe === "string" ? maybe : undefined;
+  }
+  return undefined;
+}
+
+function normalizeObject(input: unknown): Record<string, unknown> | null {
+  if (input == null) return null;
+  if (typeof input !== "object") return null;
+  if (Array.isArray(input)) return null;
+  return input as Record<string, unknown>;
+}
+
+function looksLikeEmployee(obj: Record<string, unknown>): boolean {
+  return (
+    typeof obj.email === "string" ||
+    typeof obj.name === "string" ||
+    typeof obj.department === "string" ||
+    typeof obj.role === "string"
+  );
+}
+
 /**
- * Get all executions with optional filters:
- * - status: filter by execution status
- * - workflowId: filter by workflow_id
+ * Build webhook execution body with normalized employee data structure.
+ * Supports multiple input formats and falls back to trigger config if input is empty.
+ * Creates both nested and flat employee fields for flexible n8n variable access.
+ *
+ * @param input - User-provided execution input
+ * @param triggerConfigFallback - Trigger node config for default values
+ * @returns Normalized execution body with employee data
  */
+function buildDemoExecuteBody(input: unknown, triggerConfigFallback: Record<string, unknown> | null) {
+  const obj = normalizeObject(input);
+  const result: Record<string, unknown> = {};
+
+  let employeeData: Record<string, unknown> | null = null;
+
+  if (obj && typeof obj.employee === "object" && obj.employee && !Array.isArray(obj.employee)) {
+    employeeData = obj.employee as Record<string, unknown>;
+  } else if (obj && looksLikeEmployee(obj)) {
+    employeeData = obj;
+  } else if (triggerConfigFallback) {
+    const tc = triggerConfigFallback;
+    if (typeof tc.employee === "object" && tc.employee && !Array.isArray(tc.employee)) {
+      employeeData = tc.employee as Record<string, unknown>;
+    } else if (looksLikeEmployee(tc)) {
+      employeeData = tc;
+    }
+  }
+
+  // Populate both nested (employee.name) and flat (name) structures for flexible access.
+  if (employeeData) {
+    result.employee = employeeData;
+    Object.assign(result, employeeData);
+  } else {
+    result.employee = {};
+  }
+
+  // Merge any additional root properties from original input.
+  if (obj) {
+      Object.assign(result, obj);
+  }
+
+  return result;
+}
+
+function getWebhookBaseUrl(): string {
+  return config.n8n.webhookBaseUrl;
+}
+
 export async function getAllExecutions(filters: ExecutionFilters = {}) {
   const { status, workflowId } = filters;
 
-  const where: any = {};
+  const where: Record<string, unknown> = {};
+  if (status && status.trim().length > 0) where.status = status.trim();
+  if (typeof workflowId === "number") where.workflow_id = workflowId;
 
-  if (status && status.trim().length > 0) {
-    where.status = status.trim();
-  }
-
-  if (typeof workflowId === "number") {
-    where.workflow_id = workflowId;
-  }
-
-  const executions = await prisma.executions.findMany({
+  return prisma.executions.findMany({
     where,
     select: {
       id: true,
@@ -41,26 +167,14 @@ export async function getAllExecutions(filters: ExecutionFilters = {}) {
       finished_at: true,
       duration_ms: true,
       error_message: true,
-      workflows: {
-        select: {
-          id: true,
-          name: true,
-        },
-      },
+      workflows: { select: { id: true, name: true } },
     },
-    orderBy: {
-      started_at: "desc",
-    },
+    orderBy: { started_at: "desc" },
   });
-
-  return executions;
 }
 
-/**
- * Get a single execution by ID, including its workflow.
- */
 export async function getExecutionById(id: number) {
-  const execution = await prisma.executions.findUnique({
+  return prisma.executions.findUnique({
     where: { id },
     select: {
       id: true,
@@ -72,26 +186,14 @@ export async function getExecutionById(id: number) {
       finished_at: true,
       duration_ms: true,
       error_message: true,
-      workflows: {
-        select: {
-          id: true,
-          name: true,
-        },
-      },
+      workflows: { select: { id: true, name: true } },
     },
   });
-
-  return execution;
 }
 
-/**
- * Get all steps for a given execution ID.
- */
 export async function getExecutionStepsByExecutionId(executionId: number) {
-  const steps = await prisma.execution_steps.findMany({
-    where: {
-      execution_id: executionId,
-    },
+  return prisma.execution_steps.findMany({
+    where: { execution_id: executionId },
     select: {
       id: true,
       execution_id: true,
@@ -102,57 +204,101 @@ export async function getExecutionStepsByExecutionId(executionId: number) {
       logs: true,
       started_at: true,
       finished_at: true,
-      workflow_nodes: {
-        select: {
-          id: true,
-          name: true,
-          kind: true,
-        },
-      },
+      workflow_nodes: { select: { id: true, name: true, kind: true } },
     },
-    orderBy: {
-      started_at: "asc",
-    },
+    orderBy: { started_at: "asc" },
   });
-
-  return steps;
 }
 
+/**
+ * Execute a workflow by compiling it to n8n and triggering via webhook.
+ * This is the main entry point for all workflow executions (manual, scheduled, webhook).
+ *
+ * Orchestrates the complete execution flow including CV parsing, compilation,
+ * n8n activation, webhook trigger, and execution tracking.
+ *
+ * @param params - Workflow ID, trigger type, and input data
+ * @returns Execution record with steps and n8n result
+ * @throws Error with specific code if workflow not found or engine error occurs
+ */
 export async function executeWorkflow(params: ExecuteWorkflowInput) {
   const { workflowId, triggerType, input } = params;
 
-  // 1. Fetch workflow
-  const workflow = await prisma.workflows.findUnique({
+  let workflow = await prisma.workflows.findUnique({
     where: { id: workflowId },
   });
+  if (!workflow) throw makeCodedError("Workflow not found", "WORKFLOW_NOT_FOUND");
 
-  if (!workflow) {
-    const error: any = new Error("Workflow not found");
-    error.code = "WORKFLOW_NOT_FOUND";
-    throw error;
-  }
-
+  // Auto-activate inactive workflows for better builder UX.
   if (!workflow.is_active) {
-    const error: any = new Error("Workflow is not active");
-    error.code = "WORKFLOW_INACTIVE";
-    throw error;
+    workflow = await prisma.workflows.update({
+      where: { id: workflowId },
+      data: { is_active: true },
+    });
   }
 
-  // 2. Fetch nodes for this workflow
-  const nodes = await prisma.workflow_nodes.findMany({
-    where: { workflow_id: workflowId },
-    orderBy: { id: "asc" },
-  });
+  const [nodesRaw, edgesRaw] = await Promise.all([
+    prisma.workflow_nodes.findMany({
+      where: { workflow_id: workflowId },
+      orderBy: { id: "asc" },
+    }),
+    prisma.workflow_edges.findMany({
+      where: { workflow_id: workflowId },
+      orderBy: { id: "asc" },
+    }),
+  ]);
 
-  if (nodes.length === 0) {
-    const error: any = new Error("Workflow has no nodes");
-    error.code = "WORKFLOW_HAS_NO_NODES";
-    throw error;
+  if (nodesRaw.length === 0) {
+    throw makeCodedError("Workflow has no nodes", "WORKFLOW_HAS_NO_NODES");
   }
 
-  // 3. Create execution
-  const now = new Date();
-  const runContext = input ? JSON.stringify(input) : null;
+  // Pre-process CV parser nodes before n8n execution (async CV parsing).
+  const cvParserResults = new Map<number, CVParseResult>();
+  for (const node of nodesRaw) {
+    if (node.kind === "cv_parser" || node.kind === "cv_parse") {
+      const config = safeParseJson<Record<string, unknown>>(node.config_json, {});
+      const fileId = config.fileId as string | undefined;
+
+      if (fileId) {
+        logger.info('Parsing CV for node', { nodeId: node.id, fileId });
+        const result = await parseCV(fileId);
+        cvParserResults.set(node.id, result);
+        logger.info('CV parse result', {
+          nodeId: node.id,
+          success: result.success,
+          error: result.success ? undefined : result.error
+        });
+      } else {
+        logger.warn('No fileId provided for cv_parser node', { nodeId: node.id });
+        cvParserResults.set(node.id, {
+          success: false,
+          source: "file",
+          data: {
+            name: null,
+            email: null,
+            phone: null,
+            skills: [],
+            experience_years: null,
+            education: [],
+          },
+          error: "No file uploaded for CV parser",
+        });
+      }
+    }
+  }
+
+  const startTime = new Date();
+
+  const runContextPayload: RunContextPayload & { cvParserResults?: Record<number, CVParseResult> } = {
+    input: input ?? null,
+    engine: {
+      n8n: null,
+      n8nWorkflowId: null,
+      n8nCreated: null,
+      webhookPath: null,
+      webhookUrl: null,
+    },
+  };
 
   const execution = await prisma.executions.create({
     data: {
@@ -161,34 +307,313 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
         typeof triggerType === "string" && triggerType.trim().length > 0
           ? triggerType.trim()
           : "manual",
-      status: "completed", // MVP: we treat execution as instantly completed
-      run_context: runContext ?? undefined,
-      started_at: now,
-      finished_at: now,
-      duration_ms: 0,
+      status: "running",
+      run_context: JSON.stringify(runContextPayload),
+      started_at: startTime,
+      finished_at: null,
+      duration_ms: null,
       error_message: null,
+      n8n_execution_id: null,
     },
   });
 
-  // 4. Create execution steps (one per node, simple mock)
-  const stepsData = nodes.map((node, index) => ({
-    execution_id: execution.id,
-    node_id: node.id,
-    status: "completed",
-    input_json: "{}", // later you can embed runContext or per-node input
-    output_json: "{}", // later you can embed n8n or engine output here
-    logs: `Executed node ${node.name ?? node.kind} (order ${index + 1})`,
-    started_at: now,
-    finished_at: now,
-  }));
-
-  await prisma.execution_steps.createMany({
-    data: stepsData,
+  // Log execution start for audit trail.
+  await auditService.logAuditEvent({
+    eventType: "execution_started",
+    userId: workflow.owner_user_id || 1,
+    targetType: "execution",
+    targetId: execution.id,
+    details: {
+      workflowId,
+      workflowName: workflow.name,
+      triggerType: triggerType ?? "manual",
+    },
   });
 
-  // 5. Fetch steps with node info for response
+  let n8nResult: unknown | null = null;
+  let finalStatus: ExecutionFinalStatus = "failed";
+  let errorMessage: string | null = null;
+
+  const webhookPath = `/webhook/hrflow-${workflowId}-execute`;
+  const webhookUrl = `${getWebhookBaseUrl()}${webhookPath}`;
+
+  try {
+    // Compile HRFlow graph to n8n workflow JSON with URL validation.
+    const compiled = await compileToN8n({
+      hrflowWorkflowId: workflowId,
+      workflowName: workflow.name,
+      webhookPath,
+      userId: workflow.owner_user_id || undefined,
+      nodes: nodesRaw.map((n) => ({
+        id: n.id,
+        kind: n.kind,
+        name: n.name ?? null,
+        config: safeParseJson<Record<string, unknown>>(n.config_json, {}),
+        posX: n.pos_x,
+        posY: n.pos_y,
+      })),
+      edges: edgesRaw.map((e) => ({
+        id: e.id,
+        fromNodeId: e.from_node_id,
+        toNodeId: e.to_node_id,
+        priority: e.priority ?? 0,
+        label: e.label ?? null,
+        condition: safeParseJson<Record<string, unknown>>(e.condition_json, {}),
+      })),
+    });
+
+    // Upsert workflow in n8n by name for idempotent updates.
+    const n8nName = `HRFlow: ${workflow.name} (#${workflowId})`;
+    const upsert = await upsertN8nWorkflow({
+      name: n8nName,
+      nodes: compiled.nodes,
+      connections: compiled.connections,
+    });
+
+    runContextPayload.engine.n8nWorkflowId = upsert.id;
+    runContextPayload.engine.n8nCreated = upsert.created;
+    runContextPayload.engine.webhookPath = webhookPath;
+    runContextPayload.engine.webhookUrl = webhookUrl;
+
+    // Persist n8n workflow ID and webhook path for future executions.
+    await prisma.workflows.update({
+      where: { id: workflowId },
+      data: {
+        n8n_workflow_id: upsert.id,
+        n8n_webhook_path: webhookPath,
+      },
+    });
+
+    // Activate workflow in n8n to register webhook endpoint.
+    await activateN8nWorkflow(upsert.id);
+
+    // Trigger execution via webhook with normalized employee data.
+    const triggerNode = nodesRaw.find((n) => n.kind === "trigger");
+    const triggerConfig = triggerNode
+      ? safeParseJson<Record<string, unknown>>(triggerNode.config_json, {})
+      : null;
+
+    const body = buildDemoExecuteBody(input, triggerConfig);
+
+    n8nResult = await callN8nExecute(webhookUrl, body);
+
+    finalStatus = "completed";
+  } catch (err: unknown) {
+    const code = getErrorCode(err);
+    logger.error('Workflow execution failed', {
+      workflowId,
+      executionId,
+      errorCode: code,
+      error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined
+    });
+
+    if (code === "N8N_UNREACHABLE" || code === "N8N_HTTP_ERROR" || code === "N8N_MISSING_API_KEY") {
+      finalStatus = "engine_error";
+    } else {
+      finalStatus = "failed";
+    }
+
+    errorMessage = getErrorMessage(err) || "Failed to execute workflow via n8n";
+  }
+
+  const finishedTime = new Date();
+  const durationMs = finishedTime.getTime() - startTime.getTime();
+
+  runContextPayload.engine.n8n = n8nResult;
+
+  // Attach CV parser results to run context for UI display.
+  if (cvParserResults.size > 0) {
+    runContextPayload.cvParserResults = Object.fromEntries(cvParserResults);
+  }
+
+  const updatedExecution = await prisma.executions.update({
+    where: { id: execution.id },
+    data: {
+      status: finalStatus,
+      run_context: JSON.stringify(runContextPayload),
+      finished_at: finishedTime,
+      duration_ms: durationMs,
+      error_message: errorMessage,
+    },
+  });
+
+  // Log execution completion or failure for audit trail.
+  await auditService.logAuditEvent({
+    eventType: finalStatus === "completed" ? "execution_completed" : "execution_failed",
+    userId: workflow.owner_user_id || 1,
+    targetType: "execution",
+    targetId: updatedExecution.id,
+    details: {
+      workflowId,
+      workflowName: workflow.name,
+      status: finalStatus,
+      durationMs,
+      triggerType,
+    },
+  });
+
+  // Determine execution step status based on overall execution result.
+  const stepsStatus: StepStatus = finalStatus === "completed" ? "completed" : "skipped";
+
+  // Extract output data from n8n webhook response (array of items with json).
+  let n8nOutputData: Record<string, unknown> = {};
+  let n8nOutputRaw: unknown[] = [];
+
+  if (n8nResult) {
+    if (Array.isArray(n8nResult)) {
+      n8nOutputRaw = n8nResult;
+      // Extract final output from last item in execution result.
+      const lastItem = n8nResult[n8nResult.length - 1];
+      if (lastItem && typeof lastItem === "object") {
+        if ("json" in lastItem && typeof lastItem.json === "object") {
+          n8nOutputData = lastItem.json as Record<string, unknown>;
+        } else {
+          n8nOutputData = lastItem as Record<string, unknown>;
+        }
+      }
+    } else if (typeof n8nResult === "object") {
+      n8nOutputData = n8nResult as Record<string, unknown>;
+    }
+  }
+
+  // Retrieve per-node outputs from n8n execution for detailed step tracking.
+  let perNodeOutputs: Map<string, Record<string, unknown>> = new Map();
+  const n8nWorkflowId = runContextPayload.engine.n8nWorkflowId;
+
+  if (finalStatus === "completed" && n8nWorkflowId) {
+    try {
+      // Brief delay to allow n8n to finalize execution data.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      logger.debug('Fetching per-node outputs from n8n', {
+        executionId,
+        n8nWorkflowId
+      });
+      const executionData = await getN8nExecutionForWorkflow(n8nWorkflowId);
+
+      if (executionData?.nodeOutputs) {
+        logger.debug('Retrieved node outputs from n8n', {
+          executionId,
+          nodeCount: executionData.nodeOutputs.size
+        });
+        for (const [nodeName, nodeData] of executionData.nodeOutputs) {
+          logger.debug('Node output retrieved', {
+            executionId,
+            nodeName,
+            dataPreview: JSON.stringify(nodeData.data).slice(0, 200)
+          });
+          perNodeOutputs.set(nodeName, nodeData.data);
+        }
+      } else {
+        logger.debug('No node outputs in execution data', {
+          executionId,
+          hasExecutionData: !!executionData
+        });
+      }
+    } catch (err) {
+      logger.warn('Could not fetch per-node outputs from n8n', {
+        executionId,
+        n8nWorkflowId,
+        error: err instanceof Error ? err.message : String(err)
+      });
+      // Fallback: use webhook response data for step outputs.
+    }
+  }
+
+  // Construct trigger input data from config or execution input.
+  const triggerNode = nodesRaw.find((n) => n.kind === "trigger");
+  const triggerConfig = triggerNode
+    ? safeParseJson<Record<string, unknown>>(triggerNode.config_json, {})
+    : {};
+  const inputData = buildDemoExecuteBody(input, triggerConfig);
+
+  // Generate stable node name matching n8nCompiler convention.
+  const getStableNodeName = (node: { id: number; name: string | null; kind: string }) => {
+    const name = node.name ?? node.kind;
+    return `HRFlow ${node.id} ${name}`.replace(/\s+/g, " ").trim();
+  };
+
+  // Build execution step records with inputs, outputs, and logs.
+  const stepsData = nodesRaw.map((node, index) => {
+    const stepInput = index === 0 ? inputData : n8nOutputData;
+
+    // Attempt to retrieve node-specific output from n8n execution.
+    const stableNodeName = getStableNodeName(node);
+    let stepOutput: Record<string, unknown> = perNodeOutputs.get(stableNodeName) || {};
+
+    // Inject CV parser results for CV parser nodes.
+    if ((node.kind === "cv_parser" || node.kind === "cv_parse") && cvParserResults.has(node.id)) {
+      const cvResult = cvParserResults.get(node.id)!;
+      stepOutput = {
+        ...cvResult.data,
+        _hrflow: {
+          nodeType: "cv_parser",
+          cvParsed: cvResult.success,
+          source: cvResult.source,
+          filename: cvResult.filename,
+          error: cvResult.error,
+        },
+      };
+    } else if (Object.keys(stepOutput).length === 0) {
+      // Fallback: use webhook response if per-node data unavailable.
+      if (n8nOutputRaw.length > index) {
+        const nodeResult = n8nOutputRaw[index];
+        if (nodeResult && typeof nodeResult === "object") {
+          if ("json" in nodeResult && typeof (nodeResult as Record<string, unknown>).json === "object") {
+            stepOutput = (nodeResult as Record<string, unknown>).json as Record<string, unknown>;
+          } else {
+            stepOutput = nodeResult as Record<string, unknown>;
+          }
+        }
+      } else {
+        stepOutput = n8nOutputData;
+      }
+    }
+
+    // Generate descriptive log message based on node type and execution status.
+    let logMessage: string;
+    if (finalStatus === "completed") {
+      const hrflowMeta = stepOutput._hrflow as Record<string, unknown> | undefined;
+      if (hrflowMeta?.log) {
+        const logData = hrflowMeta.log as Record<string, unknown>;
+        logMessage = `[${logData.level ?? "info"}] ${logData.message ?? "Logged"}`;
+      } else if (node.kind === "trigger") {
+        logMessage = `Trigger executed - Employee: ${(stepOutput.employee as Record<string, unknown>)?.name ?? "Unknown"}`;
+      } else if (node.kind === "cv_parse" || node.kind === "cv_parser") {
+        const cvMeta = stepOutput._hrflow as Record<string, unknown> | undefined;
+        if (cvMeta?.cvParsed) {
+          const name = stepOutput.name || "Unknown";
+          const skills = Array.isArray(stepOutput.skills) ? stepOutput.skills.length : 0;
+          logMessage = `CV parsed successfully - Candidate: ${name}, Skills found: ${skills}`;
+        } else {
+          logMessage = `CV parsing failed - ${cvMeta?.error || "Unknown error"}`;
+        }
+      } else {
+        logMessage = `Executed node ${node.name ?? node.kind} (order ${index + 1}) via n8n`;
+      }
+    } else {
+      logMessage = `Skipped node ${node.name ?? node.kind} (order ${index + 1}) due to engine status "${finalStatus}"`;
+    }
+
+    return {
+      execution_id: updatedExecution.id,
+      node_id: node.id,
+      status: stepsStatus,
+      input_json: JSON.stringify(stepInput),
+      output_json: JSON.stringify(stepOutput),
+      logs: logMessage,
+      started_at: startTime,
+      finished_at: finishedTime,
+    };
+  });
+
+  if (stepsData.length > 0) {
+    await prisma.execution_steps.createMany({ data: stepsData });
+  }
+
   const steps = await prisma.execution_steps.findMany({
-    where: { execution_id: execution.id },
+    where: { execution_id: updatedExecution.id },
     select: {
       id: true,
       execution_id: true,
@@ -199,19 +624,34 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
       logs: true,
       started_at: true,
       finished_at: true,
-      workflow_nodes: {
-        select: {
-          id: true,
-          name: true,
-          kind: true,
-        },
-      },
+      workflow_nodes: { select: { id: true, name: true, kind: true } },
     },
     orderBy: { id: "asc" },
   });
 
   return {
-    execution,
+    execution: updatedExecution,
     steps,
+    n8nResult,
   };
+}
+
+export async function deleteExecution(id: number) {
+  const existing = await prisma.executions.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      workflow_id: true,
+      trigger_type: true,
+      status: true,
+    },
+  });
+
+  if (!existing) return null;
+
+  await prisma.executions.delete({
+    where: { id },
+  });
+
+  return existing;
 }

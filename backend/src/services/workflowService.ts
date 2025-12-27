@@ -1,5 +1,18 @@
-// src/services/workflowService.ts
+/**
+ * Workflow Graph Management Service
+ *
+ * Provides CRUD operations for workflows, nodes, and edges.
+ * Manages the HRFlow workflow graph structure stored in PostgreSQL.
+ *
+ * Key operations:
+ * - Workflow lifecycle (create, read, update, delete, duplicate)
+ * - Node management (add, update, move, delete)
+ * - Edge management (connect, update, delete)
+ * - Graph queries (fetch complete workflow with nodes and edges)
+ */
+
 import prisma from "../lib/prisma";
+import { Prisma } from "@prisma/client";
 
 type WorkflowFilters = {
   isActive?: boolean;
@@ -7,18 +20,23 @@ type WorkflowFilters = {
   query?: string; // for ?q= search
 };
 
-
+/**
+ * Safely parse JSON string with fallback value.
+ * Prevents API crashes when encountering invalid JSON in database fields.
+ */
 function safeParseJson<T = any>(value: string | null | undefined, fallback: T): T {
   if (!value) return fallback;
   try {
     return JSON.parse(value);
   } catch {
-    // If the stored JSON is invalid, we don't want to crash the API
     return fallback;
   }
 }
 
-// 2) Node kinds our engine/canvas understands
+/**
+ * Supported workflow node types in HRFlow.
+ * Each type maps to specific n8n node compilation logic in n8nCompiler.
+ */
 export type WorkflowNodeKind =
   | "trigger"
   | "http"
@@ -28,9 +46,13 @@ export type WorkflowNodeKind =
   | "variable"
   | "logger"
   | "datetime"
-  | "cv_parse";
+  | "cv_parse"
+  | "cv_parser";
 
-// 3) DTOs for nodes and edges (these are service-level types, not Prisma models)
+/**
+ * Data transfer object for workflow nodes.
+ * Service-level type used for API operations, distinct from Prisma models.
+ */
 export interface WorkflowNodeDTO {
   kind: WorkflowNodeKind;
   name?: string | null;
@@ -46,11 +68,61 @@ export interface WorkflowEdgeDTO {
   priority?: number | null;
   condition?: Record<string, any>;
 }
+
+/** -------------------- WORKFLOW CRUD -------------------- **/
+
+export type CreateWorkflowDTO = {
+  name: string;
+  description?: string | null;
+  isActive?: boolean;
+  ownerUserId?: number | null;
+  defaultTrigger?: string | null;
+};
+
 /**
- * Get all workflows (list) with optional filters:
- * - isActive: filter by is_active
- * - ownerId: filter by owner_user_id
- * - query: search in name OR description (case-insensitive)
+ * Create a new workflow with metadata.
+ * Returns the created workflow with owner information.
+ */
+export async function createWorkflow(dto: CreateWorkflowDTO) {
+  const created = await prisma.workflows.create({
+    data: {
+      name: dto.name,
+      description: dto.description ?? null,
+      is_active: typeof dto.isActive === "boolean" ? dto.isActive : true,
+      owner_user_id: dto.ownerUserId ?? null,
+      default_trigger: dto.defaultTrigger ?? null,
+      // version/created_at/updated_at defaults are handled by Prisma schema
+    },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      is_active: true,
+      version: true,
+      default_trigger: true,
+      owner_user_id: true,
+      archived_at: true,
+      created_at: true,
+      updated_at: true,
+      n8n_workflow_id: true,
+      n8n_webhook_path: true,
+      users: {
+        select: {
+          id: true,
+          full_name: true,
+          email: true,
+        },
+      },
+    },
+  });
+
+  return created;
+}
+
+/**
+ * Retrieve all workflows with optional filtering.
+ * Supports filtering by active status, owner, and text search (name/description).
+ * Results are ordered by creation date descending.
  */
 export async function getAllWorkflows(filters: WorkflowFilters = {}) {
   const { isActive, ownerId, query } = filters;
@@ -97,6 +169,10 @@ export async function getAllWorkflows(filters: WorkflowFilters = {}) {
       version: true,
       default_trigger: true,
       owner_user_id: true,
+
+      // Note: Frontend uses archived_at field for archive status filtering
+      archived_at: true,
+
       created_at: true,
       updated_at: true,
       users: {
@@ -132,6 +208,8 @@ export async function getWorkflowById(id: number) {
       archived_at: true,
       created_at: true,
       updated_at: true,
+      n8n_workflow_id: true,
+      n8n_webhook_path: true,
       users: {
         select: {
           id: true,
@@ -143,6 +221,53 @@ export async function getWorkflowById(id: number) {
   });
 
   return workflow;
+}
+
+/**
+ * Update workflow metadata (name, description, is_active, default_trigger).
+ */
+export async function updateWorkflow(
+  id: number,
+  dto: {
+    name?: string;
+    description?: string;
+    isActive?: boolean;
+    defaultTrigger?: string | null;
+  }
+) {
+  const existing = await prisma.workflows.findUnique({
+    where: { id },
+  });
+
+  if (!existing) {
+    return null;
+  }
+
+  const updated = await prisma.workflows.update({
+    where: { id },
+    data: {
+      name: dto.name ?? existing.name,
+      description: dto.description !== undefined ? dto.description : existing.description,
+      is_active: dto.isActive !== undefined ? dto.isActive : existing.is_active,
+      default_trigger: dto.defaultTrigger !== undefined ? dto.defaultTrigger : existing.default_trigger,
+    },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      is_active: true,
+      version: true,
+      default_trigger: true,
+      owner_user_id: true,
+      archived_at: true,
+      created_at: true,
+      updated_at: true,
+      n8n_workflow_id: true,
+      n8n_webhook_path: true,
+    },
+  });
+
+  return updated;
 }
 
 /**
@@ -196,7 +321,8 @@ export async function getWorkflowEdges(workflowId: number) {
 }
 
 /**
- * Get a workflow graph = { workflow, nodes, edges } with parsed JSON config.
+ * Retrieve complete workflow graph including nodes and edges.
+ * Returns null if workflow not found. Parses config_json fields for client consumption.
  */
 export async function getWorkflowGraph(workflowId: number) {
   // 1) Fetch the workflow itself
@@ -205,11 +331,10 @@ export async function getWorkflowGraph(workflowId: number) {
   });
 
   if (!workflow) {
-    // Let the controller decide how to turn this into HTTP 404
     return null;
   }
 
-  // 2) Fetch nodes and edges in parallel 
+  // 2) Fetch nodes and edges in parallel
   const [nodesRaw, edgesRaw] = await Promise.all([
     prisma.workflow_nodes.findMany({
       where: { workflow_id: workflowId },
@@ -262,28 +387,22 @@ export async function getWorkflowGraph(workflowId: number) {
 // -------------------- NODE CRUD --------------------
 
 /**
- * Create a new node for a workflow.
- */
-
-
-/**
- * Update an existing node for a workflow.
+ * Update workflow node properties (config, position, name, kind).
+ * Validates node ownership before update. Returns null if node not found.
  */
 export async function updateWorkflowNode(
   workflowId: number,
   nodeId: number,
   dto: Partial<WorkflowNodeDTO>
 ) {
-  // 1) Ensure the node belongs to this workflow
   const existing = await prisma.workflow_nodes.findFirst({
     where: { id: nodeId, workflow_id: workflowId },
   });
 
   if (!existing) {
-    return null; // controller will return 404
+    return null;
   }
 
-  // 2) Build the update data, falling back to existing values
   const updated = await prisma.workflow_nodes.update({
     where: { id: nodeId },
     data: {
@@ -303,39 +422,69 @@ export async function updateWorkflowNode(
     workflowId: updated.workflow_id,
     kind: updated.kind as WorkflowNodeKind,
     name: updated.name,
-    config: safeParseJson(updated.config_json, {} as Record<string, any>),
+    config: safeParseJson<Record<string, unknown>>(updated.config_json, {}),
     posX: updated.pos_x,
     posY: updated.pos_y,
   };
 }
 
 /**
- * Delete a node from a workflow.
+ * Delete a workflow node and cascade-delete associated edges.
+ * Returns null if node not found or doesn't belong to workflow.
  */
-export async function deleteWorkflowNode(
-  workflowId: number,
-  nodeId: number
-) {
-  // Check ownership
+export async function deleteWorkflowNode(workflowId: number, nodeId: number) {
   const existing = await prisma.workflow_nodes.findFirst({
     where: { id: nodeId, workflow_id: workflowId },
   });
 
   if (!existing) {
-    return false;
+    return null;
   }
 
-  // Deleting the node will also impact edges/steps via FK rules
   await prisma.workflow_nodes.delete({
     where: { id: nodeId },
   });
 
-  return true;
+  return existing;
+}
+
+export async function updateWorkflowNodePosition(
+  workflowId: number,
+  nodeId: number,
+  posX: number,
+  posY: number
+) {
+  // Make sure this node actually belongs to the workflow
+  const existing = await prisma.workflow_nodes.findFirst({
+    where: { id: nodeId, workflow_id: workflowId },
+  });
+
+  if (!existing) {
+    return null;
+  }
+
+  const updated = await prisma.workflow_nodes.update({
+    where: { id: nodeId },
+    data: {
+      pos_x: posX,
+      pos_y: posY,
+    },
+  });
+
+  return {
+    id: updated.id,
+    workflowId: updated.workflow_id,
+    kind: updated.kind as WorkflowNodeKind,
+    name: updated.name,
+    config: safeParseJson(updated.config_json, {} as Record<string, unknown>),
+    posX: updated.pos_x,
+    posY: updated.pos_y,
+  };
 }
 
 /**
- * List edges for a workflow with parsed JSON condition.
- * 
+ * Retrieve workflow edges with parsed condition JSON.
+ * Returns edges sorted by ID ascending.
  */
 export async function listWorkflowEdgesParsed(workflowId: number) {
   const edgesRaw = await prisma.workflow_edges.findMany({
@@ -355,14 +504,13 @@ export async function listWorkflowEdgesParsed(workflowId: number) {
 }
 
 /**
- * Create a new edge between two nodes in the same workflow.
+ * Create edge connecting two workflow nodes.
+ * Validates both nodes belong to the specified workflow before creation.
  */
 export async function createWorkflowEdge(
   workflowId: number,
-  dto: Required<Pick<WorkflowEdgeDTO, "fromNodeId" | "toNodeId">> &
-    WorkflowEdgeDTO
+  dto: Required<Pick<WorkflowEdgeDTO, "fromNodeId" | "toNodeId">> & WorkflowEdgeDTO
 ) {
-  // 1) Validate that both nodes exist and belong to this workflow
   const [fromNode, toNode] = await Promise.all([
     prisma.workflow_nodes.findFirst({
       where: { id: dto.fromNodeId, workflow_id: workflowId },
@@ -376,7 +524,6 @@ export async function createWorkflowEdge(
     throw new Error("fromNodeId and toNodeId must belong to this workflow");
   }
 
-  // 2) Create the edge
   const edge = await prisma.workflow_edges.create({
     data: {
       workflow_id: workflowId,
@@ -388,7 +535,6 @@ export async function createWorkflowEdge(
     },
   });
 
-  // 3) Return parsed version for the API
   return {
     id: edge.id,
     workflowId: edge.workflow_id,
@@ -401,23 +547,22 @@ export async function createWorkflowEdge(
 }
 
 /**
- * Update an existing edge in the workflow.
+ * Update workflow edge properties (from/to nodes, label, priority, condition).
+ * Validates nodes belong to workflow if node IDs are changed.
  */
 export async function updateWorkflowEdge(
   workflowId: number,
   edgeId: number,
   dto: WorkflowEdgeDTO
 ) {
-  // 1) Ensure the edge belongs to this workflow
   const existing = await prisma.workflow_edges.findFirst({
     where: { id: edgeId, workflow_id: workflowId },
   });
 
   if (!existing) {
-    return null; // controller will return 404
+    return null;
   }
 
-  // 2) Decide the final from/to node IDs (may be unchanged)
   let fromNodeId = existing.from_node_id;
   let toNodeId = existing.to_node_id;
 
@@ -428,7 +573,6 @@ export async function updateWorkflowEdge(
     toNodeId = dto.toNodeId;
   }
 
-  // 3) If either from/to changed, validate they still belong to this workflow
   if (dto.fromNodeId !== undefined || dto.toNodeId !== undefined) {
     const [fromNode, toNode] = await Promise.all([
       prisma.workflow_nodes.findFirst({
@@ -444,15 +588,13 @@ export async function updateWorkflowEdge(
     }
   }
 
-  // 4) Perform the update
   const updated = await prisma.workflow_edges.update({
     where: { id: edgeId },
     data: {
       from_node_id: fromNodeId,
       to_node_id: toNodeId,
       label: dto.label ?? existing.label,
-      priority:
-        dto.priority !== undefined ? dto.priority : existing.priority ?? 0,
+      priority: dto.priority !== undefined ? dto.priority : existing.priority ?? 0,
       condition_json:
         dto.condition !== undefined
           ? JSON.stringify(dto.condition)
@@ -472,13 +614,10 @@ export async function updateWorkflowEdge(
 }
 
 /**
- * Delete an edge from the workflow.
+ * Delete workflow edge.
+ * Returns false if edge not found or doesn't belong to workflow.
  */
-export async function deleteWorkflowEdge(
-  workflowId: number,
-  edgeId: number
-) {
-  // 1) Ensure the edge belongs to this workflow
+export async function deleteWorkflowEdge(workflowId: number, edgeId: number) {
   const existing = await prisma.workflow_edges.findFirst({
     where: { id: edgeId, workflow_id: workflowId },
   });
@@ -487,7 +626,6 @@ export async function deleteWorkflowEdge(
     return false;
   }
 
-  // 2) Delete
   await prisma.workflow_edges.delete({
     where: { id: edgeId },
   });
@@ -495,11 +633,11 @@ export async function deleteWorkflowEdge(
   return true;
 }
 
-export async function createWorkflowNode(
-  workflowId: number,
-  dto: WorkflowNodeDTO
-) {
-  // How many nodes already exist for this workflow?
+/**
+ * Create new workflow node with automatic grid positioning if coordinates not provided.
+ * Handles PostgreSQL sequence drift with retry logic.
+ */
+export async function createWorkflowNode(workflowId: number, dto: WorkflowNodeDTO) {
   const count = await prisma.workflow_nodes.count({
     where: { workflow_id: workflowId },
   });
@@ -507,25 +645,50 @@ export async function createWorkflowNode(
   let posX = dto.posX;
   let posY = dto.posY;
 
-  // If no explicit position was provided, place node in a simple grid
   if (posX === undefined || posY === undefined) {
-    const col = count % 3;               // 0,1,2
-    const row = Math.floor(count / 3);   // 0,1,2,...
+    const col = count % 3;
+    const row = Math.floor(count / 3);
 
-    posX = 80 + col * 220;               // 80, 300, 520,...
-    posY = 80 + row * 160;               // 80, 240, 400,...
+    posX = 80 + col * 220;
+    posY = 80 + row * 160;
   }
 
-  const node = await prisma.workflow_nodes.create({
-    data: {
-      workflow_id: workflowId,
-      kind: dto.kind,
-      name: dto.name ?? null,
-      config_json: JSON.stringify(dto.config ?? {}),
-      pos_x: Math.round(posX),
-      pos_y: Math.round(posY),
-    },
-  });
+  const createNode = () =>
+    prisma.workflow_nodes.create({
+      data: {
+        workflow_id: workflowId,
+        kind: dto.kind,
+        name: dto.name ?? null,
+        config_json: JSON.stringify(dto.config ?? {}),
+        pos_x: Math.round(posX),
+        pos_y: Math.round(posY),
+      },
+    });
+
+  let node;
+  try {
+    node = await createNode();
+  } catch (error) {
+    const isDuplicateId =
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002" &&
+      Array.isArray((error.meta as { target?: string[] } | undefined)?.target) &&
+      (error.meta as { target?: string[] } | undefined)?.target?.includes("id");
+
+    if (!isDuplicateId) {
+      throw error;
+    }
+
+    await prisma.$executeRaw`
+      SELECT setval(
+        pg_get_serial_sequence('workflow_nodes','id'),
+        (SELECT COALESCE(MAX(id), 0) FROM workflow_nodes),
+        true
+      );
+    `;
+
+    node = await createNode();
+  }
 
   return {
     id: node.id,
@@ -536,4 +699,126 @@ export async function createWorkflowNode(
     posX: node.pos_x,
     posY: node.pos_y,
   };
+}
+
+/**
+ * Delete workflow and cascade-delete all associated nodes and edges.
+ */
+export async function deleteWorkflow(id: number): Promise<void> {
+  await prisma.workflows.delete({
+    where: { id },
+  });
+}
+
+/**
+ * Duplicate workflow with all nodes and edges.
+ * Creates copy with "(Copy)" suffix, sets inactive by default to prevent accidental triggers.
+ * Performs atomic duplication within transaction and syncs PostgreSQL sequences.
+ */
+export async function duplicateWorkflow(id: number, ownerUserId?: number | null) {
+  const original = await prisma.workflows.findUnique({
+    where: { id },
+  });
+
+  if (!original) {
+    return null;
+  }
+
+  const [nodes, edges] = await Promise.all([
+    prisma.workflow_nodes.findMany({
+      where: { workflow_id: id },
+      orderBy: { id: "asc" },
+    }),
+    prisma.workflow_edges.findMany({
+      where: { workflow_id: id },
+      orderBy: { id: "asc" },
+    }),
+  ]);
+
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT setval(pg_get_serial_sequence('workflow_nodes','id'), (SELECT COALESCE(MAX(id), 0) FROM workflow_nodes), true);`;
+    await tx.$executeRaw`SELECT setval(pg_get_serial_sequence('workflow_edges','id'), (SELECT COALESCE(MAX(id), 0) FROM workflow_edges), true);`;
+
+    const newWorkflow = await tx.workflows.create({
+      data: {
+        name: `${original.name} (Copy)`,
+        description: original.description,
+        is_active: false,
+        owner_user_id:
+          typeof ownerUserId === "number" ? ownerUserId : original.owner_user_id,
+        default_trigger: original.default_trigger,
+      },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        is_active: true,
+        version: true,
+        default_trigger: true,
+        owner_user_id: true,
+        archived_at: true,
+        created_at: true,
+        updated_at: true,
+        n8n_workflow_id: true,
+        n8n_webhook_path: true,
+        users: {
+          select: {
+            id: true,
+            full_name: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    const nodeIdMap: Record<number, number> = {};
+
+    for (const node of nodes) {
+      const newNode = await tx.workflow_nodes.create({
+        data: {
+          workflow_id: newWorkflow.id,
+          kind: node.kind,
+          name: node.name,
+          config_json: node.config_json,
+          pos_x: node.pos_x,
+          pos_y: node.pos_y,
+        },
+      });
+      nodeIdMap[node.id] = newNode.id;
+    }
+
+    for (const edge of edges) {
+      const newFromNodeId = nodeIdMap[edge.from_node_id];
+      const newToNodeId = nodeIdMap[edge.to_node_id];
+
+      if (newFromNodeId && newToNodeId) {
+        await tx.workflow_edges.create({
+          data: {
+            workflow_id: newWorkflow.id,
+            from_node_id: newFromNodeId,
+            to_node_id: newToNodeId,
+            label: edge.label,
+            priority: edge.priority,
+            condition_json: edge.condition_json,
+          },
+        });
+      }
+    }
+
+    return {
+      id: newWorkflow.id,
+      name: newWorkflow.name,
+      description: newWorkflow.description,
+      is_active: newWorkflow.is_active,
+      version: newWorkflow.version,
+      default_trigger: newWorkflow.default_trigger,
+      owner_user_id: newWorkflow.owner_user_id,
+      archived_at: newWorkflow.archived_at,
+      created_at: newWorkflow.created_at,
+      updated_at: newWorkflow.updated_at,
+      users: newWorkflow.users,
+      nodeCount: nodes.length,
+      edgeCount: edges.length,
+    };
+  });
 }

@@ -1,0 +1,68 @@
+# Production overrides - use with: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up
+# This file extends docker-compose.yml with production-specific configurations
+
+version: '3.8'
+
+services:
+  # PostgreSQL - Production configuration
+  postgres:
+    # Don't expose PostgreSQL port externally for security
+    # Only accessible within Docker network
+    ports: []
+    restart: unless-stopped
+    # Consider using a stronger password in production
+    # Or load from secrets: secrets: [postgres_password]
+
+  # n8n - Production configuration
+  n8n:
+    restart: unless-stopped
+    environment:
+      # Override with stronger credentials in production
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-admin123}
+    # Consider restricting port access with reverse proxy
+    # Or use: ports: [] and access via nginx reverse proxy
+
+  # Backend - Production configuration
+  backend:
+    environment:
+      - NODE_ENV=production
+    # No volume mounts - use built image only (no hot reload)
+    volumes: []
+    command: sh -c "npx prisma generate && npx prisma migrate deploy && npm run start"
+    restart: unless-stopped
+    # Note: Uses 'migrate deploy' instead of 'db push' for safety
+    # Consider adding logging, monitoring, and secrets management
+
+  # Frontend - Production configuration
+  frontend:
+    # No volume mounts - use built image only
+    volumes: []
+    restart: unless-stopped
+    environment:
+      - VITE_API_BASE_URL=${API_BASE_URL:-http://localhost:4000/api}
+    # Consider using a proper domain with SSL in production
+
+  # CV Parser - Production configuration
+  cv-parser:
+    # No volume mounts - use built image only
+    volumes: []
+    restart: unless-stopped
+
+# Production volumes with specific drivers/options
+volumes:
+  postgres_data:
+    # Consider using named volumes with backup strategies
+    driver: local
+  n8n_data:
+    driver: local
+
+# Optional: Add production-specific networks, secrets, etc.
+# networks:
+#   frontend:
+#   backend:
+
+# secrets:
+#   postgres_password:
+#     file: ./secrets/postgres_password.txt

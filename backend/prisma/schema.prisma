@@ -1,11 +1,20 @@
+// HRFlow Database Schema
+//
+// Core entities:
+// - workflows: Workflow definitions with nodes and edges
+// - executions: Workflow execution history and results
+// - users/employees: User management and HR records
+// - candidates/applications: Recruitment tracking
+//
+// Schema: "Core" (PostgreSQL)
+
 generator client {
   provider = "prisma-client-js"
 }
 
-
 datasource db {
   provider = "postgresql"
-  url= env("DATABASE_URL")
+  url      = env("DATABASE_URL")
 }
 
 model applications {
@@ -85,6 +94,8 @@ model employees {
   @@index([user_id], map: "idx_employees_user")
 }
 
+// Per-node execution tracking for detailed workflow execution visibility.
+// Stores input/output data and logs for each node in the execution.
 model execution_steps {
   id             Int             @id @default(autoincrement())
   execution_id   Int
@@ -101,16 +112,22 @@ model execution_steps {
   @@index([execution_id], map: "idx_steps_exec")
 }
 
+// Workflow execution history and status tracking.
+// Stores n8n execution results, duration, errors, and run context.
 model executions {
-  id              Int               @id @default(autoincrement())
-  workflow_id     Int?
-  trigger_type    String            @db.VarChar
-  status          String            @db.VarChar
-  run_context     String?           @db.VarChar
-  started_at      DateTime          @default(now()) @db.Timestamptz(6)
-  finished_at     DateTime?         @db.Timestamptz(6)
-  duration_ms     Int?
-  error_message   String?           @db.VarChar
+  id            Int       @id @default(autoincrement())
+  workflow_id   Int?
+  trigger_type  String    @db.VarChar
+  status        String    @db.VarChar
+  run_context   String?   @db.VarChar
+  started_at    DateTime  @default(now()) @db.Timestamptz(6)
+  finished_at   DateTime? @db.Timestamptz(6)
+  duration_ms   Int?
+  error_message String?   @db.VarChar
+
+  // n8n execution tracking for cross-system correlation.
+  n8n_execution_id String? @unique @db.VarChar
+
   execution_steps execution_steps[]
   workflows       workflows?        @relation(fields: [workflow_id], references: [id], onUpdate: NoAction)
 
@@ -152,19 +169,30 @@ model roles {
   users      users[]
 }
 
+// Domain allow-list for HTTP request security.
+// Workflow HTTP nodes can only make requests to allowed domains.
+model allowed_domains {
+  id         Int      @id @default(autoincrement())
+  domain     String   @unique @db.VarChar(255)
+  created_by Int?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  user       users?   @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+}
+
 model users {
-  id            Int          @id @default(autoincrement())
-  email         String       @unique @db.VarChar
-  password_hash String       @db.VarChar
-  full_name     String       @db.VarChar
-  is_active     Boolean      @default(true)
-  role_id       Int
-  created_at    DateTime     @default(now()) @db.Timestamptz(6)
-  audit_logs    audit_logs[]
-  employees     employees[]
-  jobs          jobs[]
-  roles         roles        @relation(fields: [role_id], references: [id], onUpdate: NoAction)
-  workflows     workflows[]
+  id              Int               @id @default(autoincrement())
+  email           String            @unique @db.VarChar
+  password_hash   String            @db.VarChar
+  full_name       String            @db.VarChar
+  is_active       Boolean           @default(true)
+  role_id         Int
+  created_at      DateTime          @default(now()) @db.Timestamptz(6)
+  audit_logs      audit_logs[]
+  employees       employees[]
+  jobs            jobs[]
+  roles           roles             @relation(fields: [role_id], references: [id], onUpdate: NoAction)
+  workflows       workflows[]
+  allowed_domains allowed_domains[]
 
   @@index([role_id], map: "idx_users_role_id")
 }
@@ -183,13 +211,15 @@ model webhooks {
   @@index([workflow_id], map: "idx_webhooks_workflow")
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+// Workflow graph edges connecting nodes.
+// Supports conditional routing with priority-based ordering.
+// Cascade deletes ensure graph consistency when nodes are removed.
 model workflow_edges {
   id                                                                     Int            @id @default(autoincrement())
   workflow_id                                                            Int
   from_node_id                                                           Int
   to_node_id                                                             Int
-  condition_json                                                         String         @default("{}") @db.VarChar
+  condition_json                                                         String         @default("{}") @db.Text
   label                                                                  String?        @db.VarChar
   priority                                                               Int?           @default(0)
   workflow_nodes_workflow_edges_workflow_id_from_node_idToworkflow_nodes workflow_nodes @relation("workflow_edges_workflow_id_from_node_idToworkflow_nodes", fields: [workflow_id, from_node_id], references: [workflow_id, id], onDelete: Cascade, onUpdate: NoAction, map: "fk_edge_from")
@@ -201,12 +231,15 @@ model workflow_edges {
   @@index([workflow_id], map: "idx_edges_workflow")
 }
 
+// Workflow graph nodes (trigger, http, email, database, etc.).
+// Each node has a kind (type), name, config JSON, and canvas position.
+// The kind field determines compilation behavior in n8nCompiler.
 model workflow_nodes {
   id                                                                     Int               @id @default(autoincrement())
   workflow_id                                                            Int
   kind                                                                   String            @db.VarChar
   name                                                                   String?           @db.VarChar
-  config_json                                                            String            @default("{}") @db.VarChar
+  config_json                                                            String            @default("{}") @db.Text
   pos_x                                                                  Int               @default(0)
   pos_y                                                                  Int               @default(0)
   execution_steps                                                        execution_steps[]
@@ -218,23 +251,31 @@ model workflow_nodes {
   @@index([workflow_id], map: "idx_nodes_workflow")
 }
 
+// Workflow definitions and metadata.
+// Links to n8n for execution delegation via n8n_workflow_id and n8n_webhook_path.
+// Soft-deletable via archived_at timestamp.
 model workflows {
-  id              Int              @id @default(autoincrement())
+  id              Int       @id @default(autoincrement())
   owner_user_id   Int?
-  name            String           @db.VarChar
-  description     String?          @db.VarChar
-  is_active       Boolean          @default(true)
-  version         Int              @default(1)
-  default_trigger String?          @db.VarChar
-  archived_at     DateTime?        @db.Timestamptz(6)
-  created_at      DateTime         @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime         @default(now()) @db.Timestamptz(6)
-  data_stores     data_stores[]
-  executions      executions[]
-  webhooks        webhooks[]
-  workflow_edges  workflow_edges[]
-  workflow_nodes  workflow_nodes[]
-  users           users?           @relation(fields: [owner_user_id], references: [id], onUpdate: NoAction)
+  name            String    @db.VarChar
+  description     String?   @db.VarChar
+  is_active       Boolean   @default(true)
+  version         Int       @default(1)
+  default_trigger String?   @db.VarChar
+  archived_at     DateTime? @db.Timestamptz(6)
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime  @default(now()) @db.Timestamptz(6)
+
+  // n8n integration fields for workflow execution delegation.
+  n8n_workflow_id  String? @unique @db.VarChar
+  n8n_webhook_path String? @db.VarChar
+
+  data_stores    data_stores[]
+  executions     executions[]
+  webhooks       webhooks[]
+  workflow_edges workflow_edges[]
+  workflow_nodes workflow_nodes[]
+  users          users?           @relation(fields: [owner_user_id], references: [id], onUpdate: NoAction)
 
   @@index([archived_at], map: "idx_workflows_archived")
   @@index([owner_user_id], map: "idx_workflows_owner")

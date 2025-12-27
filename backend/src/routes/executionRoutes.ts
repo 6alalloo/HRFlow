@@ -1,6 +1,7 @@
 
 import { Router } from "express";
 import * as executionController from "../controllers/executionController";
+import { authenticate } from "../middleware/authMiddleware";
 
 const router = Router();
 
@@ -12,5 +13,8 @@ router.get("/:id", executionController.getExecutionById);
 
 // GET /api/executions/:id/steps
 router.get("/:id/steps", executionController.getExecutionSteps);
+
+// DELETE /api/executions/:id
+router.delete("/:id", authenticate, executionController.deleteExecution);
 
 export default router;

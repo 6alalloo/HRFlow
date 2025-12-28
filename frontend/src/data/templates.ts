@@ -36,8 +36,8 @@ export const templates: WorkflowTemplate[] = [
     {
         id: 'hr-onboarding',
         name: 'HR Onboarding',
-        description: 'Automate new employee onboarding with CV parsing and personalized welcome emails.',
-        useCase: 'Use this template when a new employee joins your organization. It extracts data from their CV, validates the information, and sends a personalized welcome email based on the outcome.',
+        description: 'Automate new employee onboarding with CV parsing, database entry, and welcome email.',
+        useCase: 'Use this template when a new employee joins your organization. It extracts data from their CV, adds them to the employee database, sends a welcome email, and logs the result.',
         category: 'hr',
         nodes: [
             {
@@ -47,7 +47,6 @@ export const templates: WorkflowTemplate[] = [
                 pos_x: 100,
                 pos_y: 200,
                 config: {
-                    // Placeholders - user needs to fill these in
                     name: '',
                     email: '',
                     department: '',
@@ -60,92 +59,61 @@ export const templates: WorkflowTemplate[] = [
                 id: 'cv-parser-1',
                 kind: 'cv_parser',
                 name: 'Parse CV',
-                pos_x: 350,
+                pos_x: 400,
+                pos_y: 200,
+                config: {},
+            },
+            {
+                id: 'database-1',
+                kind: 'database',
+                name: 'Add Employee',
+                pos_x: 700,
                 pos_y: 200,
                 config: {
-                    fileSource: '{{trigger.cvFile}}',
-                    extractFields: ['name', 'email', 'phone', 'skills', 'experience'],
+                    operation: 'create',
+                    table: 'employees',
                 },
             },
             {
-                id: 'condition-1',
-                kind: 'condition',
-                name: 'Valid Data?',
-                pos_x: 600,
-                pos_y: 200,
-                config: {
-                    field: '{{steps.Parse CV.email}}',
-                    operator: 'is_not_empty',
-                    value: '',
-                },
-            },
-            {
-                id: 'email-success',
+                id: 'email-1',
                 kind: 'email',
                 name: 'Welcome Email',
-                pos_x: 850,
-                pos_y: 100,
+                pos_x: 1000,
+                pos_y: 200,
                 config: {
                     to: '{{trigger.email}}',
                     subject: 'Welcome to the Team, {{trigger.name}}!',
                     body: `Hello {{trigger.name}},
 
-Welcome to the {{trigger.department}} team! We're excited to have you join us as a {{trigger.role}}.
+Welcome to the {{trigger.department}} team! We are excited to have you join us as a {{trigger.role}}.
 
-Your start date is {{trigger.startDate}}. Your manager {{trigger.managerEmail}} will reach out with more details.
-
-Skills we found on your CV: {{steps.Parse CV.skills}}
+Your start date is {{trigger.startDate}}.
 
 Best regards,
 HR Team`,
                 },
             },
             {
-                id: 'email-failure',
-                kind: 'email',
-                name: 'Review Required',
-                pos_x: 850,
-                pos_y: 300,
-                config: {
-                    to: '{{trigger.managerEmail}}',
-                    subject: 'Action Required: CV Review for {{trigger.name}}',
-                    body: `Hello,
-
-The CV for {{trigger.name}} ({{trigger.email}}) could not be fully parsed.
-
-Please review the application manually and update the employee record.
-
-Department: {{trigger.department}}
-Role: {{trigger.role}}
-Start Date: {{trigger.startDate}}
-
-Best regards,
-HR System`,
-                },
-            },
-            {
                 id: 'logger-1',
                 kind: 'logger',
                 name: 'Log Result',
-                pos_x: 1100,
+                pos_x: 1300,
                 pos_y: 200,
                 config: {
-                    message: 'Onboarding completed for {{trigger.name}} ({{trigger.email}})',
+                    message: 'Employee {{trigger.name}} ({{trigger.email}}) onboarded successfully',
                     level: 'info',
                 },
             },
         ],
         edges: [
             { from: 'trigger-1', to: 'cv-parser-1' },
-            { from: 'cv-parser-1', to: 'condition-1' },
-            { from: 'condition-1', to: 'email-success', label: 'true' },
-            { from: 'condition-1', to: 'email-failure', label: 'false' },
-            { from: 'email-success', to: 'logger-1' },
-            { from: 'email-failure', to: 'logger-1' },
+            { from: 'cv-parser-1', to: 'database-1' },
+            { from: 'database-1', to: 'email-1' },
+            { from: 'email-1', to: 'logger-1' },
         ],
         requiredConfig: [
             'Employee name and email in Trigger',
-            'Manager email for notifications',
+            'PostgreSQL credentials configured in n8n',
             'SMTP credentials configured in n8n',
         ],
     },

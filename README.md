@@ -49,6 +49,7 @@ cd HRFlow
 
 ### 2. Set Up Environment
 
+
 ```bash
 cp .env.example .env
 ```
@@ -99,7 +100,7 @@ docker-compose up -d
 
 | Service | URL | Description |
 |---------|-----|-------------|
-| **HRFlow** | http://localhost | Main application |
+| **HRFlow** | http://localhost:3000 | Main application |
 | **Backend API** | http://localhost:4000 | REST API |
 | **n8n** | http://localhost:5678 | Workflow engine UI |
 

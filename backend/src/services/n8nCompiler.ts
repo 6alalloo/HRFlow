@@ -227,6 +227,41 @@ function parseJsonObjectOrEmpty(input: unknown): Record<string, unknown> {
   }
 }
 
+/**
+ * Convert HRFlow template syntax ({{trigger.xxx}}) to n8n expression syntax.
+ * Uses optional chaining for safe property access.
+ * Adds = prefix at start of string if it contains expressions.
+ */
+function convertHrflowToN8nExpression(value: string): string {
+  if (!value) return value;
+
+  // Map of HRFlow template variables to n8n expressions (without = prefix)
+  const replacements: Record<string, string> = {
+    '{{trigger.email}}': '{{ $json.employee?.email || $json.email || "" }}',
+    '{{trigger.name}}': '{{ $json.employee?.name || $json.name || "" }}',
+    '{{trigger.department}}': '{{ $json.employee?.department || $json.department || "" }}',
+    '{{trigger.role}}': '{{ $json.employee?.role || $json.role || "" }}',
+    '{{trigger.startDate}}': '{{ $json.employee?.start_date || $json.startDate || $json.start_date || "" }}',
+    '{{trigger.managerEmail}}': '{{ $json.employee?.manager_email || $json.managerEmail || $json.manager_email || "" }}',
+    '{{trigger.phone}}': '{{ $json.employee?.phone || $json.phone || "" }}',
+    '{{steps.Parse CV.email}}': '{{ $json.cv_parser?.email || "" }}',
+    '{{steps.Parse CV.name}}': '{{ $json.cv_parser?.name || "" }}',
+    '{{steps.Parse CV.skills}}': '{{ $json.cv_parser?.skills?.join(", ") || "" }}',
+  };
+
+  let result = value;
+  for (const [hrflowVar, n8nExpr] of Object.entries(replacements)) {
+    result = result.split(hrflowVar).join(n8nExpr);
+  }
+
+  // Add = prefix at the start if the result contains n8n expressions
+  if (result.includes('{{') && !result.startsWith('=')) {
+    result = '=' + result;
+  }
+
+  return result;
+}
+
 function pickStartNode(nodes: HRFlowNode[], edges: HRFlowEdge[]): HRFlowNode | null {
   const incoming = new Set<number>();
   for (const e of edges) incoming.add(e.toNodeId);
@@ -488,7 +523,8 @@ case "trigger": {
 
     case "logger": {
       // Compiles to n8n Set node that attaches logging metadata to the data stream.
-      const message = safeString(cfg.message, `Log from node ${n.id}`);
+      const rawMessage = safeString(cfg.message, `Log from node ${n.id}`);
+      const message = convertHrflowToN8nExpression(rawMessage);
       const level = safeString(cfg.level, "info");
 
       return {
@@ -589,11 +625,11 @@ case "trigger": {
   "SELECT",
   "  (SELECT id FROM upsert_user) AS user_id,",
   "  (SELECT id FROM ins_employee) AS employee_id,",
-  "  '={{(",
+  "  '{{(",
   "      ($json.employee && $json.employee.email ? $json.employee.email : $json.email)",
   `      || "${config.email.defaultRecipient}"`,
   "    )}}' AS email,",
-  "  '={{(",
+  "  '{{(",
   "      ($json.employee && $json.employee.name ? $json.employee.name : ($json.name || $json.full_name || $json.fullName))",
   "      || \"Demo User\"",
   "    )}}' AS name;",
@@ -627,7 +663,7 @@ case "trigger": {
 
 case "email": {
   // Compiles to n8n Email Send node with dynamic recipient resolution.
-  // Template includes employee name and department from webhook trigger data.
+  // Supports HRFlow template syntax {{trigger.xxx}} and converts to n8n expressions.
   const cc = safeString(cfg.cc, "").trim();
   const bcc = safeString(cfg.bcc, "").trim();
 
@@ -637,23 +673,34 @@ case "email": {
 
   // Normalize recipient email expression to proper n8n syntax.
   let toEmail = safeString(cfg.to, "").trim();
-  if (!toEmail || toEmail.includes("$json.employee.email") || toEmail.includes("json.employee.email")) {
-    toEmail = '={{$node["HRFlow Webhook Trigger"].json.body.employee.email}}';
-  } else if (!toEmail.startsWith("=")) {
-    // allow people to type {{$...}} without the "="
-    toEmail = `=${toEmail}`;
+  if (!toEmail) {
+    // Default fallback with optional chaining for safe property access
+    toEmail = '={{ $json.employee?.email || $json.email || "" }}';
+  } else {
+    toEmail = convertHrflowToN8nExpression(toEmail);
   }
 
-  const subject =
-    '=Welcome to HRFlow, {{$node["HRFlow Webhook Trigger"].json.body.employee.name}}!';
+  // Get subject from config or use default
+  let subject = safeString(cfg.subject, "").trim();
+  if (!subject) {
+    subject = '=Welcome to the team, {{ $json.employee?.name || $json.name || "there" }}!';
+  } else {
+    subject = convertHrflowToN8nExpression(subject);
+  }
 
-  // Email body uses n8n expression syntax (prefix "=" for evaluation).
-  const html =
-    '=Hi {{$node["HRFlow Webhook Trigger"].json.body.employee.name}},<br/><br/>' +
-    'Welcome to the <b>{{$node["HRFlow Webhook Trigger"].json.body.employee.department}}</b> department!<br/>' +
-    'We’re excited to have you join as a <b>{{$node["HRFlow Webhook Trigger"].json.body.employee.role}}</b>.<br/><br/>' +
-    'If you need anything before day one, just reply to this email.<br/><br/>' +
-    'Best regards,<br/><b>HRFlow Team</b>';
+  // Get body from config or use default
+  let html = safeString(cfg.body, "").trim();
+  if (!html) {
+    html =
+      '=Hi {{ $json.employee?.name || $json.name || "there" }},<br/><br/>' +
+      'Welcome to the <b>{{ $json.employee?.department || $json.department || "team" }}</b>!<br/>' +
+      'We are excited to have you join as a <b>{{ $json.employee?.role || $json.role || "team member" }}</b>.<br/><br/>' +
+      'Best regards,<br/><b>HRFlow Team</b>';
+  } else {
+    // Convert newlines to <br/> for HTML email
+    html = html.replace(/\n/g, '<br/>');
+    html = convertHrflowToN8nExpression(html);
+  }
 
   return {
     id: `hrflow_node_${n.id}`,
@@ -664,8 +711,8 @@ case "email": {
     parameters: {
       fromEmail: config.email.defaultSender,
       toEmail,
-      ...(cc ? { ccEmail: cc } : {}),
-      ...(bcc ? { bccEmail: bcc } : {}),
+      ...(cc ? { ccEmail: convertHrflowToN8nExpression(cc) } : {}),
+      ...(bcc ? { bccEmail: convertHrflowToN8nExpression(bcc) } : {}),
       subject,
       emailFormat: "html",
       html,

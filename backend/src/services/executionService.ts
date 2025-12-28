@@ -253,14 +253,15 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
   }
 
   // Pre-process CV parser nodes before n8n execution (async CV parsing).
+  // Only supports local file uploads via fileId.
   const cvParserResults = new Map<number, CVParseResult>();
   for (const node of nodesRaw) {
     if (node.kind === "cv_parser" || node.kind === "cv_parse") {
-      const config = safeParseJson<Record<string, unknown>>(node.config_json, {});
-      const fileId = config.fileId as string | undefined;
+      const nodeConfig = safeParseJson<Record<string, unknown>>(node.config_json, {});
+      const fileId = nodeConfig.fileId as string | undefined;
 
       if (fileId) {
-        logger.info('Parsing CV for node', { nodeId: node.id, fileId });
+        logger.info('Parsing CV from uploaded file', { nodeId: node.id, fileId });
         const result = await parseCV(fileId);
         cvParserResults.set(node.id, result);
         logger.info('CV parse result', {
@@ -269,7 +270,7 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
           error: result.success ? undefined : result.error
         });
       } else {
-        logger.warn('No fileId provided for cv_parser node', { nodeId: node.id });
+        logger.warn('No file uploaded for cv_parser node', { nodeId: node.id });
         cvParserResults.set(node.id, {
           success: false,
           source: "file",

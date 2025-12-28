@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import { Handle, Position, type NodeProps } from "reactflow";
 import type { WorkflowGraphConfig } from "../api/workflows";
+import { getConfigPreview } from "../utils/expressionLabels";
 
 export type HRFlowNodeData = {
   backendId: number;
@@ -14,18 +15,12 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 }
 
 const HRFlowNode: React.FC<NodeProps<HRFlowNodeData>> = ({ data, selected }) => {
-  const { hasConfig, configPreview, configLen } = useMemo(() => {
-    if (!isRecord(data.config) || Object.keys(data.config).length === 0) {
-      return { hasConfig: false, configPreview: "", configLen: 0 };
+  const configPreview = useMemo(() => {
+    if (!isRecord(data.config)) {
+      return 'Click to configure';
     }
-
-    const str = JSON.stringify(data.config);
-    return {
-      hasConfig: true,
-      configPreview: str.slice(0, 60),
-      configLen: str.length,
-    };
-  }, [data.config]);
+    return getConfigPreview(data.kind, data.config);
+  }, [data.config, data.kind]);
 
   return (
     <div
@@ -57,14 +52,9 @@ const HRFlowNode: React.FC<NodeProps<HRFlowNodeData>> = ({ data, selected }) => 
         {data.name && data.name.trim().length > 0 ? data.name : "Untitled node"}
       </div>
 
-      {hasConfig && (
-        <div className="mt-1 text-muted" style={{ fontSize: "0.7rem", maxWidth: 200 }}>
-          <code>
-            {configPreview}
-            {configLen > 60 ? "…" : ""}
-          </code>
-        </div>
-      )}
+      <div className="mt-1 text-muted" style={{ fontSize: "0.7rem", maxWidth: 200 }}>
+        {configPreview}
+      </div>
 
       <Handle
         type="target"

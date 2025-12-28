@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import {
-    LuX, LuSave, LuTrash2, LuPlus, LuMinus, LuUpload, LuFile,
+    LuX, LuTrash2, LuPlus, LuMinus, LuUpload, LuFile,
     LuMail, LuUser, LuCalendar, LuClock, LuDatabase, LuGlobe,
     LuMessageSquare, LuZap, LuArrowRight, LuInfo, LuCheck, LuLoader,
     LuCopy, LuExternalLink
@@ -562,11 +562,55 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, workflowId, onC
         setLocalConfig((prev) => ({ ...prev, [key]: val }));
     };
 
-    const handleSave = () => {
-        if (node) {
-            onUpdate(node.id, { config: localConfig });
+    // Debounced autosave - saves automatically after 500ms of no changes
+    const autosaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const lastSavedConfigRef = useRef<string>('');
+
+    useEffect(() => {
+        if (!node) return;
+
+        const currentConfigStr = JSON.stringify(localConfig);
+
+        // Don't autosave if config hasn't changed from last save
+        if (currentConfigStr === lastSavedConfigRef.current) return;
+
+        // Clear any pending autosave
+        if (autosaveTimeoutRef.current) {
+            clearTimeout(autosaveTimeoutRef.current);
         }
-    };
+
+        // Set up new autosave after 500ms
+        autosaveTimeoutRef.current = setTimeout(() => {
+            onUpdate(node.id, { config: localConfig });
+            lastSavedConfigRef.current = currentConfigStr;
+        }, 500);
+
+        return () => {
+            if (autosaveTimeoutRef.current) {
+                clearTimeout(autosaveTimeoutRef.current);
+            }
+        };
+    }, [localConfig, node, onUpdate]);
+
+    // Update lastSavedConfigRef when node changes (to prevent immediate autosave on open)
+    useEffect(() => {
+        if (node) {
+            lastSavedConfigRef.current = JSON.stringify(localConfig);
+        }
+    }, [node?.id]); // Only when node ID changes, not on every localConfig change
+
+    const handleSave = useCallback(() => {
+        if (node) {
+            // Clear any pending autosave
+            if (autosaveTimeoutRef.current) {
+                clearTimeout(autosaveTimeoutRef.current);
+            }
+            onUpdate(node.id, { config: localConfig });
+            lastSavedConfigRef.current = JSON.stringify(localConfig);
+            // Close panel after explicit save
+            onClose();
+        }
+    }, [node, localConfig, onUpdate, onClose]);
 
     const handleDeleteClick = () => {
         setShowDeleteConfirm(true);
@@ -1603,8 +1647,8 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, workflowId, onC
                             className="flex-[2] px-3 py-2 rounded-lg text-xs font-semibold bg-cyan-glow text-navy-950 hover:bg-white transition-all flex items-center justify-center gap-1.5"
                             tabIndex={0}
                         >
-                            <LuSave className="w-3.5 h-3.5" />
-                            Save Changes
+                            <LuCheck className="w-3.5 h-3.5" />
+                            Done
                         </button>
                     </div>
                 </div>

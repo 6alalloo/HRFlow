@@ -278,21 +278,37 @@ type N8nNodeExecutionData = {
   nodeName: string;
   nodeType: string;
   data: Record<string, unknown>;
+  error?: string;
+  executionStatus: "success" | "error" | "unknown";
 };
 
-type N8nExecutionData = {
+export type N8nExecutionData = {
   id: string;
   finished: boolean;
   status: string;
   nodeOutputs: Map<string, N8nNodeExecutionData>;
+  failedNodeName?: string;
+  errorMessage?: string;
 };
 
 function parseN8nExecutionData(execution: any): N8nExecutionData {
   const nodeOutputs = new Map<string, N8nNodeExecutionData>();
+  let failedNodeName: string | undefined;
+  let errorMessage: string | undefined;
 
   // n8n execution data structure: execution.data.resultData.runData
   // runData is keyed by node name, each containing array of execution items
   const runData = execution?.data?.resultData?.runData;
+
+  // Check for overall execution error
+  const executionError = execution?.data?.resultData?.error;
+  if (executionError) {
+    errorMessage = executionError.message || String(executionError);
+    // The node that caused the error is often in the error object
+    if (executionError.node?.name) {
+      failedNodeName = executionError.node.name;
+    }
+  }
 
   if (runData && typeof runData === "object") {
     for (const [nodeName, nodeRuns] of Object.entries(runData)) {
@@ -304,8 +320,19 @@ function parseN8nExecutionData(execution: any): N8nExecutionData {
       // Extract output data from the run
       // Structure: lastRun.data.main[0] contains array of output items
       let outputData: Record<string, unknown> = {};
+      let nodeError: string | undefined;
+      let executionStatus: "success" | "error" | "unknown" = "unknown";
 
-      if (lastRun?.data?.main) {
+      // Check for node-level error
+      if (lastRun?.error) {
+        nodeError = lastRun.error.message || String(lastRun.error);
+        executionStatus = "error";
+        // If we haven't found a failed node yet, this is it
+        if (!failedNodeName) {
+          failedNodeName = nodeName;
+          errorMessage = nodeError;
+        }
+      } else if (lastRun?.data?.main) {
         const mainOutput = lastRun.data.main[0]; // First output connection
         if (Array.isArray(mainOutput) && mainOutput.length > 0) {
           // Get the first output item's json data
@@ -314,12 +341,15 @@ function parseN8nExecutionData(execution: any): N8nExecutionData {
             outputData = firstItem.json;
           }
         }
+        executionStatus = "success";
       }
 
       nodeOutputs.set(nodeName, {
         nodeName,
         nodeType: lastRun?.source?.[0]?.previousNode || "unknown",
         data: outputData,
+        error: nodeError,
+        executionStatus,
       });
     }
   }
@@ -329,6 +359,8 @@ function parseN8nExecutionData(execution: any): N8nExecutionData {
     finished: execution?.finished ?? false,
     status: execution?.status || "unknown",
     nodeOutputs,
+    failedNodeName,
+    errorMessage,
   };
 }
 

@@ -175,3 +175,129 @@ export async function emailExists(email: string): Promise<boolean> {
   });
   return user !== null;
 }
+
+/**
+ * Check if an email already exists, excluding a specific user ID
+ * Useful for update validation to allow user to keep their current email
+ */
+export async function emailExistsExcluding(email: string, excludeUserId: number): Promise<boolean> {
+  const user = await prisma.users.findFirst({
+    where: {
+      email,
+      id: { not: excludeUserId }
+    },
+    select: { id: true }
+  });
+  return user !== null;
+}
+
+export interface UpdateUserInput {
+  email?: string;
+  full_name?: string;
+  role_id?: number;
+}
+
+/**
+ * Update a user's details (email, full_name, role_id)
+ * Does not update password - use updateUserPassword for that
+ */
+export async function updateUser(id: number, input: UpdateUserInput) {
+  const user = await prisma.users.update({
+    where: { id },
+    data: {
+      ...(input.email && { email: input.email }),
+      ...(input.full_name && { full_name: input.full_name }),
+      ...(input.role_id && { role_id: input.role_id }),
+    },
+    select: {
+      id: true,
+      email: true,
+      full_name: true,
+      is_active: true,
+      created_at: true,
+      roles: {
+        select: {
+          id: true,
+          name: true
+        }
+      }
+    }
+  });
+
+  return user;
+}
+
+/**
+ * Toggle a user's active status
+ */
+export async function toggleUserStatus(id: number, isActive: boolean) {
+  const user = await prisma.users.update({
+    where: { id },
+    data: { is_active: isActive },
+    select: {
+      id: true,
+      email: true,
+      full_name: true,
+      is_active: true,
+      created_at: true,
+      roles: {
+        select: {
+          id: true,
+          name: true
+        }
+      }
+    }
+  });
+
+  return user;
+}
+
+/**
+ * Count the number of active admin users in the system
+ */
+export async function countActiveAdmins(): Promise<number> {
+  return prisma.users.count({
+    where: {
+      is_active: true,
+      roles: { name: 'Admin' }
+    }
+  });
+}
+
+/**
+ * Check if a user is the last active admin in the system
+ * Returns true if the user is the sole active admin
+ */
+export async function isLastActiveAdmin(userId: number): Promise<boolean> {
+  const user = await getUserById(userId);
+
+  // If user doesn't exist or isn't an active admin, they can't be the "last" admin
+  if (!user || user.roles.name !== 'Admin' || !user.is_active) {
+    return false;
+  }
+
+  const count = await countActiveAdmins();
+  return count === 1;
+}
+
+/**
+ * Check if a role exists
+ */
+export async function roleExists(roleId: number): Promise<boolean> {
+  const role = await prisma.roles.findUnique({
+    where: { id: roleId },
+    select: { id: true }
+  });
+  return role !== null;
+}
+
+/**
+ * Get the Admin role ID
+ */
+export async function getAdminRoleId(): Promise<number | null> {
+  const role = await prisma.roles.findUnique({
+    where: { name: 'Admin' },
+    select: { id: true }
+  });
+  return role?.id ?? null;
+}

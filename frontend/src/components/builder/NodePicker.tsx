@@ -81,7 +81,7 @@ const NodePicker: React.FC<NodePickerProps> = ({ isOpen, onClose, onSelect, posi
                             }}
                             onMouseLeave={() => setHoveredInfo(null)}
                         >
-                             <LuInfo className="w-3.5 h-3.5 text-slate-500 hover:text-blue-400 cursor-help" />
+                            <LuInfo className="w-3.5 h-3.5 text-slate-500 hover:text-blue-400 cursor-help" />
                         </div>
                     </div>
                 ))}

@@ -24,7 +24,7 @@ app.use("/webhooks", webhookRoutes);
 // Mount all API routes under /api
 app.use("/api", routes);
 
-// Error handlers (must be last)
+// Error handlers 
 app.use(notFoundHandler); // 404 handler for undefined routes
 app.use(errorHandler); // Global error handler
 

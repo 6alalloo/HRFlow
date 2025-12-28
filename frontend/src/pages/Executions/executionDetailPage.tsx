@@ -136,6 +136,37 @@ const ExecutionDetailPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Error Message Banner */}
+      {!isSuccess && execution.error_message && (
+        <div className="px-8 py-4 border-b border-rose-500/20 bg-rose-500/5 backdrop-blur-md z-10 shrink-0">
+          <div className="flex items-start gap-3">
+            <FiX className="w-5 h-5 text-rose-400 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <h4 className="text-sm font-bold text-rose-300 mb-1">Error Details</h4>
+              <p className="text-sm text-rose-200/90 break-words">{execution.error_message}</p>
+
+              {/* Special handling for URL blocking errors */}
+              {(execution.error_message.includes('non-whitelisted domains') ||
+                (execution.error_message.includes('URL') && execution.error_message.includes('blocked'))) && (
+                <div className="mt-3 p-3 bg-orange-500/10 border border-orange-500/20 rounded-lg">
+                  <p className="text-xs text-orange-300 mb-2">
+                    <strong className="text-orange-200">⚠️ URL Blocked:</strong> This workflow contains HTTP requests to domains that are not in your allow-list.
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    <strong className="text-slate-300">To fix this:</strong>
+                  </p>
+                  <ol className="text-xs text-slate-400 ml-4 mt-1 space-y-1 list-decimal">
+                    <li>Go to Security → Domain Allow-List</li>
+                    <li>Add the blocked domain to the allow-list</li>
+                    <li>Try running the workflow again</li>
+                  </ol>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 2. Split Content */}
       <div className="flex-1 flex overflow-hidden z-10">
         

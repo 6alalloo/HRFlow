@@ -37,7 +37,7 @@ type ExecuteWorkflowInput = {
 };
 
 type ExecutionFinalStatus = "completed" | "engine_error" | "failed";
-type StepStatus = "completed" | "skipped";
+type StepStatus = "completed" | "skipped" | "failed";
 
 type ErrorWithCode = Error & { code?: string };
 
@@ -402,7 +402,7 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
     const code = getErrorCode(err);
     logger.error('Workflow execution failed', {
       workflowId,
-      executionId,
+      executionId: execution.id,
       errorCode: code,
       error: err instanceof Error ? err.message : String(err),
       stack: err instanceof Error ? err.stack : undefined
@@ -415,6 +415,11 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
     }
 
     errorMessage = getErrorMessage(err) || "Failed to execute workflow via n8n";
+
+    // Preserve blocked URL details for better error reporting
+    if (code === "URL_BLOCKED" && err && typeof err === "object" && "blockedUrls" in err) {
+      runContextPayload.engine.blockedUrls = (err as any).blockedUrls;
+    }
   }
 
   const finishedTime = new Date();
@@ -453,9 +458,6 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
     },
   });
 
-  // Determine execution step status based on overall execution result.
-  const stepsStatus: StepStatus = finalStatus === "completed" ? "completed" : "skipped";
-
   // Extract output data from n8n webhook response (array of items with json).
   let n8nOutputData: Record<string, unknown> = {};
   let n8nOutputRaw: unknown[] = [];
@@ -478,42 +480,54 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
   }
 
   // Retrieve per-node outputs from n8n execution for detailed step tracking.
-  let perNodeOutputs: Map<string, Record<string, unknown>> = new Map();
+  // Fetch this even on failure to determine which specific node failed.
+  type PerNodeData = { data: Record<string, unknown>; error?: string; executionStatus: "success" | "error" | "unknown" };
+  let perNodeOutputs: Map<string, PerNodeData> = new Map();
+  let failedNodeName: string | undefined;
   const n8nWorkflowId = runContextPayload.engine.n8nWorkflowId;
 
-  if (finalStatus === "completed" && n8nWorkflowId) {
+  if (n8nWorkflowId) {
     try {
       // Brief delay to allow n8n to finalize execution data.
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       logger.debug('Fetching per-node outputs from n8n', {
-        executionId,
-        n8nWorkflowId
+        executionId: execution.id,
+        n8nWorkflowId,
+        finalStatus
       });
       const executionData = await getN8nExecutionForWorkflow(n8nWorkflowId);
 
       if (executionData?.nodeOutputs) {
         logger.debug('Retrieved node outputs from n8n', {
-          executionId,
-          nodeCount: executionData.nodeOutputs.size
+          executionId: execution.id,
+          nodeCount: executionData.nodeOutputs.size,
+          failedNodeName: executionData.failedNodeName
         });
+        failedNodeName = executionData.failedNodeName;
         for (const [nodeName, nodeData] of executionData.nodeOutputs) {
           logger.debug('Node output retrieved', {
-            executionId,
+            executionId: execution.id,
             nodeName,
+            executionStatus: nodeData.executionStatus,
+            error: nodeData.error,
             dataPreview: JSON.stringify(nodeData.data).slice(0, 200)
           });
-          perNodeOutputs.set(nodeName, nodeData.data);
+          perNodeOutputs.set(nodeName, {
+            data: nodeData.data,
+            error: nodeData.error,
+            executionStatus: nodeData.executionStatus
+          });
         }
       } else {
         logger.debug('No node outputs in execution data', {
-          executionId,
+          executionId: execution.id,
           hasExecutionData: !!executionData
         });
       }
     } catch (err) {
       logger.warn('Could not fetch per-node outputs from n8n', {
-        executionId,
+        executionId: execution.id,
         n8nWorkflowId,
         error: err instanceof Error ? err.message : String(err)
       });
@@ -534,15 +548,39 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
     return `HRFlow ${node.id} ${name}`.replace(/\s+/g, " ").trim();
   };
 
+  // If we have an error but no n8n execution data (compilation error),
+  // try to parse the error message to identify which node caused the failure.
+  // Error format: "Node 'kind' (ID: 123): error message"
+  let failedNodeId: number | undefined;
+  if (finalStatus !== "completed" && !failedNodeName && errorMessage) {
+    const nodeIdMatch = errorMessage.match(/\(ID:\s*(\d+)\)/i);
+    if (nodeIdMatch) {
+      failedNodeId = parseInt(nodeIdMatch[1], 10);
+      logger.debug('Parsed failed node ID from error message', {
+        executionId: execution.id,
+        failedNodeId,
+        errorMessage
+      });
+    }
+  }
+
   // Build execution step records with inputs, outputs, and logs.
+  // Track whether we've encountered a failed node to mark subsequent nodes as skipped.
+  let encounteredFailure = false;
+
   const stepsData = nodesRaw.map((node, index) => {
     const stepInput = index === 0 ? inputData : n8nOutputData;
 
     // Attempt to retrieve node-specific output from n8n execution.
     const stableNodeName = getStableNodeName(node);
-    let stepOutput: Record<string, unknown> = perNodeOutputs.get(stableNodeName) || {};
+    const perNodeData = perNodeOutputs.get(stableNodeName);
+    let stepOutput: Record<string, unknown> = perNodeData?.data || {};
+    const nodeError = perNodeData?.error;
+    const nodeExecutionStatus = perNodeData?.executionStatus;
 
     // Inject CV parser results for CV parser nodes.
+    let cvParserFailed = false;
+    let cvParserError: string | undefined;
     if ((node.kind === "cv_parser" || node.kind === "cv_parse") && cvParserResults.has(node.id)) {
       const cvResult = cvParserResults.get(node.id)!;
       stepOutput = {
@@ -555,6 +593,11 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
           error: cvResult.error,
         },
       };
+      // Track if CV parsing failed
+      if (!cvResult.success) {
+        cvParserFailed = true;
+        cvParserError = cvResult.error;
+      }
     } else if (Object.keys(stepOutput).length === 0) {
       // Fallback: use webhook response if per-node data unavailable.
       if (n8nOutputRaw.length > index) {
@@ -571,9 +614,38 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
       }
     }
 
-    // Generate descriptive log message based on node type and execution status.
+    // Determine step status based on per-node execution data.
+    let stepStatus: StepStatus;
+    const isThisNodeFailed =
+      cvParserFailed ||
+      nodeExecutionStatus === "error" ||
+      stableNodeName === failedNodeName ||
+      (failedNodeId !== undefined && node.id === failedNodeId);
+
+    if (isThisNodeFailed) {
+      // This node failed (CV parser, n8n error, or parsed from error message)
+      stepStatus = "failed";
+      encounteredFailure = true;
+    } else if (finalStatus === "completed") {
+      // Overall execution succeeded and this node didn't fail
+      stepStatus = "completed";
+    } else if (encounteredFailure) {
+      // A previous node in execution order failed, so this node was skipped
+      stepStatus = "skipped";
+    } else if (nodeExecutionStatus === "success") {
+      // This node completed successfully before another node failed
+      stepStatus = "completed";
+    } else if (perNodeData) {
+      // We have data for this node, so it ran
+      stepStatus = "completed";
+    } else {
+      // No data for this node - it was skipped (compilation error or never reached)
+      stepStatus = "skipped";
+    }
+
+    // Generate descriptive log message based on node type and step status.
     let logMessage: string;
-    if (finalStatus === "completed") {
+    if (stepStatus === "completed") {
       const hrflowMeta = stepOutput._hrflow as Record<string, unknown> | undefined;
       if (hrflowMeta?.log) {
         const logData = hrflowMeta.log as Record<string, unknown>;
@@ -592,14 +664,23 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
       } else {
         logMessage = `Executed node ${node.name ?? node.kind} (order ${index + 1}) via n8n`;
       }
+    } else if (stepStatus === "failed") {
+      logMessage = cvParserError || nodeError || errorMessage || `Node ${node.name ?? node.kind} failed during execution`;
     } else {
-      logMessage = `Skipped node ${node.name ?? node.kind} (order ${index + 1}) due to engine status "${finalStatus}"`;
+      // Skipped - provide context based on whether we know why
+      if (encounteredFailure) {
+        logMessage = `Skipped - previous node failed`;
+      } else if (failedNodeId !== undefined || failedNodeName) {
+        logMessage = `Skipped - workflow did not reach this node`;
+      } else {
+        logMessage = `Skipped - execution did not complete`;
+      }
     }
 
     return {
       execution_id: updatedExecution.id,
       node_id: node.id,
-      status: stepsStatus,
+      status: stepStatus,
       input_json: JSON.stringify(stepInput),
       output_json: JSON.stringify(stepOutput),
       logs: logMessage,
@@ -610,6 +691,28 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
 
   if (stepsData.length > 0) {
     await prisma.execution_steps.createMany({ data: stepsData });
+  }
+
+  // Check if any step failed - if so, update overall execution status to "failed"
+  const hasFailedStep = stepsData.some(step => step.status === "failed");
+  let finalExecution = updatedExecution;
+
+  if (hasFailedStep && updatedExecution.status === "completed") {
+    // A step failed (e.g., CV parser) but the n8n execution succeeded
+    // Update the overall execution status to reflect the step failure
+    const failedStepData = stepsData.find(step => step.status === "failed");
+    finalExecution = await prisma.executions.update({
+      where: { id: updatedExecution.id },
+      data: {
+        status: "failed",
+        error_message: failedStepData?.logs || "A workflow step failed during execution",
+      },
+    });
+
+    logger.info('Updated execution status to failed due to step failure', {
+      executionId: updatedExecution.id,
+      failedStepLog: failedStepData?.logs
+    });
   }
 
   const steps = await prisma.execution_steps.findMany({
@@ -630,7 +733,7 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
   });
 
   return {
-    execution: updatedExecution,
+    execution: finalExecution,
     steps,
     n8nResult,
   };

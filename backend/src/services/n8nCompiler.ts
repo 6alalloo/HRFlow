@@ -844,9 +844,12 @@ export async function compileToN8n(input: CompileInput): Promise<N8nCompiled> {
     const errorMessages = urlErrors.map(
       (e) => `Node "${e.nodeName}" (ID: ${e.nodeId}): URL "${e.url}" blocked - ${e.reason}`
     );
-    throw new Error(
+    const error: any = new Error(
       `Workflow compilation blocked due to non-whitelisted domains:\n${errorMessages.join("\n")}`
     );
+    error.code = "URL_BLOCKED";
+    error.blockedUrls = urlErrors;
+    throw error;
   }
 
   const ordered = buildReachableOrder(input.nodes, input.edges);

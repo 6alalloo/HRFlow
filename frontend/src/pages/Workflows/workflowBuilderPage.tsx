@@ -1238,6 +1238,21 @@ const WorkflowBuilderContent: React.FC = () => {
                         </div>
                         
                         {/* Contextual Tips Based on Error Type */}
+                        {(runError.includes('non-whitelisted domains') || runError.includes('URL') && runError.includes('blocked')) && (
+                            <div className="mb-4">
+                                <p className="text-xs text-orange-300 mb-2">
+                                    <strong className="text-orange-200">⚠️ URL Blocked:</strong> This workflow contains HTTP requests to domains that are not in your allow-list.
+                                </p>
+                                <p className="text-xs text-slate-400">
+                                    <strong className="text-slate-300">To fix this:</strong>
+                                </p>
+                                <ol className="text-xs text-slate-400 ml-4 mt-1 space-y-1 list-decimal">
+                                    <li>Go to Security → Domain Allow-List</li>
+                                    <li>Add the blocked domain to the allow-list</li>
+                                    <li>Try running the workflow again</li>
+                                </ol>
+                            </div>
+                        )}
                         {runError.includes('not active') && (
                             <p className="text-xs text-slate-400 mb-4">
                                 <strong className="text-slate-300">Tip:</strong> Workflows are now auto-activated when run from the builder.

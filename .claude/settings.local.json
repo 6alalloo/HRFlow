@@ -18,7 +18,11 @@
       "Bash(docker-compose restart:*)",
       "Bash(docker-compose stop:*)",
       "Bash(docker-compose rm:*)",
-      "Bash(docker-compose up:*)"
+      "Bash(docker-compose up:*)",
+      "Bash(docker exec:*)",
+      "Bash(set PGPASSWORD=Talal.37766471!)",
+      "Bash(psql:*)",
+      "Bash(ls -la \"c:\\\\Users\\\\6alal\\\\OneDrive\\\\Desktop\\\\HRFlow\\\\backend\\\\prisma\"\" 2>/dev/null || echo \"Directory check \")"
     ]
   }
 }

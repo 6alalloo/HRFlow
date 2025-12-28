@@ -1,7 +1,19 @@
 version: '3.8'
 
+# HRFlow Docker Compose Configuration
+# This file supports both development and deployment modes:
+#
+# Development (with local npm run dev):
+#   docker-compose up -d postgres n8n cv-parser tunnel
+#   npm run dev
+#
+# Full Docker deployment:
+#   docker-compose up -d
+#
+# The configuration is environment-aware and uses .env for credentials
+
 services:
-  # PostgreSQL Database
+  # PostgreSQL Database - Stores both HRFlow and n8n data
   postgres:
     image: postgres:15-alpine
     container_name: hrflow-postgres
@@ -12,11 +24,14 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    ports:
+      - "5432:5432"  # Exposed for local development access
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U hrflow"]
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   # n8n Workflow Engine
   n8n:
@@ -24,8 +39,8 @@ services:
     container_name: hrflow-n8n
     environment:
       - N8N_BASIC_AUTH_ACTIVE=true
-      - N8N_BASIC_AUTH_USER=admin
-      - N8N_BASIC_AUTH_PASSWORD=admin123
+      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-admin123}
       - N8N_HOST=0.0.0.0
       - N8N_PORT=5678
       - N8N_PROTOCOL=http
@@ -38,6 +53,8 @@ services:
       - DB_POSTGRESDB_PASSWORD=hrflow123
     volumes:
       - n8n_data:/home/node/.n8n
+    ports:
+      - "5678:5678"  # Workflow editor UI
     depends_on:
       postgres:
         condition: service_healthy
@@ -46,13 +63,18 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    restart: unless-stopped
 
-  # CV Parser Service
+  # CV Parser Service - FastAPI service for resume parsing
   cv-parser:
     build:
       context: ./cv-parser
       dockerfile: Dockerfile
     container_name: hrflow-cv-parser
+    volumes:
+      - ./cv-parser:/app  # Hot reload for development
+    environment:
+      - PYTHONUNBUFFERED=1  # Show Python logs immediately
     ports:
       - "8000:8000"
     healthcheck:
@@ -60,17 +82,19 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    restart: unless-stopped
 
-  # Backend API
+  # Backend API - Express/TypeScript server
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: hrflow-backend
     environment:
+      - NODE_ENV=${NODE_ENV:-development}
       - DATABASE_URL=postgresql://hrflow:hrflow123@postgres:5432/HRFlow?schema=Core
       - N8N_BASE_URL=http://n8n:5678
-      - N8N_WEBHOOK_BASE_URL=http://n8n:5678
+      - N8N_WEBHOOK_BASE_URL=${N8N_WEBHOOK_BASE_URL:-http://n8n:5678}
       - N8N_API_KEY=${N8N_API_KEY:-}
       - N8N_POSTGRES_CREDENTIAL_ID=${N8N_POSTGRES_CREDENTIAL_ID:-}
       - N8N_POSTGRES_CREDENTIAL_NAME=${N8N_POSTGRES_CREDENTIAL_NAME:-}
@@ -82,6 +106,9 @@ services:
       - DEFAULT_EMAIL_SENDER=${DEFAULT_EMAIL_SENDER:-noreply@hrflow.local}
       - DEFAULT_EMAIL_RECIPIENT=${DEFAULT_EMAIL_RECIPIENT:-demo@example.com}
       - PORT=4000
+    volumes:
+      - ./backend:/app            # Mount source code for hot reload
+      - /app/node_modules          # Exclude node_modules from mount
     ports:
       - "4000:4000"
     depends_on:
@@ -91,28 +118,32 @@ services:
         condition: service_healthy
       cv-parser:
         condition: service_healthy
+    # Development-friendly command (auto-migrates, seeds, hot reload)
+    command: sh -c "npx prisma generate && npx prisma db push && npx prisma db seed && npm run dev"
     healthcheck:
       test: ["CMD-SHELL", "wget --spider -q http://localhost:4000/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 60s
+    restart: unless-stopped
 
-  # Frontend
+  # Frontend - React SPA served via Nginx
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        - VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:4000/api}
     container_name: hrflow-frontend
     ports:
       - "80:80"
     depends_on:
       backend:
         condition: service_healthy
-    environment:
-      - VITE_API_BASE_URL=http://localhost:4000/api
+    restart: unless-stopped
 
-  # Persistent SSH Tunnel (Exposes backend to public internet via Serveo)
+  # Tunnel - Public internet access via Serveo
   tunnel:
     image: alpine:latest
     container_name: hrflow-tunnel
@@ -121,15 +152,16 @@ services:
     volumes:
       - tunnel_ssh:/root/.ssh
       - ./docker/tunnel-start.sh:/tunnel-start.sh:ro
-    # Runs the tunnel startup script which:
-    # - Installs autossh and openssh-client
-    # - Generates SSH key on first run (persisted in tunnel_ssh volume)
-    # - Connects to serveo.net with custom subdomain "hrflowautomation"
-    # - Forwards https://hrflowautomation.serveo.net -> host.docker.internal:4000 (local npm run dev)
     command: /bin/sh /tunnel-start.sh
     restart: always
+    # Note: This service creates a public URL at https://hrflowautomation.serveo.net
+    # that forwards to host.docker.internal:4000 (your local backend)
 
+# Named volumes for data persistence
 volumes:
   postgres_data:
+    driver: local
   n8n_data:
+    driver: local
   tunnel_ssh:
+    driver: local

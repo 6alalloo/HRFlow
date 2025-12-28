@@ -33,7 +33,7 @@ type ConfigPanelProps = {
 };
 
 // Type-safe accessor helpers for localConfig
-type KeyValuePair = { key: string; value: string };
+// type KeyValuePair = { key: string; value: string }; // Unused for now
 
 const getString = (config: Record<string, unknown>, key: string, fallback = ''): string => {
     const val = config[key];
@@ -45,10 +45,11 @@ const getNumber = (config: Record<string, unknown>, key: string, fallback = 0): 
     return typeof val === 'number' ? val : fallback;
 };
 
-const getKeyValueArray = (config: Record<string, unknown>, key: string): KeyValuePair[] => {
-    const val = config[key];
-    return Array.isArray(val) ? val as KeyValuePair[] : [];
-};
+// Commented out - currently unused but may be needed in future
+// const getKeyValueArray = (config: Record<string, unknown>, key: string): KeyValuePair[] => {
+//     const val = config[key];
+//     return Array.isArray(val) ? val as KeyValuePair[] : [];
+// };
 
 const getStringArray = (config: Record<string, unknown>, key: string): string[] => {
     const val = config[key];
@@ -421,72 +422,72 @@ const CheckboxGroup: React.FC<{
     );
 };
 
-// File Upload Component
-const FileUploadButton: React.FC<{
-    onFileSelect: (file: File) => void;
-    accept?: string;
-    currentFile?: string;
-}> = ({ onFileSelect, accept = ".pdf,.docx,.doc", currentFile }) => {
-    const fileInputRef = useRef<HTMLInputElement>(null);
-    const [isDragging, setIsDragging] = useState(false);
+// File Upload Component - currently unused, commented out to fix build
+// const FileUploadButton: React.FC<{
+//     onFileSelect: (file: File) => void;
+//     accept?: string;
+//     currentFile?: string;
+// }> = ({ onFileSelect, accept = ".pdf,.docx,.doc", currentFile }) => {
+//     const fileInputRef = useRef<HTMLInputElement>(null);
+//     const [isDragging, setIsDragging] = useState(false);
 
-    const handleDrop = (e: React.DragEvent) => {
-        e.preventDefault();
-        setIsDragging(false);
-        const file = e.dataTransfer.files[0];
-        if (file) onFileSelect(file);
-    };
+//     const handleDrop = (e: React.DragEvent) => {
+//         e.preventDefault();
+//         setIsDragging(false);
+//         const file = e.dataTransfer.files[0];
+//         if (file) onFileSelect(file);
+//     };
 
-    return (
-        <div
-            onClick={() => fileInputRef.current?.click()}
-            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-            onDragLeave={() => setIsDragging(false)}
-            onDrop={handleDrop}
-            className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${
-                isDragging
-                    ? 'border-cyan-glow bg-cyan-glow/10'
-                    : 'border-white/20 hover:border-white/40 hover:bg-white/5'
-            }`}
-        >
-            <input
-                ref={fileInputRef}
-                type="file"
-                accept={accept}
-                onChange={(e) => e.target.files?.[0] && onFileSelect(e.target.files[0])}
-                className="hidden"
-            />
-            <div className="flex flex-col items-center gap-3">
-                {currentFile ? (
-                    <>
-                        <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center">
-                            <LuFile className="w-6 h-6 text-emerald-400" />
-                        </div>
-                        <div>
-                            <div className="text-sm font-medium text-white">{currentFile}</div>
-                            <div className="text-xs text-slate-500 mt-1">Click to change file</div>
-                        </div>
-                    </>
-                ) : (
-                    <>
-                        <div className="w-12 h-12 rounded-xl bg-white/10 flex items-center justify-center">
-                            <LuUpload className="w-6 h-6 text-slate-400" />
-                        </div>
-                        <div>
-                            <div className="text-sm font-medium text-white">Upload CV/Resume</div>
-                            <div className="text-xs text-slate-500 mt-1">
-                                Drag & drop or click to browse
-                            </div>
-                            <div className="text-xs text-slate-600 mt-1">
-                                Supports PDF, DOCX (max 5MB)
-                            </div>
-                        </div>
-                    </>
-                )}
-            </div>
-        </div>
-    );
-};
+//     return (
+//         <div
+//             onClick={() => fileInputRef.current?.click()}
+//             onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+//             onDragLeave={() => setIsDragging(false)}
+//             onDrop={handleDrop}
+//             className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${
+//                 isDragging
+//                     ? 'border-cyan-glow bg-cyan-glow/10'
+//                     : 'border-white/20 hover:border-white/40 hover:bg-white/5'
+//             }`}
+//         >
+//             <input
+//                 ref={fileInputRef}
+//                 type="file"
+//                 accept={accept}
+//                 onChange={(e) => e.target.files?.[0] && onFileSelect(e.target.files[0])}
+//                 className="hidden"
+//             />
+//             <div className="flex flex-col items-center gap-3">
+//                 {currentFile ? (
+//                     <>
+//                         <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center">
+//                             <LuFile className="w-6 h-6 text-emerald-400" />
+//                         </div>
+//                         <div>
+//                             <div className="text-sm font-medium text-white">{currentFile}</div>
+//                             <div className="text-xs text-slate-500 mt-1">Click to change file</div>
+//                         </div>
+//                     </>
+//                 ) : (
+//                     <>
+//                         <div className="w-12 h-12 rounded-xl bg-white/10 flex items-center justify-center">
+//                             <LuUpload className="w-6 h-6 text-slate-400" />
+//                         </div>
+//                         <div>
+//                             <div className="text-sm font-medium text-white">Upload CV/Resume</div>
+//                             <div className="text-xs text-slate-500 mt-1">
+//                                 Drag & drop or click to browse
+//                             </div>
+//                             <div className="text-xs text-slate-600 mt-1">
+//                                 Supports PDF, DOCX (max 5MB)
+//                             </div>
+//                         </div>
+//                     </>
+//                 )}
+//             </div>
+//         </div>
+//     );
+// };
 
 const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, workflowId, onClose, onUpdate, onDelete }) => {
     // Use useMemo to derive initial config, avoiding setState in effect

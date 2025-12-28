@@ -10,7 +10,6 @@ import {
   FiUserPlus,
   FiX,
   FiChevronRight,
-  FiChevronLeft,
   FiLoader,
   FiCheck,
   FiAlertCircle,

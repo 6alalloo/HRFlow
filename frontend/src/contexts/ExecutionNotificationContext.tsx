@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef } from 'react';
+import React, { createContext, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { fetchExecutions } from '../api/executions';
@@ -10,7 +10,7 @@ export const ExecutionNotificationContext = createContext<void>(undefined);
 
 export function ExecutionNotificationProvider({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
-  const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     // Load last seen execution ID from localStorage
@@ -18,7 +18,7 @@ export function ExecutionNotificationProvider({ children }: { children: React.Re
 
     const poll = async () => {
       try {
-        const executions = await fetchExecutions({ limit: 10, offset: 0 });
+        const executions = await fetchExecutions();
 
         if (executions.length === 0) return;
 
@@ -35,7 +35,7 @@ export function ExecutionNotificationProvider({ children }: { children: React.Re
           const toShow = newExecutions.slice(0, 3).reverse(); // Show oldest first
 
           toShow.forEach(execution => {
-            const workflowName = execution.workflow?.name || 'Unknown Workflow';
+            const workflowName = execution.workflows?.name || 'Unknown Workflow';
             const status = execution.status;
             const triggerType = execution.trigger_type || 'manual';
 

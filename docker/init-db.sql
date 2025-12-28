@@ -8,7 +8,7 @@
 SELECT 'CREATE DATABASE n8n'
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'n8n')\gexec
 
--- Grant full privileges to the hrflow user
+-- Grant privileges to hrflow user on n8n database
 GRANT ALL PRIVILEGES ON DATABASE n8n TO hrflow;
 
 -- Connect to HRFlow database and create Core schema

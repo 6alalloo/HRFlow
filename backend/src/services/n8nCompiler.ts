@@ -469,7 +469,7 @@ case "trigger": {
           {
             id: `trigger_start_${n.id}`,
             name: "employee.startDate",
-            value: startDate || "={{ $json.body?.employee?.startDate || $json.employee?.startDate || '' }}",
+            value: startDate || "={{ $json.body?.employee?.startDate || $json.employee?.startDate || $json.body?.employee?.start_date || $json.employee?.start_date || $json.body?.start_date || $json.start_date || '' }}",
             type: "string",
           },
           {
@@ -599,55 +599,25 @@ case "trigger": {
     }
 
     case "database": {
-  // Compiles to n8n Postgres node with employee upsert query.
+  // Compiles to n8n Postgres node with candidate insert query.
   // Uses explicit trigger node reference for reliable data access regardless of node position.
   const customQuery = safeString(cfg.query, "").trim();
 
-  // Build default query using explicit trigger node reference
+  // Build default query - simple insert into candidates table
   const defaultQuery = [
-  "WITH role_pick AS (",
-  "  SELECT id",
-  "  FROM \"Core\".roles",
-  "  WHERE lower(name) = 'employee'",
-  "  LIMIT 1",
-  "),",
-  "upsert_user AS (",
-  "  INSERT INTO \"Core\".users (email, password_hash, full_name, role_id, is_active)",
-  "  VALUES (",
-  `    '={{ ${triggerRef}.employee?.email || ${triggerRef}.email }}',`,
-  "    'TEMP_PASSWORD_HASH',",
-  `    '={{ ${triggerRef}.employee?.name || ${triggerRef}.name }}',`,
-  "    COALESCE((SELECT id FROM role_pick), 1),",
-  "    true",
-  "  )",
-  "  ON CONFLICT (email)",
-  "  DO UPDATE SET",
-  "    full_name = EXCLUDED.full_name,",
-  "    is_active = true",
-  "  RETURNING id",
-  "),",
-  "ins_employee AS (",
-  "  INSERT INTO \"Core\".employees (user_id, hire_date, probation_end, is_active)",
-  "  SELECT",
-  "    upsert_user.id,",
-  "    CURRENT_DATE,",
-  "    NULL,",
-  "    true",
-  "  FROM upsert_user",
-  "  WHERE NOT EXISTS (",
-  "    SELECT 1 FROM \"Core\".employees e WHERE e.user_id = upsert_user.id",
-  "  )",
-  "  RETURNING id",
-  ")",
-  "SELECT",
-  "  (SELECT id FROM upsert_user) AS user_id,",
-  "  (SELECT id FROM ins_employee) AS employee_id,",
-  `  '{{ ${triggerRef}.employee?.email || ${triggerRef}.email }}' AS email,`,
-  `  '{{ ${triggerRef}.employee?.name || ${triggerRef}.name }}' AS name,`,
-  `  '{{ ${triggerRef}.employee?.department || ${triggerRef}.department || "" }}' AS department,`,
-  `  '{{ ${triggerRef}.employee?.role || ${triggerRef}.role || "" }}' AS role,`,
-  `  '{{ ${triggerRef}.employee?.startDate || ${triggerRef}.startDate || "" }}' AS "startDate";`,
-].join("\n");
+    `INSERT INTO "Core".candidates (full_name, email, phone, is_active)`,
+    `VALUES (`,
+    `  '={{ ${triggerRef}.employee?.name || ${triggerRef}.name }}',`,
+    `  '={{ ${triggerRef}.employee?.email || ${triggerRef}.email }}',`,
+    `  '={{ ${triggerRef}.employee?.phone || ${triggerRef}.phone || "" }}',`,
+    `  true`,
+    `)`,
+    `RETURNING`,
+    `  id AS candidate_id,`,
+    `  full_name AS name,`,
+    `  email,`,
+    `  phone;`,
+  ].join("\n");
 
   const query = customQuery.length > 0 ? customQuery : defaultQuery;
 

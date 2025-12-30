@@ -49,6 +49,7 @@ type RunContextPayload = {
     n8nCreated?: boolean | null;
     webhookPath?: string | null;
     webhookUrl?: string | null;
+    blockedUrls?: unknown;
   };
 };
 
@@ -653,6 +654,12 @@ export async function executeWorkflow(params: ExecuteWorkflowInput) {
         logMessage = `[${logData.level ?? "info"}] ${logData.message ?? "Logged"}`;
       } else if (node.kind === "trigger") {
         logMessage = `Trigger executed - Employee: ${(stepOutput.employee as Record<string, unknown>)?.name ?? "Unknown"}`;
+      } else if (node.kind === "email") {
+        // Get email from trigger node's output (first node in the workflow)
+        const triggerOutput = index > 0 ? inputData : stepOutput;
+        const employeeData = triggerOutput.employee as Record<string, unknown> | undefined;
+        const recipientEmail = employeeData?.email || triggerOutput.email || "Unknown";
+        logMessage = `Email sent to ${recipientEmail}`;
       } else if (node.kind === "cv_parse" || node.kind === "cv_parser") {
         const cvMeta = stepOutput._hrflow as Record<string, unknown> | undefined;
         if (cvMeta?.cvParsed) {

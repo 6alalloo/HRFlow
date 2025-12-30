@@ -12,6 +12,37 @@ import io
 from pypdf import PdfReader
 from docx import Document
 import uvicorn
+from rapidfuzz import fuzz, process
+
+# Global skills list for easier maintenance and fuzzy matching
+SKILLS_LIST = [
+    'python', 'java', 'javascript', 'typescript', 'react', 'node.js', 'nodejs',
+    'angular', 'vue', 'sql', 'postgresql', 'mysql', 'mongodb', 'docker',
+    'kubernetes', 'aws', 'azure', 'gcp', 'git', 'agile', 'scrum',
+    'html', 'css', 'rest', 'api', 'microservices', 'ci/cd', 'devops',
+    'machine learning', 'data analysis', 'excel', 'powerpoint', 'communication',
+    'leadership', 'project management', 'teamwork', 'problem solving',
+    # Additional technical skills
+    'c#', 'c++', '.net', 'go', 'golang', 'rust', 'swift', 'kotlin', 'php', 'ruby',
+    'terraform', 'ansible', 'jenkins', 'linux', 'windows', 'networking',
+    'redis', 'elasticsearch', 'kafka', 'rabbitmq', 'graphql', 'spring', 'django',
+    'flask', 'fastapi', 'express', 'nextjs', 'nuxt', 'svelte', 'tailwind',
+    # Design & tools
+    'figma', 'photoshop', 'illustrator', 'ui/ux', 'ux design', 'ui design',
+    'salesforce', 'sap', 'oracle', 'power bi', 'tableau', 'jira', 'confluence',
+    # Data science
+    'pandas', 'numpy', 'tensorflow', 'pytorch', 'scikit-learn', 'spark', 'hadoop',
+    'r', 'matlab', 'statistics', 'deep learning', 'nlp', 'computer vision'
+]
+
+# Skill aliases for common variations
+SKILL_ALIASES = {
+    'js': 'javascript', 'ts': 'typescript', 'reactjs': 'react', 'react.js': 'react',
+    'node': 'node.js', 'postgres': 'postgresql', 'mongo': 'mongodb',
+    'k8s': 'kubernetes', 'py': 'python', 'golang': 'go', 'csharp': 'c#',
+    'dotnet': '.net', 'scikit': 'scikit-learn', 'sklearn': 'scikit-learn',
+    'tf': 'tensorflow', 'aws lambda': 'aws', 'ec2': 'aws', 's3': 'aws'
+}
 
 app = FastAPI(
     title="HRFlow CV Parser",
@@ -101,67 +132,113 @@ def extract_phone(text: str) -> Optional[str]:
 
 
 def extract_name(text: str) -> Optional[str]:
-    """Extract name from text (assumes name is in first few lines)."""
-    # Debug: Print start of text
-    first_chunk = text.split('\n')[0].strip()
-    print(f"[DEBUG] Name Text Start: {first_chunk[:100]}")
-    
-    skip_keywords = ['curriculum', 'vitae', 'resume', 'cv', 'contact', 'profile', 'about', 'summary']
+    """
+    Extract name from text using positional heuristics.
+    Names typically appear BEFORE contact info (email/phone).
+    """
+    # Split text into lines, handling both newlines and pipe separators
+    lines = [l.strip() for l in text.replace('|', '\n').split('\n') if l.strip()]
+
+    print(f"[DEBUG] Name extraction - total lines: {len(lines)}")
+    if lines:
+        print(f"[DEBUG] First line: {lines[0][:80]}")
+
+    skip_keywords = ['curriculum', 'vitae', 'resume', 'cv', 'contact', 'profile',
+                     'about', 'summary', 'objective', 'experience', 'education', 'skills']
     job_title_keywords = [
-        'analyst', 'developer', 'engineer', 'manager', 'director', 'consultant', 
-        'specialist', 'senior', 'junior', 'lead', 'architect', 'admin', 'officer', 'data',
-        'product' # Added product
+        'analyst', 'developer', 'engineer', 'manager', 'director', 'consultant',
+        'specialist', 'senior', 'junior', 'lead', 'architect', 'admin', 'officer',
+        'data', 'product', 'designer', 'coordinator', 'executive', 'intern', 'trainee'
     ]
-    
-    # Clean up first chunk
+    name_connectors = ['bin', 'al', 'de', 'van', 'von', 'der', 'el', 'la', 'ibn']
+
+    # STRATEGY 1: Find contact info position and look for name ABOVE it
+    contact_idx = len(lines)
+    for i, line in enumerate(lines):
+        line_lower = line.lower()
+        # Check for email or phone number
+        if '@' in line or re.search(r'\+?\d[\d\s\-().]{7,}', line):
+            contact_idx = i
+            print(f"[DEBUG] Contact info found at line {i}: {line[:50]}")
+            break
+
+    # Search lines before contact info
+    search_lines = lines[:contact_idx] if contact_idx > 0 else lines[:5]
+
+    for line in search_lines:
+        line_lower = line.lower()
+
+        # Skip headers and section titles
+        if any(skip in line_lower for skip in skip_keywords):
+            continue
+        # Skip job titles
+        if any(title in line_lower for title in job_title_keywords):
+            continue
+        # Skip lines with contact info
+        if '@' in line or re.search(r'\d{5,}', line):
+            continue
+        # Skip lines that are too long (likely descriptions)
+        if len(line) > 50:
+            continue
+
+        # Check if line looks like a name (2-5 words, properly capitalized)
+        words = line.split()
+        if 2 <= len(words) <= 5:
+            is_valid_name = True
+            for w in words:
+                if not w:
+                    continue
+                # Word should start with uppercase OR be a connector
+                if not (w[0].isupper() or w.lower() in name_connectors):
+                    is_valid_name = False
+                    break
+                # Word shouldn't contain numbers or special chars (except hyphens)
+                if re.search(r'[0-9@#$%^&*()+=\[\]{}|\\/<>]', w):
+                    is_valid_name = False
+                    break
+
+            if is_valid_name:
+                print(f"[DEBUG] Name found via positional heuristic: {line}")
+                return line
+
+    # STRATEGY 2: Original first-chunk analysis
+    first_chunk = lines[0] if lines else ""
+
+    # Skip header lines
     if any(k == first_chunk.lower() for k in skip_keywords):
-        # If first line is "RESUME", try second line
-        lines = text.split('\n')
-        if len(lines) > 1:
-            first_chunk = lines[1].strip()
+        first_chunk = lines[1] if len(lines) > 1 else ""
 
     words = first_chunk.split()
     possible_name = []
-    
+
     for word in words:
-        # Stop at job titles, email, phone chars, or separators
         if any(title in word.lower() for title in job_title_keywords):
-            print(f"[DEBUG] Stop at keyword: {word}")
             break
         if '@' in word or re.search(r'\d', word) or '|' in word:
-            print(f"[DEBUG] Stop at invalid: {word}")
             break
-        
-        # Allow capitalized words
-        if word[0].isupper() or (possible_name and word.lower() in ['bin', 'al', 'de', 'van', 'von']):
+
+        if word and (word[0].isupper() or word.lower() in name_connectors):
             possible_name.append(word)
-        # If we hit a lowercase word that isn't a connector, and we already have a name, stop
         elif possible_name:
-            print(f"[DEBUG] Stop at lower: {word}")
             break
-    
+
     if 2 <= len(possible_name) <= 5:
         return ' '.join(possible_name)
-        
-    # 2. Fallback strategy: If normalization somehow failed and we have broken lines
-    # e.g. "Talal\nAlhawaj" -> text still has newlines in it?
-    # If text has many newlines at start, try to join them
-    lines = [l.strip() for l in text.split('\n') if l.strip()]
-    
-    # Try merging first few capitalized lines
+
+    # STRATEGY 3: Merge single-word capitalized lines
     merged_name = []
     for line in lines[:4]:
-        if not line: continue
-        # If line is single word and capitalized
+        if not line:
+            continue
         if ' ' not in line and line[0].isupper() and not any(k in line.lower() for k in skip_keywords):
-             merged_name.append(line)
+            merged_name.append(line)
         else:
             break
-            
+
     if 2 <= len(merged_name) <= 4:
         return ' '.join(merged_name)
 
-    # 3. Last resort: Return first reasonable line
+    # STRATEGY 4: Last resort - first reasonable line
     if lines:
         first_line = lines[0]
         if 3 < len(first_line) < 30 and not any(k in first_line.lower() for k in skip_keywords):
@@ -171,27 +248,66 @@ def extract_name(text: str) -> Optional[str]:
 
 
 def extract_skills(text: str) -> List[str]:
-    """Extract skills from text."""
-    # Common skill keywords
-    skill_keywords = [
-        'python', 'java', 'javascript', 'typescript', 'react', 'node.js', 'nodejs',
-        'angular', 'vue', 'sql', 'postgresql', 'mysql', 'mongodb', 'docker',
-        'kubernetes', 'aws', 'azure', 'gcp', 'git', 'agile', 'scrum',
-        'html', 'css', 'rest', 'api', 'microservices', 'ci/cd', 'devops',
-        'machine learning', 'data analysis', 'excel', 'powerpoint', 'communication',
-        'leadership', 'project management', 'teamwork', 'problem solving'
-    ]
-
+    """Extract skills from text using exact and fuzzy matching."""
     text_lower = text.lower()
-    found_skills = []
+    found_skills = set()
 
-    for skill in skill_keywords:
-        # Use word boundary to avoid partial matches
+    # Skills that should keep special casing
+    special_case_skills = {'c#', 'c++', '.net', 'ci/cd', 'ui/ux', 'nlp'}
+    # Skills that need special matching (contain non-word chars)
+    special_pattern_skills = {'c#', 'c++', '.net', 'ci/cd', 'ui/ux', 'node.js'}
+
+    def format_skill(skill: str) -> str:
+        """Format skill with proper casing."""
+        if skill.lower() in special_case_skills:
+            return skill.upper() if skill.lower() in {'nlp'} else skill
+        return skill.title()
+
+    # 1. Check aliases first (exact match on common abbreviations)
+    words = re.findall(r'[a-z0-9#+./-]+', text_lower)
+    for word in words:
+        if word in SKILL_ALIASES:
+            canonical = SKILL_ALIASES[word]
+            found_skills.add(format_skill(canonical))
+
+    # 2. Handle special pattern skills (c#, c++, .net, etc.) with direct search
+    for skill in special_pattern_skills:
+        if skill.lower() in text_lower:
+            found_skills.add(format_skill(skill))
+
+    # 3. Exact matches using word boundaries (fast path)
+    for skill in SKILLS_LIST:
+        if skill in special_pattern_skills:
+            continue  # Already handled above
         pattern = r'\b' + re.escape(skill.lower()) + r'\b'
         if re.search(pattern, text_lower):
-            found_skills.append(skill.title())
+            found_skills.add(format_skill(skill))
 
-    return list(set(found_skills))  # Remove duplicates
+    # 4. Fuzzy matching for typos (only for words not already matched)
+    matched_words = set()
+    for skill in found_skills:
+        matched_words.update(skill.lower().split())
+
+    for word in words:
+        # Skip if already matched, too short, or looks like noise
+        if len(word) < 4 or word in matched_words:
+            continue
+        if word.isdigit() or re.match(r'^[0-9./-]+$', word):
+            continue
+
+        # Try fuzzy match against skills list
+        match = process.extractOne(
+            word,
+            SKILLS_LIST,
+            scorer=fuzz.ratio,
+            score_cutoff=85  # Conservative threshold to avoid false positives
+        )
+        if match:
+            skill = match[0]
+            found_skills.add(format_skill(skill))
+            print(f"[DEBUG] Fuzzy matched '{word}' -> '{skill}' (score: {match[1]})")
+
+    return list(found_skills)
 
 
 def extract_experience_years(text: str) -> Optional[int]:

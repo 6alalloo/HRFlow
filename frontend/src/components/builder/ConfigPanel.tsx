@@ -724,11 +724,30 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, workflowId, onC
                                     </FormField>
                                 </div>
 
+                                {getString(localConfig, 'department') === 'Other' && (
+                                    <FormField label="Custom Department">
+                                        <TextInput
+                                            value={getString(localConfig, 'customDepartment')}
+                                            onChange={(val) => handleChange('customDepartment', val)}
+                                            placeholder="Enter department name"
+                                        />
+                                    </FormField>
+                                )}
+
                                 <FormField label="Start Date" icon={<LuCalendar className="w-3 h-3" />}>
                                     <div className="relative">
                                         <DatePicker
                                             selected={getString(localConfig, 'startDate') ? new Date(getString(localConfig, 'startDate')) : null}
-                                            onChange={(date: Date | null) => handleChange('startDate', date ? date.toISOString().split('T')[0] : '')}
+                                            onChange={(date: Date | null) => {
+                                                if (date) {
+                                                    const year = date.getFullYear();
+                                                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                                                    const day = String(date.getDate()).padStart(2, '0');
+                                                    handleChange('startDate', `${year}-${month}-${day}`);
+                                                } else {
+                                                    handleChange('startDate', '');
+                                                }
+                                            }}
                                             dateFormat="MMMM d, yyyy"
                                             placeholderText="Click to select date"
                                             className="w-full bg-navy-950 border border-white/10 rounded-lg px-2.5 py-1.5 pl-7 text-sm text-white focus:border-cyan-glow focus:outline-none transition-colors cursor-pointer"
@@ -739,15 +758,6 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, workflowId, onC
                                         />
                                         <LuCalendar className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
                                     </div>
-                                </FormField>
-
-                                <FormField label="Manager Email" hint="Their manager will receive notifications">
-                                    <TextInput
-                                        value={getString(localConfig, 'managerEmail')}
-                                        onChange={(val) => handleChange('managerEmail', val)}
-                                        placeholder="e.g. manager@company.com"
-                                        icon={<LuMail className="w-4 h-4" />}
-                                    />
                                 </FormField>
                             </div>
                         )}
@@ -788,16 +798,6 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, workflowId, onC
                                     selected={recipientType === 'employee'}
                                 />
                                 <QuickActionButton
-                                    label="The Manager"
-                                    description="Send to the manager from the trigger step"
-                                    icon={<LuUser className="w-4 h-4" />}
-                                    onClick={() => {
-                                        handleChange('recipientType', 'manager');
-                                        handleChange('to', '{{trigger.managerEmail}}');
-                                    }}
-                                    selected={recipientType === 'manager'}
-                                />
-                                <QuickActionButton
                                     label="Custom Recipient"
                                     description="Enter a specific email address"
                                     icon={<LuMail className="w-4 h-4" />}
@@ -820,7 +820,7 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, workflowId, onC
                             )}
 
                             <FormField label="Subject Line">
-                                <SmartField
+                                <TextInput
                                     value={getString(localConfig, 'subject')}
                                     onChange={(val) => handleChange('subject', val)}
                                     placeholder="e.g. Welcome to the team!"
@@ -828,16 +828,39 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, workflowId, onC
                             </FormField>
 
                             <FormField label="Email Body" hint="Write your message below">
-                                <SmartField
+                                <TextArea
                                     rows={6}
                                     value={getString(localConfig, 'body')}
                                     onChange={(val) => handleChange('body', val)}
-                                    placeholder="Hello,&#10;&#10;Welcome to our company! We're excited to have you join the team.&#10;&#10;Best regards,&#10;HR Team"
+                                    placeholder="Hello,
+
+Welcome to our company! We're excited to have you join the team.
+
+Best regards,
+HR Team"
                                 />
                             </FormField>
 
+                            <div className="flex flex-wrap gap-2">
+                                {[
+                                    'Welcome to our team!',
+                                    'Your onboarding details',
+                                    'Important: Next steps',
+                                    'Getting started guide',
+                                ].map((template) => (
+                                    <button
+                                        key={template}
+                                        type="button"
+                                        onClick={() => handleChange('subject', template)}
+                                        className="text-xs bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white px-2 py-1 rounded transition-colors"
+                                    >
+                                        {template}
+                                    </button>
+                                ))}
+                            </div>
+
                             <InfoBox variant="tip">
-                                <strong>Tip:</strong> You can personalize the email by typing the employee's name directly. The system will automatically include their details.
+                                <strong>Tip:</strong> You can personalize the email by referencing variables like employee name, department, or start date.
                             </InfoBox>
                         </div>
                     </div>

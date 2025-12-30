@@ -149,6 +149,8 @@ export default function DashboardPage() {
     const handleCreateWorkflow = async () => {
         try {
             const newWorkflow = await createWorkflow({ name: "Untitled Workflow" });
+            // Auto-add trigger node
+            await createWorkflowNode(newWorkflow.id, { kind: 'trigger', posX: 200, posY: 200 });
             navigate(`/workflows/${newWorkflow.id}/builder`);
         } catch (error) {
             console.error("Failed to create workflow", error);
@@ -294,16 +296,9 @@ export default function DashboardPage() {
                 {/* 1. Header Section */}
                 <div className="max-w-7xl mx-auto mb-10 flex flex-col md:flex-row items-end justify-between gap-6 border-b border-white/5 pb-6">
                     <div>
-                         <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-[0.2em] text-cyan-600 mb-2">
-                            <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_10px_#10b981]" />
-                            Command Center Online
-                         </div>
                          <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-white mb-1">
                             {getGreeting()}, <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">{user?.full_name?.split(' ')[0] || 'User'}</span>
                          </h1>
-                         <p className="text-slate-400 font-mono text-xs uppercase tracking-widest">
-                            {isAdmin ? 'System Administrator' : 'Workflow Operator'} // ID: #{user?.id ?? '000'}
-                         </p>
                     </div>
 
                     <div className="text-right">

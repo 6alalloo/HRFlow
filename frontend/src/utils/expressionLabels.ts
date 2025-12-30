@@ -17,6 +17,7 @@ export const expressionLabels: Record<string, string> = {
   '{{trigger.phone}}': 'Phone Number',
   '{{trigger.resume_url}}': 'Resume URL',
   '{{trigger.cvFile}}': 'CV File',
+  '{{trigger.customDepartment}}': 'Custom Department',
 
   // CV Parser output variables
   '{{steps.Parse CV.email}}': 'CV Email',
@@ -61,6 +62,23 @@ export function replaceExpressionsWithLabels(text: string): string {
 }
 
 /**
+ * Replace all friendly labels in a string back to expressions
+ * @param text - Text containing friendly labels
+ * @returns Text with labels replaced by expressions
+ */
+export function replaceLabelsWithExpressions(text: string): string {
+  if (!text || typeof text !== 'string') {
+    return text;
+  }
+
+  let result = text;
+  for (const [expr, label] of Object.entries(expressionLabels)) {
+    result = result.split(label).join(expr);
+  }
+  return result;
+}
+
+/**
  * Check if a value contains an expression
  */
 export function containsExpression(value: unknown): boolean {
@@ -84,10 +102,11 @@ export function getConfigPreview(
 
   switch (kind) {
     case 'email':
-      if (config.to) {
-        const toLabel = getFriendlyLabel(String(config.to));
-        parts.push(`To: ${toLabel}`);
+      if (!config.to || config.to === '') {
+        return 'Click to configure';
       }
+      const toLabel = getFriendlyLabel(String(config.to));
+      parts.push(`To: ${toLabel}`);
       break;
 
     case 'database':

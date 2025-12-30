@@ -365,6 +365,40 @@ const ExecutionDetailPage: React.FC = () => {
                       </div>
                     )}
 
+                    {/* Email Info Card (for email nodes) */}
+                    {nodeType === 'email' && (() => {
+                      // Get email from either employee object or directly from outputData/inputData
+                      const emailRecipient = (
+                        (outputData.employee as Record<string, unknown> | undefined)?.email ||
+                        outputData.email ||
+                        (inputData.employee as Record<string, unknown> | undefined)?.email ||
+                        inputData.email
+                      ) as string | undefined;
+
+                      if (!emailRecipient) return null;
+
+                      return (
+                        <div className="bg-gradient-to-br from-slate-500/5 to-slate-600/5 border border-slate-500/20 rounded-xl overflow-hidden">
+                          <div className="px-4 py-3 border-b border-white/5 bg-white/5">
+                            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                              <FiMail /> Email Sent
+                            </span>
+                          </div>
+                          <div className="p-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 bg-slate-500/20 rounded-lg flex items-center justify-center text-slate-400 shrink-0">
+                                <FiMail className="w-5 h-5" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-0.5">Recipient</div>
+                                <div className="text-sm text-white font-medium truncate">{emailRecipient}</div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     {/* CV Parser Output Card */}
                     {(nodeType === 'cv_parse' || nodeType === 'cv_parser') && Object.keys(outputData).length > 0 && (() => {
                       // Backend already spreads cvResult.data directly into stepOutput (see executionService.ts line 479)
@@ -462,8 +496,21 @@ const ExecutionDetailPage: React.FC = () => {
 
                     {/* Generic Output Card (for other data, excludes CV parser fields when cv_parse node) */}
                     {(() => {
-                      // Fields to exclude from generic output
-                      const excludeKeys = ['_hrflow', 'employee'];
+                      // Fields to exclude from generic output (technical/internal fields)
+                      const excludeKeys = [
+                        '_hrflow', 'employee', 'raw_text', 'experience_years', 'source',
+                        'filename', 'success', 'parsed_at', 'parser_version', 'raw_response',
+                        'metadata', 'debug', 'internal_id', 'processing_time', 'file_hash',
+                        'headers', 'params', 'query', 'body', 'webhookurl', 'executionmode',
+                        'webhookUrl', 'executionMode', 'request', 'response', 'statusCode',
+                        'timestamp', 'duration', 'error_stack', 'stack_trace', 'raw',
+                        // Email SMTP technical fields
+                        'accepted', 'rejected', 'ehlo', 'envelopetime', 'envelopeTime',
+                        'messagetime', 'messageTime', 'messagesize', 'messageSize',
+                        'envelope', 'messageid', 'messageId', 'response_code', 'smtp_response',
+                        // Logger internal fields
+                        'level', 'log_level', 'logLevel'
+                      ];
 
                       // If this is a CV parser node, also exclude CV-specific fields
                       if (nodeType === 'cv_parse' || nodeType === 'cv_parser') {

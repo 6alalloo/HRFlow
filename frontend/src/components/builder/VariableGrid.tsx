@@ -17,9 +17,9 @@ export const TRIGGER_VARIABLES: TriggerVariable[] = [
     
     // Job Group
     { label: 'Department', value: '{{trigger.department}}', icon: <LuBuilding className="w-3 h-3" />, group: 'job' },
+    { label: 'Custom Department', value: '{{trigger.customDepartment}}', icon: <LuBuilding className="w-3 h-3" />, group: 'job' },
     { label: 'Role / Title', value: '{{trigger.role}}', icon: <LuBriefcase className="w-3 h-3" />, group: 'job' },
     { label: 'Start Date', value: '{{trigger.startDate}}', icon: <LuCalendar className="w-3 h-3" />, group: 'job' },
-    { label: 'Manager Email', value: '{{trigger.managerEmail}}', icon: <LuMail className="w-3 h-3" />, group: 'job' },
 
     // Meta Group
     { label: 'Form ID', value: '{{trigger.formId}}', icon: <LuHash className="w-3 h-3" />, group: 'meta' },

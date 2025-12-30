@@ -705,6 +705,11 @@ const WorkflowBuilderContent: React.FC = () => {
       }));
       refreshRef.current(graph.nodes, graph.edges);
 
+      // Zoom to fit all nodes after template is applied
+      setTimeout(() => {
+        fitView({ padding: 0.4, duration: 500 });
+      }, 150);
+
     } catch (e) {
       console.error("Failed to apply template:", e);
       const message = e instanceof Error ? e.message : "Failed to apply template.";
@@ -1046,36 +1051,6 @@ const WorkflowBuilderContent: React.FC = () => {
                 </div>
             )}
 
-            {/* Webhook URL Display */}
-            {webhookUrl && (
-                <div className="absolute top-4 right-4 z-40">
-                    <div className="bg-navy-900/90 backdrop-blur border border-white/10 rounded-xl px-3 py-2 flex items-center gap-2 shadow-xl max-w-md">
-                        <FiLink className="text-cyan-400 flex-shrink-0" />
-                        <div className="flex flex-col min-w-0">
-                            <span className="text-[10px] uppercase tracking-wider text-slate-500 font-mono">Webhook URL</span>
-                            <span className="text-xs text-slate-300 font-mono truncate" title={webhookUrl}>
-                                {webhookUrl}
-                            </span>
-                        </div>
-                        <button
-                            onClick={handleCopyWebhook}
-                            className={`ml-2 p-2 rounded-lg transition-all flex-shrink-0 ${
-                                copiedWebhook
-                                    ? 'bg-emerald-500/20 text-emerald-400'
-                                    : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white'
-                            }`}
-                            title={copiedWebhook ? 'Copied!' : 'Copy webhook URL'}
-                        >
-                            {copiedWebhook ? <FiCheck className="w-4 h-4" /> : <FiCopy className="w-4 h-4" />}
-                        </button>
-                    </div>
-                    {copiedWebhook && (
-                        <div className="absolute top-full mt-2 right-0 bg-emerald-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg shadow-lg animate-fade-in">
-                            Copied to clipboard!
-                        </div>
-                    )}
-                </div>
-            )}
 
             {/* Canvas */}
             <div className="flex-1 w-full h-full" ref={flowWrapperRef}>

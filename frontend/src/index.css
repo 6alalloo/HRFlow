@@ -38,6 +38,11 @@ body {
   overflow: hidden; /* App-like feel */
 }
 
+/* Remove default link underlines */
+a {
+  text-decoration: none;
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 8px;

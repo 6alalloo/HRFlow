@@ -77,7 +77,7 @@ export async function getWorkflowAuditLogs(req: Request, res: Response) {
   } catch (error) {
     logger.error("Error getting workflow audit logs", {
       service: "AuditController",
-      workflowId: numericWorkflowId,
+      workflowId: req.params.workflowId,
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined
     });
@@ -111,7 +111,7 @@ export async function getExecutionAuditLogs(req: Request, res: Response) {
   } catch (error) {
     logger.error("Error getting execution audit logs", {
       service: "AuditController",
-      executionId: numericExecutionId,
+      executionId: req.params.executionId,
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined
     });
@@ -145,7 +145,7 @@ export async function getUserAuditLogs(req: Request, res: Response) {
   } catch (error) {
     logger.error("Error getting user audit logs", {
       service: "AuditController",
-      userId: numericUserId,
+      userId: req.params.userId,
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined
     });
@@ -189,7 +189,7 @@ export async function purgeOldAuditLogs(req: Request, res: Response) {
   } catch (error) {
     logger.error("Error purging audit logs", {
       service: "AuditController",
-      days,
+      days: req.query.days,
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined
     });

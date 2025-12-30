@@ -1,16 +1,17 @@
 
 import React, { memo } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
-import { 
-    LuMail, 
-    LuGlobe, 
-    LuDatabase, 
-    LuZap, 
-    LuSplit, 
-    LuClock, 
-    LuFileJson 
+import {
+    LuMail,
+    LuGlobe,
+    LuDatabase,
+    LuZap,
+    LuSplit,
+    LuClock,
+    LuFileJson
 } from 'react-icons/lu';
 import clsx from 'clsx';
+import { getFriendlyLabel, replaceExpressionsWithLabels } from '../../utils/expressionLabels';
 
 // Map node kinds to icons
 const getIcon = (kind: string) => {
@@ -27,13 +28,63 @@ const getIcon = (kind: string) => {
 
 const PremiumNode = ({ data, selected }: NodeProps) => {
     const { name, kind, config } = data;
-    
-    // Config summary generation (simple for now)
+
+    // Config summary generation with friendly labels
     const summary = React.useMemo(() => {
-        if (!config) return "No configuration";
-        if (kind === 'email') return `To: ${config.to || 'Undef'}`;
-        if (kind === 'http') return `${config.method || 'GET'} ${config.url || ''}`;
-        if (kind === 'condition') return `If ${config.field || '?'} ${config.operator || ''}`;
+        if (!config) return "Click to configure";
+        if (kind === 'email') {
+            if (!config.to || config.to === '') return "Click to configure";
+            const toLabel = getFriendlyLabel(String(config.to));
+            return `To: ${toLabel}`;
+        }
+        if (kind === 'http') {
+            const method = config.method || 'GET';
+            const url = config.url ? String(config.url) : '';
+            if (!url) return `${method} (configure URL)`;
+            return `${method} ${url.length > 25 ? url.slice(0, 25) + '...' : url}`;
+        }
+        if (kind === 'condition') {
+            if (!config.field) return "Click to configure";
+            const fieldLabel = getFriendlyLabel(String(config.field));
+            return `If ${fieldLabel} ${config.operator || ''}`;
+        }
+        if (kind === 'logger') {
+            if (!config.message || config.message === '') return "Click to configure";
+            // Replace expressions with friendly labels and truncate
+            const msg = replaceExpressionsWithLabels(String(config.message));
+            return msg.length > 35 ? msg.slice(0, 35) + '...' : msg;
+        }
+        if (kind === 'database') {
+            const table = config.table || '';
+            const op = config.operation || '';
+            if (!table && !op) return "Click to configure";
+            return `${op} → ${table}`.trim();
+        }
+        if (kind === 'cv_parser' || kind === 'cv_parse') {
+            return "Parse uploaded CV";
+        }
+        if (kind === 'trigger') {
+            // Count how many fields are configured
+            const configuredFields = Object.entries(config).filter(
+                ([, v]) => v !== '' && v !== null && v !== undefined
+            ).length;
+            if (configuredFields > 0) {
+                return `${configuredFields} field(s) configured`;
+            }
+            return "Click to configure";
+        }
+        if (kind === 'variable') {
+            if (Array.isArray(config.variables) && config.variables.length > 0) {
+                return `${config.variables.length} variable(s) set`;
+            }
+            return "Click to configure";
+        }
+        if (kind === 'wait') {
+            if (config.duration) {
+                return `Wait ${config.duration} ${config.unit || 'seconds'}`;
+            }
+            return "Click to configure";
+        }
         return config.description || "Click to configure";
     }, [config, kind]);
 

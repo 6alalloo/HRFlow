@@ -109,7 +109,7 @@ export async function addAllowedDomain(req: Request, res: Response) {
   } catch (error) {
     logger.error("Error adding domain", {
       service: "SettingsController",
-      domain: normalizedDomain,
+      domain: req.body.domain,
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined
     });
@@ -153,7 +153,7 @@ export async function removeAllowedDomain(req: Request, res: Response) {
   } catch (error) {
     logger.error("Error removing domain", {
       service: "SettingsController",
-      domainId,
+      domainId: req.params.id,
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined
     });

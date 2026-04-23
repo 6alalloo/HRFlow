@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-    LuMail, LuGlobe, LuSplit, LuDatabase, LuClock, LuX, LuFileText, LuZap, LuInfo, LuTerminal, LuCalendar, LuBox
+    LuMail, LuGlobe, LuSplit, LuDatabase, LuClock, LuX, LuZap, LuInfo, LuTerminal, LuCalendar, LuBox
 } from 'react-icons/lu';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -12,16 +12,15 @@ type NodePickerProps = {
 };
 
 const NODE_TYPES = [
-    { kind: 'trigger', label: 'Trigger', icon: LuZap, color: 'text-yellow-400', description: "Starts the workflow. Configure employee inputs here." },
-    { kind: 'cv_parser', label: 'CV Parser', icon: LuFileText, color: 'text-indigo-400', description: "Extracts data from an uploaded CV/Resume." },
+    { kind: 'trigger', label: 'Trigger', icon: LuZap, color: 'text-yellow-400', description: "Starts the flow. Configure your case intake values here." },
     { kind: 'email', label: 'Send Email', icon: LuMail, color: 'text-blue-400', description: "Sends an email notification to a recipient." },
     { kind: 'http', label: 'HTTP Request', icon: LuGlobe, color: 'text-green-400', description: "Makes an external API call (GET, POST, etc)." },
     { kind: 'condition', label: 'Condition', icon: LuSplit, color: 'text-purple-400', description: "Branches flow based on logic (If/Else)." },
-    { kind: 'database', label: 'Database', icon: LuDatabase, color: 'text-rose-400', description: "Updates or creates a record in the database." },
+    { kind: 'database', label: 'Database', icon: LuDatabase, color: 'text-rose-400', description: "Creates, updates, or looks up a case record." },
     { kind: 'variable', label: 'Set Variable', icon: LuBox, color: 'text-teal-400', description: "Store and manipulate data for use in later steps." },
     { kind: 'wait', label: 'Delay / Wait', icon: LuClock, color: 'text-amber-400', description: "Pauses the workflow for a set duration." },
     { kind: 'datetime', label: 'Date / Time', icon: LuCalendar, color: 'text-orange-400', description: "Format, calculate, or get current date/time." },
-    { kind: 'logger', label: 'Logger', icon: LuTerminal, color: 'text-slate-300', description: "Logs data to the console for debugging." },
+    { kind: 'logger', label: 'Logger', icon: LuTerminal, color: 'text-slate-300', description: "Writes an audit-style log entry for traceability." },
 ];
 
 const NodePicker: React.FC<NodePickerProps> = ({ isOpen, onClose, onSelect, position }) => {

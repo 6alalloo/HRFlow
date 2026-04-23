@@ -1,8 +1,8 @@
 /**
  * Workflow Templates
  *
- * Pre-built workflow templates that users can use as starting points.
- * Each template contains nodes and edges that form a complete workflow.
+ * Starter definitions for the BankFlow fork.
+ * These avoid HR-specific onboarding and recruiting scenarios.
  */
 
 export interface TemplateNode {
@@ -26,7 +26,7 @@ export interface WorkflowTemplate {
     name: string;
     description: string;
     useCase: string;
-    category: 'hr' | 'it' | 'general';
+    category: 'general';
     nodes: TemplateNode[];
     edges: TemplateEdge[];
     requiredConfig: string[];
@@ -34,107 +34,23 @@ export interface WorkflowTemplate {
 
 export const templates: WorkflowTemplate[] = [
     {
-        id: 'hr-onboarding',
-        name: 'HR Onboarding',
-        description: 'Automate new employee onboarding with CV parsing, database entry, and welcome email.',
-        useCase: 'Use this template when a new employee joins your organization. It extracts data from their CV, adds them to the employee database, sends a welcome email, and logs the result.',
-        category: 'hr',
+        id: 'aml-alert-review',
+        name: 'AML Alert Review',
+        description: 'Route an AML alert through intake, triage, analyst notification, and audit logging.',
+        useCase: 'Use this template when a monitoring system raises an alert that needs analyst review and clear case traceability.',
+        category: 'general',
         nodes: [
             {
                 id: 'trigger-1',
                 kind: 'trigger',
-                name: 'New Employee',
+                name: 'Alert Intake',
                 pos_x: 100,
                 pos_y: 200,
                 config: {
                     name: '',
                     email: '',
-                    department: '',
-                    role: '',
-                    startDate: '',
-                    managerEmail: '',
-                },
-            },
-            {
-                id: 'cv-parser-1',
-                kind: 'cv_parser',
-                name: 'Parse CV',
-                pos_x: 400,
-                pos_y: 200,
-                config: {},
-            },
-            {
-                id: 'database-1',
-                kind: 'database',
-                name: 'Add Employee',
-                pos_x: 700,
-                pos_y: 200,
-                config: {
-                    operation: 'create',
-                    table: 'employees',
-                },
-            },
-            {
-                id: 'email-1',
-                kind: 'email',
-                name: 'Welcome Email',
-                pos_x: 1000,
-                pos_y: 200,
-                config: {
-                    to: '{{trigger.email}}',
-                    subject: 'Welcome to the Team, {{trigger.name}}!',
-                    body: `Hello {{trigger.name}},
-
-Welcome to the {{trigger.department}} team! We are excited to have you join us as a {{trigger.role}}.
-
-Your start date is {{trigger.startDate}}.
-
-Best regards,
-HR Team`,
-                },
-            },
-            {
-                id: 'logger-1',
-                kind: 'logger',
-                name: 'Log Result',
-                pos_x: 1300,
-                pos_y: 200,
-                config: {
-                    message: 'Employee {{trigger.name}} ({{trigger.email}}) onboarded successfully',
-                    level: 'info',
-                },
-            },
-        ],
-        edges: [
-            { from: 'trigger-1', to: 'cv-parser-1' },
-            { from: 'cv-parser-1', to: 'database-1' },
-            { from: 'database-1', to: 'email-1' },
-            { from: 'email-1', to: 'logger-1' },
-        ],
-        requiredConfig: [
-            'Employee name and email in Trigger',
-            'PostgreSQL credentials configured in n8n',
-            'SMTP credentials configured in n8n',
-        ],
-    },
-    {
-        id: 'it-access',
-        name: 'IT Access Provisioning',
-        description: 'Automate IT system access requests with account creation and credential delivery.',
-        useCase: 'Use this template when an employee needs access to IT systems. It sends an API request to create the account, waits for processing, and then sends the credentials to the employee.',
-        category: 'it',
-        nodes: [
-            {
-                id: 'trigger-1',
-                kind: 'trigger',
-                name: 'Access Request',
-                pos_x: 100,
-                pos_y: 200,
-                config: {
-                    name: '',
-                    email: '',
-                    department: '',
-                    role: '',
+                    department: 'Financial Crime Operations',
+                    role: 'Alert Review',
                     startDate: '',
                     managerEmail: '',
                 },
@@ -142,106 +58,170 @@ HR Team`,
             {
                 id: 'variable-1',
                 kind: 'variable',
-                name: 'Set Username',
-                pos_x: 350,
+                name: 'Set Priority',
+                pos_x: 360,
                 pos_y: 200,
                 config: {
                     variables: [
-                        { key: 'username', value: '{{trigger.email}}' },
-                        { key: 'systemAccess', value: 'standard' },
+                        { key: 'caseType', value: 'aml_alert' },
+                        { key: 'priority', value: 'high' },
                     ],
                 },
             },
             {
-                id: 'http-1',
-                kind: 'http',
-                name: 'Create Account',
-                pos_x: 600,
+                id: 'condition-1',
+                kind: 'condition',
+                name: 'Check Jurisdiction',
+                pos_x: 620,
                 pos_y: 200,
                 config: {
-                    method: 'POST',
-                    url: '', // User needs to configure
-                    headers: [
-                        { key: 'Content-Type', value: 'application/json' },
-                    ],
-                    body: JSON.stringify({
-                        username: '{{steps.Set Username.username}}',
-                        email: '{{trigger.email}}',
-                        name: '{{trigger.name}}',
-                        department: '{{trigger.department}}',
-                        accessLevel: '{{steps.Set Username.systemAccess}}',
-                    }, null, 2),
-                },
-            },
-            {
-                id: 'wait-1',
-                kind: 'wait',
-                name: 'Wait for Setup',
-                pos_x: 850,
-                pos_y: 200,
-                config: {
-                    duration: 30,
-                    unit: 'seconds',
+                    field: '{{trigger.department}}',
+                    operator: 'contains',
+                    value: 'Financial',
                 },
             },
             {
                 id: 'email-1',
                 kind: 'email',
-                name: 'Send Credentials',
-                pos_x: 1100,
-                pos_y: 200,
+                name: 'Notify Analyst Queue',
+                pos_x: 900,
+                pos_y: 120,
                 config: {
-                    to: '{{trigger.email}}',
-                    subject: 'Your IT Access Credentials',
-                    body: `Hello {{trigger.name}},
+                    to: 'aml-queue@example.com',
+                    subject: 'AML alert ready for review',
+                    body: `A new alert has entered the review queue.
 
-Your IT account has been created successfully.
+Customer: {{trigger.name}}
+Contact: {{trigger.email}}
+Priority: {{steps.Set Priority.priority}}
 
-Username: {{steps.Set Username.username}}
-Department: {{trigger.department}}
-
-Please visit the IT portal to set your password and complete the setup.
-
-If you have any issues, contact IT support.
-
-Best regards,
-IT Team`,
+Open the case workspace and complete disposition notes.`,
                 },
             },
             {
                 id: 'logger-1',
                 kind: 'logger',
-                name: 'Log Completion',
-                pos_x: 1350,
-                pos_y: 200,
+                name: 'Record Audit Event',
+                pos_x: 1180,
+                pos_y: 120,
                 config: {
-                    message: 'IT access provisioned for {{trigger.name}} ({{steps.Set Username.username}})',
+                    message: 'AML alert case created for {{trigger.name}} with priority {{steps.Set Priority.priority}}',
                     level: 'info',
                 },
             },
         ],
         edges: [
             { from: 'trigger-1', to: 'variable-1' },
-            { from: 'variable-1', to: 'http-1' },
+            { from: 'variable-1', to: 'condition-1' },
+            { from: 'condition-1', to: 'email-1', label: 'Route to analyst' },
+            { from: 'email-1', to: 'logger-1' },
+        ],
+        requiredConfig: [
+            'Case intake details in the trigger step',
+            'SMTP credentials configured in n8n',
+            'Queue mailbox or analyst recipient address',
+        ],
+    },
+    {
+        id: 'payment-exception-review',
+        name: 'Payment Exception Review',
+        description: 'Capture a payment exception, notify operations, hold for review, and write an activity log.',
+        useCase: 'Use this template when a payment needs manual investigation before release, rejection, or escalation.',
+        category: 'general',
+        nodes: [
+            {
+                id: 'trigger-1',
+                kind: 'trigger',
+                name: 'Exception Intake',
+                pos_x: 100,
+                pos_y: 220,
+                config: {
+                    name: '',
+                    email: '',
+                    department: 'Payments Operations',
+                    role: 'Exception Review',
+                    startDate: '',
+                    managerEmail: '',
+                },
+            },
+            {
+                id: 'http-1',
+                kind: 'http',
+                name: 'Notify Ops API',
+                pos_x: 360,
+                pos_y: 220,
+                config: {
+                    method: 'POST',
+                    url: '',
+                    headers: [
+                        { key: 'Content-Type', value: 'application/json' },
+                    ],
+                    body: JSON.stringify({
+                        caseName: '{{trigger.name}}',
+                        contactEmail: '{{trigger.email}}',
+                        queue: '{{trigger.department}}',
+                        reviewType: '{{trigger.role}}',
+                    }, null, 2),
+                },
+            },
+            {
+                id: 'wait-1',
+                kind: 'wait',
+                name: 'Hold for Review',
+                pos_x: 620,
+                pos_y: 220,
+                config: {
+                    duration: 30,
+                    unit: 'minutes',
+                },
+            },
+            {
+                id: 'email-1',
+                kind: 'email',
+                name: 'Send Review Update',
+                pos_x: 900,
+                pos_y: 220,
+                config: {
+                    to: '{{trigger.email}}',
+                    subject: 'Payment exception review in progress',
+                    body: `Your payment-related request is being reviewed by operations.
+
+Reference: {{trigger.name}}
+Queue: {{trigger.department}}
+
+We will update the case once the review is complete.`,
+                },
+            },
+            {
+                id: 'logger-1',
+                kind: 'logger',
+                name: 'Log Review State',
+                pos_x: 1180,
+                pos_y: 220,
+                config: {
+                    message: 'Payment exception review started for {{trigger.name}}',
+                    level: 'info',
+                },
+            },
+        ],
+        edges: [
+            { from: 'trigger-1', to: 'http-1' },
             { from: 'http-1', to: 'wait-1' },
             { from: 'wait-1', to: 'email-1' },
             { from: 'email-1', to: 'logger-1' },
         ],
         requiredConfig: [
-            'Employee name and email in Trigger',
-            'HTTP endpoint URL for account creation',
-            'API authentication headers if required',
+            'Case intake details in the trigger step',
+            'Operations API endpoint if using the HTTP step',
             'SMTP credentials configured in n8n',
         ],
     },
 ];
 
-// Helper function to get template by ID
 export const getTemplateById = (id: string): WorkflowTemplate | undefined => {
     return templates.find((t) => t.id === id);
 };
 
-// Helper function to get templates by category
-export const getTemplatesByCategory = (category: 'hr' | 'it' | 'general'): WorkflowTemplate[] => {
+export const getTemplatesByCategory = (category: 'general'): WorkflowTemplate[] => {
     return templates.filter((t) => t.category === category);
 };

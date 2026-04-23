@@ -247,7 +247,7 @@ export default function LandingPage() {
                 {/* Footer Deco */}
                 <div className="mt-20 text-center opacity-30">
                     <p className="text-[9px] text-cyan-900 font-mono uppercase tracking-[0.5em]">
-                        HRFlow Automation Systems v2.4.0
+                        BankFlow Platform Baseline
                     </p>
                 </div>
             </div>

@@ -2,7 +2,6 @@
 import express from "express";
 import cors from "cors";
 import routes from "./routes";
-import webhookRoutes from "./routes/webhookRoutes";
 import { requestIdMiddleware } from "./middleware/requestIdMiddleware";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 
@@ -15,11 +14,8 @@ app.use(requestIdMiddleware);
 
 // Simple health check route
 app.get("/health", (req, res) => {
-res.json({ status: "ok", service: "HRFlow backend" });
+res.json({ status: "ok", service: "BankFlow backend" });
 });
-
-// Mount webhook routes at root level (no /api prefix for clean external URLs)
-app.use("/webhooks", webhookRoutes);
 
 // Mount all API routes under /api
 app.use("/api", routes);

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LuX, LuArrowRight, LuUsers, LuServer, LuZap, LuMail, LuDatabase, LuClock, LuFileText, LuTerminal, LuGlobe, LuSplit, LuBox } from 'react-icons/lu';
+import { LuX, LuArrowRight, LuBriefcaseBusiness, LuZap, LuMail, LuDatabase, LuClock, LuTerminal, LuGlobe, LuSplit, LuBox } from 'react-icons/lu';
 import { templates, type WorkflowTemplate } from '../data/templates';
 
 interface TemplateSelectionModalProps {
@@ -12,15 +12,12 @@ interface TemplateSelectionModalProps {
 
 // Category icons and colors
 const categoryConfig = {
-    hr: { icon: LuUsers, color: 'text-blue-400', bgColor: 'bg-blue-400/10', borderColor: 'border-blue-400/30' },
-    it: { icon: LuServer, color: 'text-green-400', bgColor: 'bg-green-400/10', borderColor: 'border-green-400/30' },
-    general: { icon: LuBox, color: 'text-slate-400', bgColor: 'bg-slate-400/10', borderColor: 'border-slate-400/30' },
+    general: { icon: LuBriefcaseBusiness, color: 'text-cyan-400', bgColor: 'bg-cyan-400/10', borderColor: 'border-cyan-400/30' },
 };
 
 // Node kind icons
 const nodeIcons: Record<string, React.ElementType> = {
     trigger: LuZap,
-    cv_parser: LuFileText,
     email: LuMail,
     http: LuGlobe,
     condition: LuSplit,
@@ -62,7 +59,7 @@ const TemplateSelectionModal: React.FC<TemplateSelectionModalProps> = ({
                     <div className="flex items-center justify-between p-6 border-b border-white/10 bg-gradient-to-r from-cyan-950/30 to-transparent">
                         <div>
                             <h2 className="text-xl font-bold text-white">Choose a Template</h2>
-                            <p className="text-sm text-slate-400 mt-1">Start with a pre-built workflow to save time</p>
+                            <p className="text-sm text-slate-400 mt-1">Start with a case-flow starter instead of a blank canvas</p>
                         </div>
                         <button
                             onClick={onClose}

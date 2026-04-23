@@ -11,13 +11,9 @@
 import { Request, Response, NextFunction } from "express";
 import * as workflowService from "../services/workflowService";
 import * as auditService from "../services/auditService";
-import * as googleFormHelper from "../utils/googleFormHelper";
-import logger from "../lib/logger";
 import {
   createNotFoundError,
   createValidationError,
-  ErrorCodes,
-  AppError,
 } from "../types/errors";
 
 /**
@@ -625,46 +621,3 @@ export async function duplicateWorkflow(req: Request, res: Response, next: NextF
   }
 }
 
-/**
- * GET /api/workflows/:id/form-url
- * Generate a pre-filled Google Form URL for this workflow
- */
-export async function getWorkflowFormUrl(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { id } = req.params;
-
-    const workflowId = Number(id);
-    if (Number.isNaN(workflowId)) {
-      throw createValidationError("Invalid workflow ID");
-    }
-
-    // Check if Google Form is configured
-    if (!googleFormHelper.isGoogleFormConfigured()) {
-      throw new AppError(
-        "Google Form integration not configured",
-        503,
-        ErrorCodes.N8N_UNAVAILABLE
-      );
-    }
-
-    // Verify workflow exists
-    const workflow = await workflowService.getWorkflowById(workflowId);
-    if (!workflow) {
-      throw createNotFoundError("Workflow", workflowId);
-    }
-
-    // Generate pre-filled form URL
-    const formUrl = googleFormHelper.generateGoogleFormUrl(workflowId);
-
-    return res.status(200).json({
-      data: {
-        formUrl,
-        workflowId,
-        workflowName: workflow.name,
-        configured: true,
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-}

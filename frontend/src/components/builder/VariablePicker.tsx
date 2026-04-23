@@ -29,16 +29,15 @@ function getVariablesForNodeKind(kind: string, nodeId: number, nodeName: string)
 
     switch (kind.toLowerCase()) {
         case "trigger":
-            // Flat structure for trigger variables matching normalized Google Form data
             return [
-                { label: "Name", value: `{{${basePath}.name}}`, description: "Full name" },
-                { label: "Email", value: `{{${basePath}.email}}`, description: "Email address" },
+                { label: "Case Name", value: `{{${basePath}.name}}`, description: "Primary case label" },
+                { label: "Contact Email", value: `{{${basePath}.email}}`, description: "Contact email address" },
                 { label: "Phone", value: `{{${basePath}.phone}}`, description: "Phone number" },
-                { label: "Department", value: `{{${basePath}.department}}`, description: "Department/Team" },
-                { label: "Role", value: `{{${basePath}.role}}`, description: "Job title/position" },
-                { label: "Resume URL", value: `{{${basePath}.resume_url}}`, description: "Uploaded resume file" },
-                { label: "Start Date", value: `{{${basePath}.start_date}}`, description: "Start/Join date" },
-                { label: "Manager Email", value: `{{${basePath}.manager_email}}`, description: "Manager's email" },
+                { label: "Queue", value: `{{${basePath}.department}}`, description: "Assigned queue or team" },
+                { label: "Case Type", value: `{{${basePath}.role}}`, description: "Case or review type" },
+                { label: "Document URL", value: `{{${basePath}.resume_url}}`, description: "Linked supporting document" },
+                { label: "Requested Date", value: `{{${basePath}.start_date}}`, description: "Requested or event date" },
+                { label: "Escalation Email", value: `{{${basePath}.manager_email}}`, description: "Escalation contact" },
             ];
         case "http":
             return [
@@ -52,12 +51,12 @@ function getVariablesForNodeKind(kind: string, nodeId: number, nodeName: string)
             ];
         case "cv_parse":
             return [
-                { label: "Full Name", value: `{{${basePath}.name}}`, description: "Candidate full name" },
-                { label: "Email", value: `{{${basePath}.email}}`, description: "Candidate email" },
+                { label: "Full Name", value: `{{${basePath}.name}}`, description: "Parsed document name" },
+                { label: "Email", value: `{{${basePath}.email}}`, description: "Parsed email" },
                 { label: "Phone", value: `{{${basePath}.phone}}`, description: "Phone number" },
                 { label: "Skills", value: `{{${basePath}.skills}}`, description: "Skills list" },
                 { label: "Education", value: `{{${basePath}.education}}`, description: "Education details" },
-                { label: "Experience", value: `{{${basePath}.experience}}`, description: "Work experience" },
+                { label: "Experience", value: `{{${basePath}.experience}}`, description: "Experience summary" },
             ];
         case "variable":
             return [

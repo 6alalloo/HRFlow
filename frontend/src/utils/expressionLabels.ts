@@ -1,41 +1,33 @@
 /**
  * Expression Labels Utility
  *
- * Converts HRFlow template expressions to user-friendly labels
+ * Converts template expressions to user-friendly labels
  * for display on node cards in the workflow builder.
  */
 
-// Map of HRFlow expressions to friendly labels
+// Map template expressions to friendly labels
 export const expressionLabels: Record<string, string> = {
   // Trigger variables
-  '{{trigger.email}}': 'Employee Email',
-  '{{trigger.name}}': 'Employee Name',
-  '{{trigger.department}}': 'Department',
-  '{{trigger.role}}': 'Role',
-  '{{trigger.startDate}}': 'Start Date',
-  '{{trigger.managerEmail}}': 'Manager Email',
+  '{{trigger.email}}': 'Contact Email',
+  '{{trigger.name}}': 'Case Name',
+  '{{trigger.department}}': 'Queue',
+  '{{trigger.role}}': 'Case Type',
+  '{{trigger.startDate}}': 'Requested Date',
+  '{{trigger.managerEmail}}': 'Escalation Email',
   '{{trigger.phone}}': 'Phone Number',
-  '{{trigger.resume_url}}': 'Resume URL',
-  '{{trigger.cvFile}}': 'CV File',
-  '{{trigger.customDepartment}}': 'Custom Department',
-
-  // CV Parser output variables
-  '{{steps.Parse CV.email}}': 'CV Email',
-  '{{steps.Parse CV.name}}': 'CV Name',
-  '{{steps.Parse CV.phone}}': 'CV Phone',
-  '{{steps.Parse CV.skills}}': 'CV Skills',
-  '{{steps.Parse CV.education}}': 'CV Education',
-  '{{steps.Parse CV.experience_years}}': 'CV Experience',
+  '{{trigger.resume_url}}': 'Document URL',
+  '{{trigger.cvFile}}': 'Uploaded File',
+  '{{trigger.customDepartment}}': 'Custom Queue',
 
   // Database node variables
   '{{steps.Add Employee.user_id}}': 'User ID',
-  '{{steps.Add Employee.employee_id}}': 'Employee ID',
+  '{{steps.Add Employee.employee_id}}': 'Record ID',
 };
 
 /**
  * Convert an expression to a friendly label
  * @param expression - The raw expression (e.g., '{{trigger.email}}')
- * @returns The friendly label (e.g., 'Employee Email') or the original if not found
+ * @returns The friendly label or the original if not found
  */
 export function getFriendlyLabel(expression: string): string {
   if (!expression || typeof expression !== 'string') {
@@ -133,16 +125,6 @@ export function getConfigPreview(
         const fieldLabel = getFriendlyLabel(String(config.field));
         const op = config.operator || '==';
         parts.push(`If ${fieldLabel} ${op}`);
-      }
-      break;
-
-    case 'cv_parser':
-    case 'cv_parse':
-      if (config.fileId) {
-        parts.push('File uploaded');
-      } else if (config.fileSource || config.fileUrl) {
-        const src = String(config.fileSource || config.fileUrl);
-        parts.push(getFriendlyLabel(src));
       }
       break;
 

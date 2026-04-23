@@ -5,6 +5,8 @@ import { authenticate } from "../middleware/authMiddleware";
 
 const router = Router();
 
+router.use(authenticate);
+
 // GET /api/executions
 router.get("/", executionController.getAllExecutions);
 
@@ -15,6 +17,6 @@ router.get("/:id", executionController.getExecutionById);
 router.get("/:id/steps", executionController.getExecutionSteps);
 
 // DELETE /api/executions/:id
-router.delete("/:id", authenticate, executionController.deleteExecution);
+router.delete("/:id", executionController.deleteExecution);
 
 export default router;

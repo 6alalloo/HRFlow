@@ -320,21 +320,21 @@ const ExecutionDetailPage: React.FC = () => {
                       </div>
                     )}
 
-                    {/* Employee Info Card (for trigger nodes) */}
+                    {/* Trigger Input Card */}
                     {employee && Object.keys(employee).length > 0 && (
                       <div className="bg-gradient-to-br from-blue-500/5 to-cyan-500/5 border border-blue-500/20 rounded-xl overflow-hidden">
                         <div className="px-4 py-3 border-b border-white/5 bg-white/5">
                           <span className="text-xs font-bold text-blue-400 uppercase tracking-widest flex items-center gap-2">
-                            <FiActivity /> Employee Information
+                            <FiActivity /> Trigger Input
                           </span>
                         </div>
                         <div className="p-4">
-                          <DataRow label="Name" value={employee.name} />
-                          <DataRow label="Email" value={employee.email} />
-                          <DataRow label="Department" value={employee.department} />
-                          <DataRow label="Role" value={employee.role} />
-                          <DataRow label="Start Date" value={employee.startDate} />
-                          <DataRow label="Manager" value={employee.managerEmail} />
+                          <DataRow label="Case Name" value={employee.name} />
+                          <DataRow label="Contact Email" value={employee.email} />
+                          <DataRow label="Queue" value={employee.department} />
+                          <DataRow label="Case Type" value={employee.role} />
+                          <DataRow label="Requested Date" value={employee.startDate} />
+                          <DataRow label="Escalation Email" value={employee.managerEmail} />
                         </div>
                       </div>
                     )}

@@ -1,169 +1,69 @@
-# HRFlow Setup Guide
+# Setup Guide
 
-## Quick Start
+This setup guide intentionally uses placeholders and local-only instructions. It does not ship reusable credentials, public tunnels, or backup restores.
 
-### For Daily Development (Recommended)
+## Prerequisites
+
+- Docker Desktop
+- Node.js and npm
+- a PostgreSQL instance for local development if you are not using the containerized one
+- an n8n instance you control if you want to exercise workflow integration
+
+## Environment Files
+
+Create a root `.env` from `.env.example` and replace every placeholder value before starting the stack.
+
+Recommended minimum variables:
+
+- `N8N_API_KEY`
+- `N8N_POSTGRES_CREDENTIAL_ID`
+- `N8N_SMTP_CREDENTIAL_ID`
+- `JWT_SECRET`
+
+Do not commit populated `.env` files or exported runtime backups.
+
+## Development Workflow
+
+### Run infrastructure with Docker
+
 ```bash
-# Start infrastructure services only
-docker-compose up -d postgres n8n cv-parser tunnel
-
-# Run backend & frontend locally (hot reload)
-npm run dev
-```
-
-**Access:**
-- Frontend: http://localhost:5173 (Vite dev server)
-- Backend: http://localhost:4000
-- n8n: http://localhost:5678
-- Public URL: https://hrflowautomation.serveousercontent.com
-
-### For Deployment / Submission
-```bash
-# Start everything in Docker
 docker-compose up -d
 ```
 
-**Access:**
-- Frontend: http://localhost (port 80, served by Nginx)
-- Backend: http://localhost:4000
-- n8n: http://localhost:5678
-- Public URL: https://hrflowautomation.serveousercontent.com
+### Run backend and frontend locally
 
----
+```bash
+npm run dev
+```
 
-## Environment Configuration
+Default local endpoints:
 
-### Two Separate Environments
-
-**Backend `.env` (backend/.env)**
-- Used for: Local `npm run dev`
-- Connects to: Local PostgreSQL + Dockerized n8n
-- Database: `postgresql://postgres:Talal.37766471!@localhost:5432/HRFlow`
+- frontend: `http://localhost:5173`
+- backend: `http://localhost:4000`
 - n8n: `http://localhost:5678`
 
-**Root `.env` (.env)**
-- Used for: docker-compose reference only
-- Not loaded by backend when in Docker (Docker env vars override)
+Adjust ports and service credentials to match your local setup.
 
-**Docker containers use:**
-- Database: `postgresql://hrflow:hrflow123@postgres:5432/HRFlow` (hardcoded in docker-compose.yml)
-- n8n: `http://n8n:5678` (Docker service name)
+## Operational Notes
 
-### Why Two Different Databases?
-
-You have **two separate PostgreSQL instances**:
-1. **Local PostgreSQL** (not Docker) - for `npm run dev`
-   - User: `postgres`, Password: `Talal.37766471!`
-   - Used by backend when running locally
-
-2. **Docker PostgreSQL** (in container) - for `docker-compose up`
-   - User: `hrflow`, Password: `hrflow123`
-   - Used by backend when running in Docker
-
-Both have the same data structure (tables, schema) but are separate databases.
-
----
-
-## Default Credentials
-
-**Admin User:**
-- Email: `admin@hrflow.local`
-- Password: `admin123`
-
-**Operator User:**
-- Email: `operator@hrflow.local`
-- Password: `operator123`
-
-**n8n:**
-- Username: `admin`
-- Password: `admin123`
-
----
-
-## File Structure
-
-```
-HRFlow/
-├── .env                      # Root env (for docker-compose reference)
-├── backend/
-│   ├── .env                  # Backend env (for local npm run dev)
-│   └── ...
-├── frontend/
-│   └── ...
-├── docker-compose.yml        # Single consolidated compose file
-└── SETUP.md                  # This file
-```
-
----
-
-## Common Commands
-
-### Development
-```bash
-# Start just the infrastructure
-docker-compose up -d postgres n8n cv-parser tunnel
-
-# Run backend+frontend locally
-npm run dev
-
-# Stop infrastructure when done
-docker-compose stop
-```
-
-### Docker Full Stack
-```bash
-# Start everything
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop everything
-docker-compose down
-
-# Reset database (WARNING: deletes all data)
-docker-compose down -v
-```
-
-### Debugging
-```bash
-# Check service status
-docker-compose ps
-
-# View specific service logs
-docker logs hrflow-backend --tail 50
-docker logs hrflow-n8n --tail 50
-docker logs hrflow-tunnel --tail 50
-
-# Execute commands in container
-docker exec -it hrflow-backend sh
-```
-
----
+- The backend reads its environment from local configuration, not from committed secrets.
+- n8n credentials and API keys must be provisioned in your own environment.
+- Runtime uploads under `backend/uploads/` are treated as local artifacts and should not be committed.
 
 ## Troubleshooting
 
-### "Cannot find module 'winston'" error in Docker
-```bash
-docker exec hrflow-backend npm install
-docker-compose restart backend
-```
+### Services fail to start
 
-### Backend can't connect to database
-- **In Docker**: Check that postgres container is healthy: `docker ps`
-- **Local npm run dev**: Check that local PostgreSQL is running on port 5432
+- check `docker-compose ps`
+- inspect container logs with `docker logs <container-name>`
+- confirm your `.env` values are present and valid
 
-### Tunnel not working
-- Check logs: `docker logs hrflow-tunnel --tail 20`
-- Should see: "Forwarding HTTP traffic from https://hrflowautomation.serveousercontent.com"
+### Backend cannot authenticate requests
 
-### Port conflicts
-- Make sure no other services are using ports: 80, 4000, 5432, 5678, 8000
+- confirm `JWT_SECRET` is set
+- ensure you are sending `Authorization: Bearer <token>`
 
----
+### n8n integration errors
 
-## Notes
-
-- The `.gitattributes` file ensures shell scripts always use LF line endings (prevents Windows CRLF issues)
-- The `backend/.env` file is **excluded** from Docker mounts - Docker uses environment variables from `docker-compose.yml`
-- Tunnel service creates a persistent SSH tunnel to Serveo for public internet access
+- verify the n8n base URL is reachable from the backend
+- verify the API key and credential identifiers match your own n8n instance

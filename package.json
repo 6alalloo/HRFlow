@@ -4,5 +4,8 @@
   },
   "scripts": {
     "dev": "concurrently \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\""
+  },
+  "dependencies": {
+    "docx": "^9.6.1"
   }
 }

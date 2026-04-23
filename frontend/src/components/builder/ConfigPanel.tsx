@@ -9,10 +9,9 @@ import {
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { CONDITION_OPERATORS, CV_PARSER_FIELDS } from '../../types/nodeConfigs';
-import { fetchDatabaseTables, type DatabaseTable, fetchWorkflowFormUrl } from '../../api/workflows';
+import { fetchDatabaseTables, type DatabaseTable } from '../../api/workflows';
 import { apiUploadFile } from '../../api/apiClient';
 import type { NodeKind } from '../../types/nodeConfigs';
-import VariableGrid from './VariableGrid';
 import SmartField from './SmartField';
 
 // Node structure from the workflow builder
@@ -26,7 +25,6 @@ interface WorkflowNode {
 type ConfigPanelProps = {
     isOpen: boolean;
     node: WorkflowNode | null;
-    workflowId: number;
     onClose: () => void;
     onUpdate: (id: number, update: { config?: Record<string, unknown>; name?: string }) => void;
     onDelete: (id: number) => void;
@@ -212,165 +210,6 @@ const InfoBox: React.FC<{
     );
 };
 
-// Google Form Trigger Section Component
-const GoogleFormTriggerSection: React.FC<{ workflowId: number }> = ({ workflowId }) => {
-    const [formUrl, setFormUrl] = useState<string | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [copied, setCopied] = useState(false);
-
-    useEffect(() => {
-        async function loadFormUrl() {
-            try {
-                setLoading(true);
-                setError(null);
-                const url = await fetchWorkflowFormUrl(workflowId);
-                setFormUrl(url);
-            } catch (err) {
-                console.error('[GoogleFormTriggerSection] Error loading form URL:', err);
-                setError(err instanceof Error ? err.message : 'Failed to load form URL');
-            } finally {
-                setLoading(false);
-            }
-        }
-        loadFormUrl();
-    }, [workflowId]);
-
-    const handleCopyLink = () => {
-        if (formUrl) {
-            navigator.clipboard.writeText(formUrl);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-        }
-    };
-
-    return (
-        <div className="space-y-4 border-t border-white/5 pt-4">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <LuGlobe className="w-4 h-4 text-cyan-glow" />
-                Google Form Integration
-            </h3>
-
-            {loading && (
-                <div className="flex items-center gap-2 text-sm text-slate-400">
-                    <LuLoader className="w-4 h-4 animate-spin" />
-                    Loading form URL...
-                </div>
-            )}
-
-            {error && (
-                <InfoBox variant="warning">
-                    <div className="flex items-start gap-2">
-                        <LuInfo className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                        <div>
-                            <strong>Error Loading Form</strong>
-                            <p className="mt-1 opacity-80">{error}</p>
-                        </div>
-                    </div>
-                </InfoBox>
-            )}
-
-            {!loading && !error && !formUrl && (
-                <InfoBox variant="warning">
-                    <div className="flex items-start gap-2">
-                        <LuInfo className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                        <div>
-                            <strong>Google Form Not Configured</strong>
-                            <p className="mt-1 opacity-80">
-                                Please contact your administrator to configure the Google Form integration.
-                            </p>
-                        </div>
-                    </div>
-                </InfoBox>
-            )}
-
-            {!loading && !error && formUrl && (
-                <>
-                    {/* Info box */}
-                    <InfoBox variant="info">
-                        <div className="flex items-start gap-2">
-                            <LuInfo className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                            <div>
-                                <strong>Google Form Trigger</strong>
-                                <p className="mt-1 opacity-80">
-                                    This workflow will automatically run when someone submits the Google Form
-                                    using the link below.
-                                </p>
-                            </div>
-                        </div>
-                    </InfoBox>
-
-                    <div className="space-y-2 pt-2 border-t border-white/5">
-                        <h4 className="text-xs font-bold text-white uppercase tracking-wider">
-                            Available Trigger Variables
-                        </h4>
-                        <VariableGrid />
-                    </div>
-
-                    {/* Copy Link Section */}
-                    <div className="space-y-3 pt-2 border-t border-white/5">
-                        <h4 className="text-xs font-bold text-white uppercase tracking-wider">
-                            Share this link with candidates
-                        </h4>
-
-                        <div className="flex gap-2">
-                            <input
-                                type="text"
-                                value={formUrl}
-                                readOnly
-                                className="flex-1 px-3 py-2 bg-gray-900 border border-white/10 rounded-lg text-cyan-400 font-mono text-xs focus:outline-none select-all cursor-pointer truncate"
-                                onClick={(e) => (e.target as HTMLInputElement).select()}
-                            />
-                            <button
-                                onClick={handleCopyLink}
-                                className="px-4 py-2 bg-cyan-400 hover:bg-cyan-300 text-navy-950 font-semibold rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap"
-                            >
-                                {copied ? (
-                                    <>
-                                        <LuCheck className="w-4 h-4" />
-                                        Copied!
-                                    </>
-                                ) : (
-                                    <>
-                                        <LuCopy className="w-4 h-4" />
-                                        Copy
-                                    </>
-                                )}
-                            </button>
-                        </div>
-
-                        <a
-                            href={formUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center justify-center gap-2 w-full px-4 py-2 bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-lg transition-colors text-sm"
-                        >
-                            <LuExternalLink className="w-4 h-4" />
-                            Preview Form
-                        </a>
-                    </div>
-
-                    {/* How it works */}
-                    <InfoBox variant="tip">
-                        <div className="flex items-start gap-2">
-                            <LuInfo className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                            <div>
-                                <strong>How it works</strong>
-                                <ul className="mt-1 space-y-0.5 opacity-80 list-disc list-inside text-[10px]">
-                                    <li>Candidate clicks the link above</li>
-                                    <li>Fills out the standardized Google Form</li>
-                                    <li>On submit, this workflow automatically starts</li>
-                                    <li>Check Executions page to monitor results</li>
-                                </ul>
-                            </div>
-                        </div>
-                    </InfoBox>
-                </>
-            )}
-        </div>
-    );
-};
-
 // Checkbox Group Component
 const CheckboxGroup: React.FC<{
     options: { value: string; label: string }[];
@@ -489,7 +328,7 @@ const CheckboxGroup: React.FC<{
 //     );
 // };
 
-const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, workflowId, onClose, onUpdate, onDelete }) => {
+const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, onClose, onUpdate, onDelete }) => {
     // Use useMemo to derive initial config, avoiding setState in effect
     const initialConfig = useMemo(() => node?.config || {}, [node]);
     const [localConfig, setLocalConfig] = useState<Record<string, unknown>>({});
@@ -630,8 +469,6 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, workflowId, onC
     const renderForm = () => {
         switch (node.kind) {
             case 'trigger': {
-                const triggerSource = getString(localConfig, 'triggerSource', 'manual');
-
                 return (
                     <div className="space-y-5">
                         <InfoBox variant="info">
@@ -644,97 +481,66 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, workflowId, onC
                             </div>
                         </InfoBox>
 
-                        {/* Trigger Source Selector - Segmented Control */}
-                        <div className="flex bg-navy-950 p-1 rounded-lg border border-white/10 w-full mb-6">
-                            <button
-                                type="button"
-                                onClick={() => handleChange('triggerSource', 'manual')}
-                                className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-semibold rounded-md transition-all ${
-                                    triggerSource === 'manual'
-                                        ? 'bg-cyan-glow/20 text-cyan-glow shadow-sm border border-cyan-glow/20'
-                                        : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-                                }`}
-                            >
-                                <LuZap className="w-4 h-4" />
-                                Manual Trigger
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => handleChange('triggerSource', 'google_form')}
-                                className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-semibold rounded-md transition-all ${
-                                    triggerSource === 'google_form'
-                                        ? 'bg-purple-500/20 text-purple-300 shadow-sm border border-purple-500/20'
-                                        : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-                                }`}
-                            >
-                                <LuGlobe className="w-4 h-4" />
-                                Google Form
-                            </button>
-                        </div>
-
-                        {/* Conditional rendering based on trigger source */}
-                        {triggerSource === 'manual' && (
-                            <div className="space-y-4 border-t border-white/5 pt-4">
+                        <div className="space-y-4 border-t border-white/5 pt-4">
                                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
                                     <LuUser className="w-4 h-4 text-cyan-glow" />
-                                    Employee Information
+                                    Case Intake
                                 </h3>
 
-                                <FormField label="Full Name" icon={<LuUser className="w-3 h-3" />}>
+                                <FormField label="Case Name" icon={<LuUser className="w-3 h-3" />}>
                                     <TextInput
                                         value={getString(localConfig, 'name')}
                                         onChange={(val) => handleChange('name', val)}
-                                        placeholder="e.g. John Doe"
+                                        placeholder="e.g. Case-AML-1042"
                                         icon={<LuUser className="w-4 h-4" />}
                                     />
                                 </FormField>
 
-                                <FormField label="Email Address" icon={<LuMail className="w-3 h-3" />}>
+                                <FormField label="Contact Email" icon={<LuMail className="w-3 h-3" />}>
                                     <TextInput
                                         value={getString(localConfig, 'email')}
                                         onChange={(val) => handleChange('email', val)}
-                                        placeholder="e.g. john.doe@company.com"
+                                        placeholder="e.g. alerts@bankflow.local"
                                         icon={<LuMail className="w-4 h-4" />}
                                     />
                                 </FormField>
 
                                 <div className="grid grid-cols-2 gap-3">
-                                    <FormField label="Department">
+                                    <FormField label="Queue">
                                         <Select
                                             value={getString(localConfig, 'department')}
                                             onChange={(val) => handleChange('department', val)}
                                             options={[
-                                                { value: '', label: 'Select department...' },
-                                                { value: 'Engineering', label: 'Engineering' },
-                                                { value: 'Marketing', label: 'Marketing' },
-                                                { value: 'Sales', label: 'Sales' },
-                                                { value: 'HR', label: 'Human Resources' },
+                                                { value: '', label: 'Select queue...' },
+                                                { value: 'Financial Crime Operations', label: 'Financial Crime Operations' },
+                                                { value: 'Payments Operations', label: 'Payments Operations' },
+                                                { value: 'Compliance', label: 'Compliance' },
+                                                { value: 'Operations Control', label: 'Operations Control' },
                                                 { value: 'Finance', label: 'Finance' },
-                                                { value: 'Operations', label: 'Operations' },
                                                 { value: 'Other', label: 'Other' },
                                             ]}
                                         />
                                     </FormField>
-                                    <FormField label="Role/Position">
+                                    <FormField label="Case Type">
                                         <TextInput
                                             value={getString(localConfig, 'role')}
                                             onChange={(val) => handleChange('role', val)}
-                                            placeholder="e.g. Developer"
+                                            placeholder="e.g. Payment Exception Review"
                                         />
                                     </FormField>
                                 </div>
 
                                 {getString(localConfig, 'department') === 'Other' && (
-                                    <FormField label="Custom Department">
+                                    <FormField label="Custom Queue">
                                         <TextInput
                                             value={getString(localConfig, 'customDepartment')}
                                             onChange={(val) => handleChange('customDepartment', val)}
-                                            placeholder="Enter department name"
+                                            placeholder="Enter queue name"
                                         />
                                     </FormField>
                                 )}
 
-                                <FormField label="Start Date" icon={<LuCalendar className="w-3 h-3" />}>
+                                <FormField label="Requested Date" icon={<LuCalendar className="w-3 h-3" />}>
                                     <div className="relative">
                                         <DatePicker
                                             selected={getString(localConfig, 'startDate') ? new Date(getString(localConfig, 'startDate')) : null}
@@ -754,23 +560,17 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, workflowId, onC
                                             calendarClassName="bg-navy-900 border border-white/10 rounded-xl shadow-2xl"
                                             wrapperClassName="w-full"
                                             showPopperArrow={false}
-                                            minDate={new Date()}
                                         />
                                         <LuCalendar className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
                                     </div>
                                 </FormField>
                             </div>
-                        )}
-
-                        {triggerSource === 'google_form' && (
-                            <GoogleFormTriggerSection workflowId={workflowId} />
-                        )}
                     </div>
                 );
             }
 
             case 'email': {
-                const recipientType = getString(localConfig, 'recipientType', 'employee');
+                const recipientType = getString(localConfig, 'recipientType', 'case_contact');
                 return (
                     <div className="space-y-5">
                         <InfoBox variant="info">
@@ -788,14 +588,14 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, workflowId, onC
 
                             <div className="space-y-2">
                                 <QuickActionButton
-                                    label="The Employee"
-                                    description="Send to the employee from the trigger step"
+                                    label="Case Contact"
+                                    description="Send to the contact email from intake"
                                     icon={<LuUser className="w-4 h-4" />}
                                     onClick={() => {
-                                        handleChange('recipientType', 'employee');
+                                        handleChange('recipientType', 'case_contact');
                                         handleChange('to', '{{trigger.email}}');
                                     }}
-                                    selected={recipientType === 'employee'}
+                                    selected={recipientType === 'case_contact'}
                                 />
                                 <QuickActionButton
                                     label="Custom Recipient"
@@ -814,7 +614,7 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, workflowId, onC
                                     <SmartField
                                         value={getString(localConfig, 'to')}
                                         onChange={(val) => handleChange('to', val)}
-                                        placeholder="e.g. hr@company.com"
+                                        placeholder="e.g. operations@bankflow.local"
                                     />
                                 </FormField>
                             )}
@@ -823,7 +623,7 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, workflowId, onC
                                 <TextInput
                                     value={getString(localConfig, 'subject')}
                                     onChange={(val) => handleChange('subject', val)}
-                                    placeholder="e.g. Welcome to the team!"
+                                    placeholder="e.g. Case update available"
                                 />
                             </FormField>
 
@@ -834,19 +634,19 @@ const ConfigPanel: React.FC<ConfigPanelProps> = ({ isOpen, node, workflowId, onC
                                     onChange={(val) => handleChange('body', val)}
                                     placeholder="Hello,
 
-Welcome to our company! We're excited to have you join the team.
+Your case has moved to the next review stage.
 
 Best regards,
-HR Team"
+Operations Team"
                                 />
                             </FormField>
 
                             <div className="flex flex-wrap gap-2">
                                 {[
-                                    'Welcome to our team!',
-                                    'Your onboarding details',
-                                    'Important: Next steps',
-                                    'Getting started guide',
+                                    'Case update available',
+                                    'Action required on your case',
+                                    'Review completed',
+                                    'Escalation notice',
                                 ].map((template) => (
                                     <button
                                         key={template}
@@ -860,7 +660,7 @@ HR Team"
                             </div>
 
                             <InfoBox variant="tip">
-                                <strong>Tip:</strong> You can personalize the email by referencing variables like employee name, department, or start date.
+                                <strong>Tip:</strong> You can personalize the email with values like case name, queue, case type, or requested date.
                             </InfoBox>
                         </div>
                     </div>
@@ -898,14 +698,14 @@ HR Team"
                                     selected={useCase === 'slack'}
                                 />
                                 <QuickActionButton
-                                    label="Update HR System"
-                                    description="Send employee data to your HRIS"
+                                    label="Update Case System"
+                                    description="Send case intake data to an external platform"
                                     icon={<LuDatabase className="w-4 h-4" />}
                                     onClick={() => {
-                                        handleChange('useCase', 'hris');
+                                        handleChange('useCase', 'case_api');
                                         handleChange('method', 'POST');
                                     }}
-                                    selected={useCase === 'hris'}
+                                    selected={useCase === 'case_api'}
                                 />
                                 <QuickActionButton
                                     label="Custom API Request"
@@ -933,23 +733,23 @@ HR Team"
                                                 handleChange('slackMessage', val);
                                                 handleChange('body', JSON.stringify({ text: val }));
                                             }}
-                                            placeholder="New employee joining: John Doe in Engineering"
+                                            placeholder="New payment exception case entered the queue"
                                         />
                                     </FormField>
                                 </>
                             )}
 
-                            {useCase === 'hris' && (
+                            {useCase === 'case_api' && (
                                 <>
-                                    <FormField label="API Endpoint URL" hint="The URL of your HR system's API">
+                                    <FormField label="API Endpoint URL" hint="The URL of your case platform or service">
                                         <SmartField
                                             value={getString(localConfig, 'url')}
                                             onChange={(val) => handleChange('url', val)}
-                                            placeholder="https://api.yourhris.com/employees"
+                                            placeholder="https://api.yourplatform.com/cases"
                                         />
                                     </FormField>
                                     <InfoBox variant="success">
-                                        Employee data from the trigger step will be automatically sent to this endpoint.
+                                        Trigger data from the intake step will be available for this request.
                                     </InfoBox>
                                 </>
                             )}
@@ -1060,7 +860,7 @@ HR Team"
                                         value={getString(localConfig, 'filterField', 'email')}
                                         onChange={(val) => handleChange('filterField', val)}
                                         options={[
-                                            { value: 'email', label: 'Employee Email (from trigger)' },
+                                            { value: 'email', label: 'Contact Email (from trigger)' },
                                             { value: 'id', label: 'Record ID' },
                                             { value: 'custom', label: 'Custom filter' },
                                         ]}
@@ -1079,7 +879,7 @@ HR Team"
 
                             {operation !== 'query' && (
                                 <InfoBox variant="success">
-                                    Employee data from the trigger step will be used to populate the record fields.
+                                    Trigger data from the intake step can be mapped into record fields.
                                 </InfoBox>
                             )}
                         </div>
@@ -1107,7 +907,7 @@ HR Team"
 
                             <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-4">
                                 <div className="text-sm text-slate-300">
-                                    <span className="text-white font-medium">IF</span> the employee's...
+                                    <span className="text-white font-medium">IF</span> the case data...
                                 </div>
 
                                 <FormField label="Field to Check">
@@ -1373,7 +1173,7 @@ HR Team"
                                     rows={3}
                                     value={getString(localConfig, 'message')}
                                     onChange={(val) => handleChange('message', val)}
-                                    placeholder="e.g. Employee onboarding started for new hire"
+                                    placeholder="e.g. Case review started and assigned"
                                 />
                             </FormField>
 
@@ -1383,7 +1183,7 @@ HR Team"
                             <div className="flex flex-wrap gap-2">
                                 {[
                                     'Workflow step completed',
-                                    'Processing employee data',
+                                    'Processing case data',
                                     'Sending notification',
                                     'Task completed successfully',
                                 ].map((template) => (
@@ -1456,7 +1256,7 @@ HR Team"
                                             value={getString(localConfig, 'inputField', 'trigger.startDate')}
                                             onChange={(val) => handleChange('inputField', `{{${val}}}`)}
                                             options={[
-                                                { value: 'trigger.startDate', label: "Employee's Start Date" },
+                                                { value: 'trigger.startDate', label: "Requested Date" },
                                                 { value: 'now', label: "Current Date/Time" },
                                             ]}
                                         />
@@ -1490,7 +1290,7 @@ HR Team"
                                         value={getString(localConfig, 'inputField', 'trigger.startDate')}
                                         onChange={(val) => handleChange('inputField', `{{${val}}}`)}
                                         options={[
-                                            { value: 'trigger.startDate', label: "Employee's Start Date" },
+                                            { value: 'trigger.startDate', label: "Requested Date" },
                                             { value: 'now', label: "Current Date/Time" },
                                         ]}
                                     />
@@ -1548,8 +1348,8 @@ HR Team"
                                     selected={variableAction === 'store'}
                                 />
                                 <QuickActionButton
-                                    label="Copy from Employee Data"
-                                    description="Save employee info for later use"
+                                    label="Copy from Trigger Data"
+                                    description="Save case intake values for later use"
                                     icon={<LuUser className="w-4 h-4" />}
                                     onClick={() => handleChange('variableAction', 'copy')}
                                     selected={variableAction === 'copy'}
@@ -1582,11 +1382,11 @@ HR Team"
                                             value={getString(localConfig, 'copyField', 'email')}
                                             onChange={(val) => handleChange('copyField', val)}
                                             options={[
-                                                { value: 'email', label: 'Employee Email' },
-                                                { value: 'name', label: 'Employee Name' },
-                                                { value: 'department', label: 'Department' },
-                                                { value: 'role', label: 'Role/Position' },
-                                                { value: 'startDate', label: 'Start Date' },
+                                                { value: 'email', label: 'Contact Email' },
+                                                { value: 'name', label: 'Case Name' },
+                                                { value: 'department', label: 'Queue' },
+                                                { value: 'role', label: 'Case Type' },
+                                                { value: 'startDate', label: 'Requested Date' },
                                             ]}
                                         />
                                     </FormField>

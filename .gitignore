@@ -10,6 +10,12 @@ n8n_data/
 .env.local
 .env.*.local
 
+# Runtime and backup artifacts
+n8n-backup.tar.gz
+n8n-database.sql
+backend/uploads/*
+!backend/uploads/.gitkeep
+
 # Node modules
 node_modules/
 

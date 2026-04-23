@@ -11,8 +11,7 @@ import {
 import type { WorkflowApi } from "../../api/workflows";
 import WorkflowSplitLayout from "./WorkflowSplitLayout";
 
-// Employee input form state type
-type EmployeeFormData = {
+type CaseRunFormData = {
   name: string;
   email: string;
   department: string;
@@ -21,7 +20,7 @@ type EmployeeFormData = {
   managerEmail: string;
 };
 
-const EMPTY_FORM: EmployeeFormData = {
+const EMPTY_FORM: CaseRunFormData = {
   name: "",
   email: "",
   department: "",
@@ -30,13 +29,13 @@ const EMPTY_FORM: EmployeeFormData = {
   managerEmail: "",
 };
 
-const SAMPLE_DATA: EmployeeFormData = {
-  name: "John Doe",
-  email: "john.doe@company.com",
-  department: "Engineering",
-  role: "Software Engineer",
+const SAMPLE_DATA: CaseRunFormData = {
+  name: "Case-AML-1042",
+  email: "alerts@bankflow.local",
+  department: "Financial Crime Operations",
+  role: "AML Alert Review",
   startDate: new Date().toISOString().split('T')[0],
-  managerEmail: "manager@company.com",
+  managerEmail: "supervisor@bankflow.local",
 };
 
 // Input field component - defined OUTSIDE of render
@@ -107,8 +106,8 @@ const DeleteConfirmationModal: React.FC<DeleteModalProps> = ({ workflow, isOpen,
 type RunModalProps = {
   workflow: WorkflowApi | null;
   isOpen: boolean;
-  formData: EmployeeFormData;
-  onFormChange: (data: EmployeeFormData) => void;
+  formData: CaseRunFormData;
+  onFormChange: (data: CaseRunFormData) => void;
   onClose: () => void;
   onConfirmRun: () => void;
   isRunning: boolean;
@@ -127,7 +126,7 @@ const ExecuteWorkflowModal: React.FC<RunModalProps> = ({
 }) => {
   if (!isOpen || !workflow) return null;
 
-  const handleFieldChange = (field: keyof EmployeeFormData, value: string) => {
+  const handleFieldChange = (field: keyof CaseRunFormData, value: string) => {
     onFormChange({ ...formData, [field]: value });
   };
 
@@ -170,7 +169,7 @@ const ExecuteWorkflowModal: React.FC<RunModalProps> = ({
             <div className="flex items-center justify-between bg-gradient-to-r from-cyan-500/10 to-blue-500/10 border border-cyan-500/20 rounded-lg p-3">
               <div>
                 <p className="text-sm font-medium text-white">Use Sample Data</p>
-                <p className="text-[10px] text-slate-500">Fill with test employee info</p>
+                <p className="text-[10px] text-slate-500">Fill with sample case intake data</p>
               </div>
               <button
                 type="button"
@@ -181,51 +180,51 @@ const ExecuteWorkflowModal: React.FC<RunModalProps> = ({
               </button>
             </div>
 
-            {/* Employee Form */}
+            {/* Case Intake Form */}
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <FormInput 
-                  label="Employee Name" 
+                  label="Case Name" 
                   value={formData.name}
                   onChange={(v) => handleFieldChange('name', v)}
-                  placeholder="John Doe" 
+                  placeholder="Case-AML-1042" 
                 />
                 <FormInput 
-                  label="Email" 
+                  label="Contact Email" 
                   value={formData.email}
                   onChange={(v) => handleFieldChange('email', v)}
                   type="email" 
-                  placeholder="john@company.com" 
+                  placeholder="alerts@bankflow.local" 
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <FormInput 
-                  label="Department" 
+                  label="Queue" 
                   value={formData.department}
                   onChange={(v) => handleFieldChange('department', v)}
-                  placeholder="Engineering" 
+                  placeholder="Financial Crime Operations" 
                 />
                 <FormInput 
-                  label="Role / Title" 
+                  label="Case Type" 
                   value={formData.role}
                   onChange={(v) => handleFieldChange('role', v)}
-                  placeholder="Software Engineer" 
+                  placeholder="AML Alert Review" 
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <FormInput 
-                  label="Start Date" 
+                  label="Requested Date" 
                   value={formData.startDate}
                   onChange={(v) => handleFieldChange('startDate', v)}
                   type="date" 
                   placeholder="" 
                 />
                 <FormInput 
-                  label="Manager Email" 
+                  label="Escalation Email" 
                   value={formData.managerEmail}
                   onChange={(v) => handleFieldChange('managerEmail', v)}
                   type="email" 
-                  placeholder="manager@company.com" 
+                  placeholder="supervisor@bankflow.local" 
                 />
               </div>
             </div>
@@ -268,7 +267,7 @@ const WorkflowsListPage: React.FC = () => {
   // Run Modal State - now uses form data instead of JSON text
   const [selectedWorkflowForRun, setSelectedWorkflowForRun] = useState<WorkflowApi | null>(null);
   const [isRunModalOpen, setIsRunModalOpen] = useState(false);
-  const [runFormData, setRunFormData] = useState<EmployeeFormData>(EMPTY_FORM);
+  const [runFormData, setRunFormData] = useState<CaseRunFormData>(EMPTY_FORM);
   const [isRunning, setIsRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
 
@@ -374,9 +373,8 @@ const WorkflowsListPage: React.FC = () => {
   const handleConfirmRun = async () => {
     if (!selectedWorkflowForRun) return;
 
-    // Convert form data to the employee object format
     const hasAnyData = Object.values(runFormData).some(v => v.trim() !== '');
-    const inputObj = hasAnyData ? { employee: runFormData } : null;
+    const inputObj = hasAnyData ? runFormData : null;
 
     try {
       setIsRunning(true);

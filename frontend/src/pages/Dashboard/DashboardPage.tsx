@@ -25,7 +25,6 @@ import {
 } from "react-icons/fi";
 import {
     LuZap,
-    LuFileText,
     LuMail,
     LuGlobe,
     LuSplit,
@@ -99,7 +98,6 @@ function formatDurationFromMs(ms: number): string {
 
 const nodeIconMap: Record<string, { icon: IconType; color: string }> = {
     trigger: { icon: LuZap, color: 'text-yellow-400' },
-    cv_parser: { icon: LuFileText, color: 'text-indigo-400' },
     email: { icon: LuMail, color: 'text-blue-400' },
     http: { icon: LuGlobe, color: 'text-green-400' },
     condition: { icon: LuSplit, color: 'text-purple-400' },
@@ -167,7 +165,7 @@ export default function DashboardPage() {
             setIsCreatingFromTemplate(true);
 
             // Create new workflow with template name
-            const newWorkflow = await createWorkflow({ name: template.name });
+            const newWorkflow = await createWorkflow({ name: template.name, description: template.description });
             const workflowId = newWorkflow.id;
 
             // Create a mapping of template node IDs to actual node IDs
@@ -180,6 +178,7 @@ export default function DashboardPage() {
                     name: templateNode.name,
                     posX: templateNode.pos_x,
                     posY: templateNode.pos_y,
+                    config: templateNode.config,
                 });
                 nodeIdMap[templateNode.id] = nodeResponse.id;
             }
@@ -523,7 +522,7 @@ export default function DashboardPage() {
                                 Quick Start Templates
                             </h2>
                             <p className="text-xs text-slate-500 mt-1">
-                                Start with a pre-built workflow and customize it for your needs
+                                Start with a banking-oriented starter flow and adapt it to your operating model
                             </p>
                         </div>
                         <Link
@@ -610,7 +609,7 @@ export default function DashboardPage() {
                 {/* Footer Deco */}
                 <div className="mt-12 text-center opacity-30">
                     <p className="text-[9px] text-cyan-900 font-mono uppercase tracking-[0.5em]">
-                        HRFlow Automation Systems v2.4.0
+                        BankFlow Platform Baseline
                     </p>
                 </div>
 

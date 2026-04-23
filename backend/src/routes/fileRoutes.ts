@@ -7,8 +7,11 @@ import {
   deleteFile,
 } from "../services/fileUploadService";
 import logger from "../lib/logger";
+import { authenticate } from "../middleware/authMiddleware";
 
 const router = Router();
+
+router.use(authenticate);
 
 // Upload a file
 router.post("/upload", upload.single("file"), (req: Request, res: Response) => {

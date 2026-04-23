@@ -5,24 +5,24 @@ export interface TriggerVariable {
     label: string;
     value: string;
     icon: React.ReactNode;
-    group: 'candidate' | 'job' | 'meta';
+    group: 'case' | 'routing' | 'meta';
 }
 
 export const TRIGGER_VARIABLES: TriggerVariable[] = [
-    // Candidate Group
-    { label: 'Candidate Name', value: '{{trigger.name}}', icon: <LuUser className="w-3 h-3" />, group: 'candidate' },
-    { label: 'Email Address', value: '{{trigger.email}}', icon: <LuMail className="w-3 h-3" />, group: 'candidate' },
-    { label: 'Phone Number', value: '{{trigger.phone}}', icon: <LuPhone className="w-3 h-3" />, group: 'candidate' },
-    { label: 'Resume URL', value: '{{trigger.resume_url}}', icon: <LuFileText className="w-3 h-3" />, group: 'candidate' },
+    // Case Group
+    { label: 'Case Name', value: '{{trigger.name}}', icon: <LuUser className="w-3 h-3" />, group: 'case' },
+    { label: 'Contact Email', value: '{{trigger.email}}', icon: <LuMail className="w-3 h-3" />, group: 'case' },
+    { label: 'Phone Number', value: '{{trigger.phone}}', icon: <LuPhone className="w-3 h-3" />, group: 'case' },
+    { label: 'Document URL', value: '{{trigger.resume_url}}', icon: <LuFileText className="w-3 h-3" />, group: 'case' },
     
-    // Job Group
-    { label: 'Department', value: '{{trigger.department}}', icon: <LuBuilding className="w-3 h-3" />, group: 'job' },
-    { label: 'Custom Department', value: '{{trigger.customDepartment}}', icon: <LuBuilding className="w-3 h-3" />, group: 'job' },
-    { label: 'Role / Title', value: '{{trigger.role}}', icon: <LuBriefcase className="w-3 h-3" />, group: 'job' },
-    { label: 'Start Date', value: '{{trigger.startDate}}', icon: <LuCalendar className="w-3 h-3" />, group: 'job' },
+    // Routing Group
+    { label: 'Queue', value: '{{trigger.department}}', icon: <LuBuilding className="w-3 h-3" />, group: 'routing' },
+    { label: 'Custom Queue', value: '{{trigger.customDepartment}}', icon: <LuBuilding className="w-3 h-3" />, group: 'routing' },
+    { label: 'Case Type', value: '{{trigger.role}}', icon: <LuBriefcase className="w-3 h-3" />, group: 'routing' },
+    { label: 'Requested Date', value: '{{trigger.startDate}}', icon: <LuCalendar className="w-3 h-3" />, group: 'routing' },
 
     // Meta Group
-    { label: 'Form ID', value: '{{trigger.formId}}', icon: <LuHash className="w-3 h-3" />, group: 'meta' },
+    { label: 'Reference ID', value: '{{trigger.formId}}', icon: <LuHash className="w-3 h-3" />, group: 'meta' },
 ];
 
 const VariableGrid: React.FC = () => {

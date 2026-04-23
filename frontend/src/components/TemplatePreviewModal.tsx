@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LuX, LuArrowRight, LuCircleCheck, LuFileText, LuGlobe, LuMail, LuDatabase, LuSplit, LuClock, LuTerminal, LuBox, LuCalendar, LuZap } from 'react-icons/lu';
+import { LuX, LuArrowRight, LuCircleCheck, LuGlobe, LuMail, LuDatabase, LuSplit, LuClock, LuTerminal, LuBox, LuCalendar, LuZap } from 'react-icons/lu';
 import type { WorkflowTemplate } from '../data/templates';
 
 interface TemplatePreviewModalProps {
@@ -14,7 +14,6 @@ interface TemplatePreviewModalProps {
 // Icon mapping for node kinds
 const nodeIcons: Record<string, React.ElementType> = {
     trigger: LuZap,
-    cv_parser: LuFileText,
     email: LuMail,
     http: LuGlobe,
     condition: LuSplit,
@@ -28,7 +27,6 @@ const nodeIcons: Record<string, React.ElementType> = {
 // Color mapping for node kinds
 const nodeColors: Record<string, string> = {
     trigger: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20',
-    cv_parser: 'text-indigo-400 bg-indigo-400/10 border-indigo-400/20',
     email: 'text-blue-400 bg-blue-400/10 border-blue-400/20',
     http: 'text-green-400 bg-green-400/10 border-green-400/20',
     condition: 'text-purple-400 bg-purple-400/10 border-purple-400/20',
@@ -61,10 +59,9 @@ const TemplatePreviewModal: React.FC<TemplatePreviewModalProps> = ({
                     <div className="flex items-center justify-between p-6 border-b border-white/10 bg-white/5">
                         <div>
                             <span className={`text-xs font-bold uppercase tracking-wider ${
-                                template.category === 'hr' ? 'text-blue-400' :
-                                template.category === 'it' ? 'text-green-400' : 'text-slate-400'
+                                template.category === 'general' ? 'text-cyan-400' : 'text-slate-400'
                             }`}>
-                                {template.category} Template
+                                Case Flow Template
                             </span>
                             <h2 className="text-xl font-bold text-white mt-1">{template.name}</h2>
                         </div>

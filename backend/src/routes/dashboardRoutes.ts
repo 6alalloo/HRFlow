@@ -2,8 +2,11 @@
 import { Router, Request, Response } from "express";
 import * as dashboardService from "../services/dashboardService";
 import logger from "../lib/logger";
+import { authenticate } from "../middleware/authMiddleware";
 
 const router = Router();
+
+router.use(authenticate);
 
 /**
  * GET /api/dashboard/stats
